@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
@@ -76,6 +77,12 @@ export default function Results() {
 
   return (
     <div className="w-full px-4 py-8 md:py-12 md:max-w-4xl md:mx-auto animate-in fade-in duration-700">
+      <div className="mb-6">
+        <button onClick={() => navigate(-1)} className="text-zinc-500 hover:text-white transition-colors flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest">
+          <i className="fa-solid fa-arrow-left"></i> Back to Search
+        </button>
+      </div>
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 md:gap-8 mb-10 md:mb-16">
         <div>
           <h2 className="text-3xl md:text-4xl font-bold uppercase tracking-tighter mb-2">Available <span className="text-amber-500">Times</span></h2>

@@ -124,13 +124,21 @@ export default function Checkout() {
               </div>
             </div>
 
-            <button 
-              onClick={() => setShowExtras(true)} 
-              disabled={!formData.name || !formData.email}
-              className="w-full bg-zinc-900 border border-zinc-800 py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-white hover:border-amber-500 transition-all disabled:opacity-50 text-[10px] min-h-[44px]"
-            >
-              Continue to Extras
-            </button>
+            <div className="flex gap-4">
+              <button 
+                onClick={() => navigate(-1)} 
+                className="flex-1 bg-zinc-900 border border-zinc-800 py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-white hover:border-zinc-700 transition-all text-[10px] min-h-[44px] active:scale-95"
+              >
+                Back
+              </button>
+              <button 
+                onClick={() => setShowExtras(true)} 
+                disabled={!formData.name || !formData.email}
+                className="flex-[2] gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-lg shadow-amber-500/10 hover:scale-[1.02] transition-all disabled:opacity-50 text-[10px] min-h-[44px] active:scale-95"
+              >
+                Continue to Extras
+              </button>
+            </div>
           </div>
         ) : (
           <div className="space-y-8 animate-in slide-in-from-right-4">

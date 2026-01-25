@@ -26,9 +26,9 @@ export const LS_CAL_SYNC = "lkc_calendar_sync";
 export const LS_EXTRAS = "lkc_extras";
 
 export const ROOMS: Room[] = [
-  { id: 'room-a', code: 'A', name: 'Room A', min_capacity: 8, max_capacity: 100, is_active: true },
-  { id: 'room-b', code: 'B', name: 'Room B', min_capacity: 8, max_capacity: 100, is_active: true },
-  { id: 'room-c', code: 'C', name: 'Room C', min_capacity: 8, max_capacity: 100, is_active: true },
+  { id: 'room-a', code: 'A', name: 'Terrace Bar', min_capacity: 8, max_capacity: 100, is_active: true },
+  { id: 'room-b', code: 'B', name: 'Vox Room', min_capacity: 8, max_capacity: 100, is_active: true },
+  { id: 'room-c', code: 'C', name: 'Attic / Penthouse', min_capacity: 8, max_capacity: 100, is_active: true },
 ];
 
 export const PRICING_TIERS = [
