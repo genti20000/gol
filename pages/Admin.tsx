@@ -693,7 +693,6 @@ function BlocksTab({ store, selectedDate }: { store: any, selectedDate: string }
                        <p className="text-[9px] text-zinc-600 font-bold uppercase tracking-widest">{store.rooms.find((r: Room) => r.id === rb.roomId)?.name} {rb.reason ? `• ${rb.reason}` : ''}</p>
                     </div>
                  </div>
-                 {/* Corrected deleteRecurringBlock call to use rb.id */}
                  <button onClick={() => store.deleteRecurringBlock(rb.id)} className="text-zinc-800 hover:text-red-500 p-2 opacity-0 group-hover:opacity-100 transition-opacity"><i className="fa-solid fa-trash-can"></i></button>
               </div>
             ))}
@@ -703,7 +702,6 @@ function BlocksTab({ store, selectedDate }: { store: any, selectedDate: string }
       {showBlockModal && (
         <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
            <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={() => setShowBlockModal(false)}></div>
-           {/* Corrected max-sm to max-w-sm to avoid breaking JSX layout and parsing */}
            <div className="relative glass-panel p-8 rounded-[2rem] border-zinc-800 max-w-sm w-full space-y-6">
               <h4 className="text-lg font-bold uppercase text-white">Add Maintenance Block</h4>
               <div className="space-y-4">
