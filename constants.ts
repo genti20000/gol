@@ -1,4 +1,3 @@
-
 import { Room, DayOperatingHours } from './types';
 
 export const LOGO_URL = "https://files.londonkaraoke.club/uploads/1768098773_lkc_512.png";
@@ -28,7 +27,7 @@ export const LS_EXTRAS = "lkc_extras";
 export const ROOMS: Room[] = [
   { id: 'room-a', code: 'A', name: 'Terrace Bar', min_capacity: 8, max_capacity: 100, is_active: true },
   { id: 'room-b', code: 'B', name: 'Vox Room', min_capacity: 8, max_capacity: 100, is_active: true },
-  { id: 'room-c', code: 'C', name: 'Attic / Penthouse', min_capacity: 8, max_capacity: 100, is_active: true },
+  { id: 'room-c', code: 'C', name: 'Attic', min_capacity: 8, max_capacity: 100, is_active: true },
 ];
 
 export const PRICING_TIERS = [

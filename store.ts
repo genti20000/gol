@@ -1,8 +1,5 @@
 
-"use client";
-
 import { useState, useEffect, useMemo, useCallback } from 'react';
-/* Rest of the file remains identical */
 import { 
   Booking, 
   BookingStatus, 
