@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from 'react';
-import { useRouterShim } from '@/app/page';
+import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { LOGO_URL, WHATSAPP_URL, getGuestLabel, WHATSAPP_PREFILL_ENABLED } from '@/constants';
 

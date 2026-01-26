@@ -340,7 +340,8 @@ export function useStore() {
   }, [extras]);
 
   // Add a entry to the waitlist
-  const addWaitlistEntry = useCallback((entry: Partial<WaitlistEntry>) => {
+  // Fix: Added return type to include optional reason for compatibility with callers in Results.tsx
+  const addWaitlistEntry = useCallback((entry: Partial<WaitlistEntry>): { ok: boolean; reason?: string } => {
     const newEntry = {
       ...entry,
       id: Math.random().toString(36).substring(2, 9),

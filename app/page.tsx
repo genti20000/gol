@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, createContext, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import Home from '@/pages/Home';
 import Results from '@/pages/Results';
 import Checkout from '@/pages/Checkout';
@@ -8,24 +8,7 @@ import Confirmation from '@/pages/Confirmation';
 import Admin from '@/pages/Admin';
 import ManageBooking from '@/pages/ManageBooking';
 import { WHATSAPP_URL, LOGO_URL } from '@/constants';
-
-// Internal Router Context
-interface RouteState {
-  path: string;
-  params: URLSearchParams;
-}
-
-const RouterContext = createContext<{
-  route: RouteState;
-  navigate: (pathWithQuery: string) => void;
-  back: () => void;
-}>({
-  route: { path: '/', params: new URLSearchParams() },
-  navigate: () => {},
-  back: () => {},
-});
-
-export const useRouterShim = () => useContext(RouterContext);
+import { RouterContext, RouteState } from '@/lib/routerShim';
 
 function Header({ navigate }: { navigate: (p: string) => void }) {
   return (
