@@ -1,10 +1,12 @@
+"use client";
+
 import React, { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useStore } from '../store';
-import { LOGO_URL, PRICING_TIERS, EXTRAS, getGuestLabel, WHATSAPP_URL } from '../constants';
+import { useRouterShim } from '@/app/page';
+import { useStore } from '@/store';
+import { LOGO_URL, PRICING_TIERS, EXTRAS, getGuestLabel, WHATSAPP_URL } from '@/constants';
 
 export default function Home() {
-  const navigate = useNavigate();
+  const { navigate } = useRouterShim();
   const store = useStore();
   
   const [serviceId, setServiceId] = useState('');
@@ -119,7 +121,7 @@ export default function Home() {
                    {pricing.discountAmount > 0 && <span className="text-green-500 font-bold text-[10px] uppercase tracking-widest">-25% Midweek</span>}
                 </div>
              </div>
-             <button type="submit" className="w-full md:w-auto gold-gradient hover:scale-[1.02] active:scale-95 transition-all text-black font-bold py-4 md:py-5 px-16 rounded-xl md:rounded-2xl shadow-xl shadow-amber-500/10 uppercase tracking-[0.2em] text-[10px] min-h-[44px]">
+             <button type="submit" className="w-full md:w-auto gold-gradient hover:scale-[1.02] active:scale-95 transition-all text-black font-bold py-4 md:py-5 px-16 rounded-xl md:rounded-2xl shadow-xl shadow-amber-500/10 uppercase tracking-[0.2em] text-[10px] min-h-[44px] cursor-pointer">
                 Search Availability
              </button>
           </div>
@@ -127,7 +129,7 @@ export default function Home() {
 
         <div className="pt-4 md:pt-8 max-w-2xl mx-auto">
            <p className="text-zinc-500 text-[9px] md:text-[10px] uppercase font-bold tracking-[0.3em] mb-3 md:mb-4">Sold out online?</p>
-           <a href={WHATSAPP_URL} target="_blank" className="inline-flex items-center gap-3 text-green-500 hover:text-green-400 font-bold uppercase tracking-widest text-[10px] md:text-xs transition-colors">
+           <a href={WHATSAPP_URL} target="_blank" className="inline-flex items-center gap-3 text-green-500 hover:text-green-400 font-bold uppercase tracking-widest text-[10px] md:text-xs transition-colors no-underline">
               <i className="fa-brands fa-whatsapp text-lg"></i>
               Contact our concierge for priority bookings
            </a>
@@ -162,9 +164,9 @@ function DatePickerModal({ selectedDate, onSelect, onClose, store }: { selectedD
       <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={onClose}></div>
       <div className="relative w-full max-w-sm md:max-w-md glass-panel rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-8 animate-in zoom-in duration-300">
         <div className="flex items-center justify-between mb-6 md:mb-8">
-           <button onClick={() => setCurrentView(new Date(currentView.setMonth(currentView.getMonth() - 1)))} className="text-zinc-500 hover:text-white p-2"><i className="fa-solid fa-chevron-left"></i></button>
+           <button onClick={() => setCurrentView(new Date(currentView.setMonth(currentView.getMonth() - 1)))} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white p-2"><i className="fa-solid fa-chevron-left"></i></button>
            <h3 className="text-lg md:text-xl font-bold uppercase tracking-tighter text-amber-500">{monthNames[currentView.getMonth()]} {currentView.getFullYear()}</h3>
-           <button onClick={() => setCurrentView(new Date(currentView.setMonth(currentView.getMonth() + 1)))} className="text-zinc-500 hover:text-white p-2"><i className="fa-solid fa-chevron-right"></i></button>
+           <button onClick={() => setCurrentView(new Date(currentView.setMonth(currentView.getMonth() + 1)))} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white p-2"><i className="fa-solid fa-chevron-right"></i></button>
         </div>
         <div className="grid grid-cols-7 gap-1 mb-2">
           {daysOfWeek.map(d => <div key={d} className="text-[8px] font-bold text-zinc-600 text-center">{d}</div>)}
@@ -180,7 +182,7 @@ function DatePickerModal({ selectedDate, onSelect, onClose, store }: { selectedD
             );
           })}
         </div>
-        <button onClick={onClose} className="w-full mt-6 bg-zinc-900 border border-zinc-800 py-3.5 rounded-xl text-[10px] font-bold uppercase tracking-widest min-h-[44px]">Close</button>
+        <button onClick={onClose} className="w-full mt-6 bg-zinc-900 border border-zinc-800 py-3.5 rounded-xl text-[10px] font-bold uppercase tracking-widest min-h-[44px] cursor-pointer text-white">Close</button>
       </div>
     </div>
   );
