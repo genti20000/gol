@@ -2,7 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
 :root {
+    /* Restored Original Tokens */
     --bg: #0B0D10;
     --panel: rgba(255, 255, 255, 0.06);
     --panel2: rgba(255, 255, 255, 0.08);
@@ -14,56 +17,159 @@
     --accent: #F5A300;
     --warn: #FF4D4D;
     --pending: #C9A24A;
+
+    /* Semantic Mappings for New Views */
+    --text-muted: var(--text2);
+    --text-dim: var(--text3);
+    --stroke-highlight: var(--stroke2);
+}
+
+* {
+    font-family: 'Outfit', sans-serif;
 }
 
 body {
     background-color: var(--bg);
     color: var(--text);
     overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+    background: var(--accent);
+    color: var(--bg);
 }
 
 ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-::-webkit-scrollbar-track {
-    background: #18181b;
-}
-::-webkit-scrollbar-thumb {
-    background: #3f3f46;
-    border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-    background: #52525b;
+    width: 6px;
+    height: 6px;
 }
 
+::-webkit-scrollbar-track {
+    background: var(--bg);
+}
+
+::-webkit-scrollbar-thumb {
+    background: #1E293B;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #334155;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-in-up {
+    animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Premium Components - Adapted to Original Colors */
 .glass-panel {
     background: var(--panel);
-    backdrop-filter: blur(12px);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--stroke);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+}
+
+.glass-panel-hover {
+    transition: all 0.3s ease;
+}
+
+.glass-panel-hover:hover {
+    border-color: var(--stroke-highlight);
+    background: var(--panel2);
+    transform: translateY(-2px);
 }
 
 .gold-gradient {
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    background: linear-gradient(135deg, #F5A300 0%, #D97706 100%);
 }
 
-.neon-glow {
-    box-shadow: 0 0 15px rgba(245, 158, 11, 0.3);
+.gold-gradient-text {
+    background: linear-gradient(135deg, #F5A300 0%, #FBBF24 50%, #D97706 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 
-.admin-text-primary { color: var(--text); }
-.admin-text-secondary { color: var(--text2); }
-.admin-text-muted { color: var(--text3); }
-.admin-stroke { border-color: var(--stroke); }
-.admin-stroke-strong { border-color: var(--stroke2); }
+.gold-glow {
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.2);
+    transition: box-shadow 0.3s ease;
+}
 
-/* Hide scrollbar for Chrome, Safari and Opera */
+.gold-glow:hover {
+    box-shadow: 0 0 30px rgba(245, 158, 11, 0.4);
+}
+
+.input-luxury {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--stroke);
+    border-radius: 8px;
+    color: white;
+    transition: all 0.3s ease;
+}
+
+.input-luxury:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: rgba(0, 0, 0, 0.4);
+    box-shadow: 0 0 0 4px rgba(245, 163, 0, 0.1);
+}
+
+.badge-luxury {
+    background: rgba(245, 163, 0, 0.1);
+    color: var(--accent);
+    border: 1px solid rgba(245, 163, 0, 0.2);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.admin-text-primary {
+    color: var(--text);
+}
+
+.admin-text-secondary {
+    color: var(--text2);
+}
+
+.admin-text-muted {
+    color: var(--text3);
+}
+
+.admin-stroke {
+    border-color: var(--stroke);
+}
+
+.admin-stroke-strong {
+    border-color: var(--stroke2);
+}
+
+/* Utilities */
 .no-scrollbar::-webkit-scrollbar {
     display: none;
 }
 
-/* Hide scrollbar for IE, Edge and Firefox */
 .no-scrollbar {
-    -ms-overflow-style: none;  /* IE and Edge */
-    scrollbar-width: none;  /* Firefox */
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.mask-edge-fade {
+    mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
 }
