@@ -498,7 +498,7 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
   let endHour = parseInt(window.close.split(':')[0]);
   if (endHour <= startHour) endHour += 24;
 
-  const hours = [];
+  const hours: number[] = [];
   for (let h = startHour; h < endHour; h++) {
     hours.push(h);
   }
