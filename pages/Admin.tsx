@@ -287,7 +287,7 @@ function WaitlistListing({ store, date }: { store: any, date: string }) {
               <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">{w.phone}</p>
             </div>
             <span className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded border ${w.status === 'active' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
-                w.status === 'contacted' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' : 'bg-zinc-800 text-zinc-500 border-zinc-700'
+              w.status === 'contacted' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' : 'bg-zinc-800 text-zinc-500 border-zinc-700'
               }`}>
               {w.status}
             </span>
@@ -393,8 +393,8 @@ function CompactBookingList({ store, date, onSelect }: { store: any, date: strin
               {new Date(b.start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — {new Date(b.end_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </div>
             <div className={`text-[8px] font-bold uppercase px-3 py-1 rounded-full border ${b.status === BookingStatus.CONFIRMED ? 'bg-green-500/10 text-green-500 border-green-500/20' :
-                b.status === BookingStatus.CANCELLED ? 'bg-red-500/10 text-red-500 border-red-500/20' :
-                  'bg-zinc-800 text-zinc-500 border-zinc-700'
+              b.status === BookingStatus.CANCELLED ? 'bg-red-500/10 text-red-500 border-red-500/20' :
+                'bg-zinc-800 text-zinc-500 border-zinc-700'
               }`}>
               {b.status}
             </div>
@@ -420,7 +420,7 @@ function MonthCalendar({ store, onSelectDay }: { store: any, onSelectDay: (d: st
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-    const days = [];
+    const days: ({ ds: string; day: number; confirmed: number; pending: number; cancelled: number; isClosed: boolean } | null)[] = [];
     for (let i = 0; i < firstDay; i++) days.push(null);
     for (let i = 1; i <= daysInMonth; i++) {
       const d = new Date(year, month, i);
