@@ -49,10 +49,10 @@ export default function Results() {
     navigate(`/checkout?${params.toString()}`);
   };
 
-  const handleJoinWaitlist = (e: React.FormEvent) => {
+  const handleJoinWaitlist = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    const result = store.addWaitlistEntry({
+    const result = await store.addWaitlistEntry({
       name: waitlistForm.name,
       phone: waitlistForm.phone,
       preferredDate: waitlistForm.preferredDate,
