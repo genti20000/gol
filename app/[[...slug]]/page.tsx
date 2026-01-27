@@ -45,16 +45,11 @@ export default function Page() {
 
   useEffect(() => {
     const syncRouteFromUrl = () => {
-      // In a SPA environment, we might be using path or hash. 
-      // This shim assumes standard path based routing.
       const full = window.location.pathname + window.location.search;
       const cleaned = full.startsWith("#") ? full.slice(1) : full;
       const [rawPath, rawQuery = ""] = cleaned.split("?");
-
-      // Normalize path: leading slash, no trailing slash
       const path = (rawPath || "/").replace(/\/+$/, "") || "/";
       const params = new URLSearchParams(rawQuery);
-
       setRoute({ path, params });
     };
 
@@ -66,15 +61,10 @@ export default function Page() {
   const navigate = (pathWithQuery: string) => {
     const cleaned = pathWithQuery.startsWith("#") ? pathWithQuery.slice(1) : pathWithQuery;
     const [rawPath, rawQuery = ""] = cleaned.split("?");
-
-    // Normalize path for internal state matching
     const path = (rawPath || "/").replace(/\/+$/, "") || "/";
     const params = new URLSearchParams(rawQuery);
-
     setHistory(prev => [...prev, route]);
     setRoute({ path, params });
-
-    // Push the full original string to the browser history
     window.history.pushState({}, '', cleaned);
     window.scrollTo(0, 0);
   };
@@ -93,16 +83,13 @@ export default function Page() {
   };
 
   const renderContent = () => {
-    // Exact match on normalized path
     const p = route.path;
-
     if (p === '/') return <Home />;
     if (p === '/book/results') return <Results />;
     if (p === '/checkout') return <Checkout />;
     if (p === '/confirmation') return <Confirmation />;
     if (p === '/admin' || p.startsWith('/admin')) return <Admin />;
     if (p.startsWith('/m/')) return <ManageBooking />;
-
     return <Home />;
   };
 
@@ -142,7 +129,7 @@ export default function Page() {
               </div>
             </div>
             <div className="max-w-7xl mx-auto border-t border-zinc-900 mt-16 pt-8 text-[9px] text-zinc-700 uppercase tracking-widest font-bold">
-              &copy; {new Date().getFullYear()} London Karaoke Club. Professional Standards Only.
+              &copy; {new Date().getFullYear()} London Karaoke Club. V2.0-DB.
             </div>
           </footer>
           <FloatingWhatsApp currentPath={route.path} />

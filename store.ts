@@ -380,7 +380,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       extras_total: booking.extras_total,
       extras_snapshot: booking.extras
     }]).select().single();
-    if (error) { console.error("Error adding booking:", error); return null; }
+    if (error) {
+      console.error("Error adding booking details:", error);
+      return null;
+    }
     const newBooking = { ...data, magicToken: data.magic_token } as Booking;
     setBookings(prev => [...prev, newBooking]);
     return newBooking;
