@@ -139,7 +139,8 @@ export function useStore() {
     const special = specialHours.find(s => s.date === date);
     if (special) return special.enabled ? { open: special.open!, close: special.close! } : null;
     
-    const day = new Date(date).getDay();
+    // Use T00:00:00 to ensure we get the correct local day
+    const day = new Date(date + 'T00:00:00').getDay();
     const config = operatingHours.find(h => h.day === day);
     if (config && config.enabled) return { open: config.open, close: config.close };
     return null;
@@ -151,7 +152,7 @@ export function useStore() {
     const extraPrice = SESSION_EXTRAS.find(e => e.hours === extraHours)?.price || 0;
     const baseTotal = basePrice;
     
-    const day = new Date(date).getDay();
+    const day = new Date(date + 'T00:00:00').getDay();
     const isMidweek = day >= 1 && day <= 3;
     const discountPercent = isMidweek ? MIDWEEK_DISCOUNT_PERCENT : 0;
     const discountAmount = Math.round((baseTotal + extraPrice) * (discountPercent / 100));
@@ -170,13 +171,28 @@ export function useStore() {
     return { baseTotal, extrasPrice: extraPrice, discountAmount, promoDiscountAmount, totalPrice };
   }, [promoCodes]);
 
-  const validateInterval = useCallback((roomId: string, start: string, end: string, excludeBookingId?: string, staffId?: string) => {
+  const validateInterval = useCallback((roomId: string, start: string, end: string, excludeBookingId?: string, staffId?: string, skipWindowCheck = false) => {
     const startTs = new Date(start).getTime();
     const endTs = new Date(end).getTime();
     
-    const localDate = getLocalDateString(startTs);
-    const window = getOperatingWindow(localDate);
-    if (!window) return { ok: false, reason: 'Venue is closed on this date' };
+    if (!skipWindowCheck) {
+      const localDate = getLocalDateString(startTs);
+      const window = getOperatingWindow(localDate);
+      if (!window) return { ok: false, reason: 'Venue is closed on this date' };
+      
+      const openParts = window.open.split(':');
+      const closeParts = window.close.split(':');
+      const startOfDayTs = new Date(localDate + 'T00:00:00').getTime();
+      const openTs = startOfDayTs + (parseInt(openParts[0]) * 3600000) + (parseInt(openParts[1]) * 60000);
+      let closeTs = startOfDayTs + (parseInt(closeParts[0]) * 3600000) + (parseInt(closeParts[1]) * 60000);
+      
+      // Handle midnight crossing
+      if (closeTs <= openTs) closeTs += 24 * 3600000;
+      
+      if (startTs < openTs || endTs > closeTs) {
+        return { ok: false, reason: 'Requested time is outside operating hours' };
+      }
+    }
 
     const conflicts = bookings.filter(b => {
       if (b.id === excludeBookingId) return false;
@@ -221,6 +237,7 @@ export function useStore() {
     let closeH = parseInt(window.close.split(':')[0]);
     const closeM = parseInt(window.close.split(':')[1]);
 
+    // Handle midnight crossing for window end
     if (closeH <= openH) closeH += 24;
 
     const startMinutes = openH * 60 + openM;
@@ -240,7 +257,8 @@ export function useStore() {
       const startAt = slotStart.toISOString();
       const endAt = new Date(slotStart.getTime() + durationMinutes * 60000).toISOString();
       
-      const anyRoom = rooms.some(r => validateInterval(r.id, startAt, endAt, undefined, staffId).ok);
+      // We skip window check here because we are iterating strictly WITHIN the window
+      const anyRoom = rooms.some(r => validateInterval(r.id, startAt, endAt, undefined, staffId, true).ok);
       if (anyRoom) {
         const hStr = slotStart.getHours().toString().padStart(2, '0');
         const minStr = slotStart.getMinutes().toString().padStart(2, '0');
@@ -253,7 +271,7 @@ export function useStore() {
   const findFirstAvailableRoomAndStaff = useCallback((startAt: string, endAt: string, staffId?: string, serviceId?: string) => {
     if (staffId) {
       for (const r of rooms) {
-        if (validateInterval(r.id, startAt, endAt, undefined, staffId).ok) {
+        if (validateInterval(r.id, startAt, endAt, undefined, staffId, true).ok) {
           return { room_id: r.id, staff_id: staffId };
         }
       }
@@ -262,11 +280,11 @@ export function useStore() {
     for (const r of rooms) {
       if (eligibleStaff.length > 0) {
         for (const s of eligibleStaff) {
-          if (validateInterval(r.id, startAt, endAt, undefined, s.id).ok) {
+          if (validateInterval(r.id, startAt, endAt, undefined, s.id, true).ok) {
             return { room_id: r.id, staff_id: s.id };
           }
         }
-      } else if (validateInterval(r.id, startAt, endAt).ok) {
+      } else if (validateInterval(r.id, startAt, endAt, undefined, undefined, true).ok) {
         return { room_id: r.id, staff_id: undefined };
       }
     }

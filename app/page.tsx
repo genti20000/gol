@@ -20,8 +20,8 @@ function Header({ navigate }: { navigate: (p: string) => void }) {
         </span>
       </button>
       <nav className="flex items-center gap-8 text-[10px] font-bold uppercase tracking-widest">
-        <button onClick={() => navigate('/')} className="bg-transparent border-none cursor-pointer text-white hover:text-amber-500 transition-colors uppercase">Book Now</button>
-        <button onClick={() => navigate('/admin')} className="bg-transparent border-none cursor-pointer text-white hover:text-amber-500 transition-colors opacity-50 uppercase">Admin</button>
+        <button onClick={() => navigate('/')} className="bg-transparent border-none cursor-pointer text-zinc-400 hover:text-amber-500 transition-colors uppercase">Book Now</button>
+        <button onClick={() => navigate('/admin')} className="bg-transparent border-none cursor-pointer text-zinc-400 hover:text-amber-500 transition-colors uppercase">Admin</button>
       </nav>
     </header>
   );
@@ -44,11 +44,16 @@ export default function Page() {
 
   useEffect(() => {
     const syncRouteFromUrl = () => {
+      // In a SPA environment, we might be using path or hash. 
+      // This shim assumes standard path based routing.
       const full = window.location.pathname + window.location.search;
       const cleaned = full.startsWith("#") ? full.slice(1) : full;
       const [rawPath, rawQuery = ""] = cleaned.split("?");
+      
+      // Normalize path: leading slash, no trailing slash
       const path = (rawPath || "/").replace(/\/+$/, "") || "/";
       const params = new URLSearchParams(rawQuery);
+      
       setRoute({ path, params });
     };
 
@@ -60,13 +65,16 @@ export default function Page() {
   const navigate = (pathWithQuery: string) => {
     const cleaned = pathWithQuery.startsWith("#") ? pathWithQuery.slice(1) : pathWithQuery;
     const [rawPath, rawQuery = ""] = cleaned.split("?");
+    
+    // Normalize path for internal state matching
     const path = (rawPath || "/").replace(/\/+$/, "") || "/";
     const params = new URLSearchParams(rawQuery);
     
     setHistory(prev => [...prev, route]);
     setRoute({ path, params });
     
-    window.history.pushState({}, '', pathWithQuery);
+    // Push the full original string to the browser history
+    window.history.pushState({}, '', cleaned);
     window.scrollTo(0, 0);
   };
 
@@ -76,21 +84,23 @@ export default function Page() {
       setHistory(prevH => prevH.slice(0, -1));
       setRoute(prev);
       const queryString = prev.params.toString();
-      window.history.replaceState({}, '', prev.path + (queryString ? `?${queryString}` : ''));
+      const fullPath = prev.path + (queryString ? `?${queryString}` : '');
+      window.history.replaceState({}, '', fullPath);
     } else {
       navigate('/');
     }
   };
 
-  const normalizedPath = (route.path || "/").replace(/\/+$/, "") || "/";
-
   const renderContent = () => {
-    if (normalizedPath === '/') return <Home />;
-    if (normalizedPath === '/book/results') return <Results />;
-    if (normalizedPath === '/checkout') return <Checkout />;
-    if (normalizedPath === '/confirmation') return <Confirmation />;
-    if (normalizedPath === '/admin' || normalizedPath.startsWith('/admin')) return <Admin />;
-    if (normalizedPath.startsWith('/m/')) return <ManageBooking />;
+    // Exact match on normalized path
+    const p = route.path;
+
+    if (p === '/') return <Home />;
+    if (p === '/book/results') return <Results />;
+    if (p === '/checkout') return <Checkout />;
+    if (p === '/confirmation') return <Confirmation />;
+    if (p === '/admin' || p.startsWith('/admin')) return <Admin />;
+    if (p.startsWith('/m/')) return <ManageBooking />;
 
     return <Home />;
   };
@@ -101,9 +111,12 @@ export default function Page() {
         <Header navigate={navigate} />
         
         <main className="w-full">
-          {/* Diagnostic Debug Line */}
-          <div className="bg-black/40 text-zinc-500 text-[10px] px-4 py-1 font-mono uppercase tracking-widest border-b border-zinc-900 pointer-events-none">
-            {route.path} / {route.params.toString() || "no-params"} / {normalizedPath}
+          {/* Enhanced Diagnostic Debug Line */}
+          <div className="bg-black/80 text-amber-500/90 text-[10px] px-4 py-2 font-mono uppercase tracking-[0.2em] border-b border-zinc-900 pointer-events-none sticky top-16 z-[100] backdrop-blur-xl flex gap-4">
+            <span className="opacity-50">ROUTER:</span>
+            <span>PATH: {route.path}</span>
+            <span className="opacity-30">|</span>
+            <span className="truncate">QUERY: {route.params.toString() || "EMPTY"}</span>
           </div>
 
           {renderContent()}
