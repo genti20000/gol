@@ -5,13 +5,20 @@ import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { LOGO_URL, PRICING_TIERS, EXTRAS, getGuestLabel, WHATSAPP_URL } from '@/constants';
 
+const getLocalDateString = (value: Date) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export default function Home() {
   const { navigate } = useRouterShim();
   const store = useStore();
   
   const [serviceId, setServiceId] = useState('');
   const [staffId, setStaffId] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(() => getLocalDateString(new Date()));
   const [guests, setGuests] = useState(8);
   const [extraHours, setExtraHours] = useState(0);
   const [promoCode, setPromoCode] = useState('');
@@ -191,7 +198,7 @@ function DatePickerModal({ selectedDate, onSelect, onClose, store }: { selectedD
           {daysOfWeek.map(d => <div key={d} className="text-[8px] font-bold text-zinc-600 text-center">{d}</div>)}
           {calendarDays.map((d, i) => {
             if (!d) return <div key={i}></div>;
-            const ds = d.toISOString().split('T')[0];
+            const ds = getLocalDateString(d);
             const isOpen = store.getOperatingWindow(ds);
             const isSelected = ds === selectedDate;
             return (
