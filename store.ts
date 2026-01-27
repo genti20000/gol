@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Booking,
   BookingStatus,
@@ -26,19 +26,6 @@ import {
   DEFAULT_OPERATING_HOURS,
   SLOT_MINUTES,
   BUFFER_MINUTES,
-  LS_BOOKINGS,
-  LS_OPERATING_HOURS,
-  LS_SPECIAL_HOURS,
-  LS_BLOCKS,
-  LS_RECURRING_BLOCKS,
-  LS_PROMO_CODES,
-  LS_SERVICES,
-  LS_STAFF,
-  LS_SETTINGS,
-  LS_CUSTOMERS,
-  LS_WAITLIST,
-  LS_CAL_SYNC,
-  LS_EXTRAS,
   WHATSAPP_URL
 } from './constants';
 import { supabase } from './lib/supabase';
@@ -72,7 +59,72 @@ const DEFAULT_EXTRAS: Extra[] = [
   { id: 'ext-3', name: 'Unlimited Soft Drinks', price: 5, pricingMode: 'per_person', enabled: true, sortOrder: 3 },
 ];
 
-export function useStore() {
+interface StoreContextValue {
+  loading: boolean;
+  bookings: Booking[];
+  rooms: Room[];
+  services: Service[];
+  staff: StaffMember[];
+  blocks: RoomBlock[];
+  recurringBlocks: RecurringBlock[];
+  specialHours: SpecialHours[];
+  settings: VenueSettings;
+  promoCodes: PromoCode[];
+  customers: Customer[];
+  waitlist: WaitlistEntry[];
+  calSync: CalendarSyncConfig;
+  extras: Extra[];
+  operatingHours: DayOperatingHours[];
+  getOperatingWindow: (date: string) => { open: string, close: string } | null;
+  calculatePricing: (date: string, guests: number, extraHours: number, promoCode?: string) => any;
+  getValidStartTimes: (date: string, durationMinutes: number, staffId?: string, serviceId?: string) => string[];
+  findFirstAvailableRoomAndStaff: (startAt: string, endAt: string, staffId?: string, serviceId?: string) => any;
+  addBooking: (booking: Partial<Booking>) => Promise<Booking | null>;
+  updateBooking: (id: string, patch: Partial<Booking>) => Promise<void>;
+  getBookingByMagicToken: (token: string) => Booking | undefined;
+  canRescheduleOrCancel: (booking: Booking, type: 'reschedule' | 'cancel') => boolean;
+  getEnabledExtras: () => Extra[];
+  computeExtrasTotal: (selection: Record<string, number>, guests: number) => number;
+  buildBookingExtrasSnapshot: (selection: Record<string, number>, guests: number) => any;
+  addWaitlistEntry: (entry: Partial<WaitlistEntry>) => Promise<{ ok: boolean; reason?: string }>;
+  getWaitlistForDate: (date: string) => WaitlistEntry[];
+  setWaitlistStatus: (id: string, status: WaitlistEntry['status']) => Promise<void>;
+  deleteWaitlistEntry: (id: string) => Promise<void>;
+  buildWaitlistMessage: (data: any) => string;
+  buildWhatsAppUrl: (message: string) => string;
+  getBusyIntervals: (date: string, roomId: string) => any[];
+  getBookingsForDate: (date: string) => Booking[];
+  getBlocksForDate: (date: string) => RoomBlock[];
+  addBlock: (block: Partial<RoomBlock>) => Promise<void>;
+  deleteBlock: (id: string) => Promise<void>;
+  toggleRecurringBlock: (id: string, enabled: boolean) => Promise<void>;
+  deleteRecurringBlock: (id: string) => Promise<void>;
+  updateSettings: (patch: Partial<VenueSettings>) => Promise<void>;
+  addPromoCode: (promo: Partial<PromoCode>) => Promise<void>;
+  updatePromoCode: (id: string, patch: Partial<PromoCode>) => Promise<void>;
+  deletePromoCode: (id: string) => Promise<void>;
+  getCalendarSyncConfig: () => CalendarSyncConfig;
+  setCalendarSyncConfig: (config: Partial<CalendarSyncConfig>) => void;
+  regenerateCalendarToken: () => void;
+  validateInterval: (roomId: string, start: string, end: string, excludeBookingId?: string, staffId?: string, skipWindowCheck?: boolean) => { ok: boolean; reason?: string };
+  addCustomer: (customer: Partial<Customer>) => Promise<Customer | null>;
+  updateCustomer: (id: string, patch: Partial<Customer>) => Promise<void>;
+  deleteCustomer: (id: string) => Promise<void>;
+  updateOperatingHours: (day: number, patch: Partial<DayOperatingHours>) => Promise<void>;
+  addService: (service: Partial<Service>) => Promise<void>;
+  updateService: (id: string, patch: Partial<Service>) => Promise<void>;
+  deleteService: (id: string) => Promise<void>;
+  addExtra: (extra: Partial<Extra>) => Promise<void>;
+  updateExtra: (id: string, patch: Partial<Extra>) => Promise<void>;
+  deleteExtra: (id: string) => Promise<void>;
+  updateStaff: (id: string, patch: Partial<StaffMember>) => Promise<void>;
+  addStaff: (member: Partial<StaffMember>) => Promise<void>;
+  deleteStaff: (id: string) => Promise<void>;
+}
+
+const StoreContext = createContext<StoreContextValue | null>(null);
+
+export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [rooms, setRooms] = useState<Room[]>(ROOMS);
@@ -89,7 +141,6 @@ export function useStore() {
   const [calSync, setCalSync] = useState<CalendarSyncConfig>(DEFAULT_CAL_SYNC);
   const [extras, setExtras] = useState<Extra[]>(DEFAULT_EXTRAS);
 
-  // Load from Supabase on mount
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -134,22 +185,7 @@ export function useStore() {
           end_at: b.end_at,
           status: b.status as BookingStatus,
           guests: b.guests,
-          customer_name: b.customer_name,
-          customer_email: b.customer_email,
-          customer_phone: b.customer_phone,
-          notes: b.notes,
-          base_total: b.base_total,
-          extras_hours: b.extras_hours,
-          extras_price: b.extras_price,
-          discount_amount: b.discount_amount,
-          promo_code: b.promo_code,
-          promo_discount_amount: b.promo_discount_amount,
-          total_price: b.total_price,
-          created_at: b.created_at,
           magicToken: b.magic_token,
-          deposit_amount: b.deposit_amount,
-          deposit_paid: b.deposit_paid,
-          deposit_forfeited: b.deposit_forfeited,
           extras: b.extras_snapshot,
           extras_total: b.extras_total
         })));
@@ -227,19 +263,12 @@ export function useStore() {
         setLoading(false);
       }
     };
-
     fetchData();
   }, []);
-
-  const getLocalDateString = (isoOrTs: string | number) => {
-    const d = new Date(isoOrTs);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  };
 
   const getOperatingWindow = useCallback((date: string) => {
     const special = specialHours.find(s => s.date === date);
     if (special) return special.enabled ? { open: special.open!, close: special.close! } : null;
-
     const day = new Date(date + 'T00:00:00').getDay();
     const config = operatingHours.find(h => h.day === day);
     if (config && config.enabled) return { open: config.open, close: config.close };
@@ -251,12 +280,10 @@ export function useStore() {
     const basePrice = tier ? tier.price : 0;
     const extraPrice = SESSION_EXTRAS.find(e => e.hours === extraHours)?.price || 0;
     const baseTotal = basePrice;
-
     const day = new Date(date + 'T00:00:00').getDay();
     const isMidweek = day >= 1 && day <= 3;
     const discountPercent = isMidweek ? MIDWEEK_DISCOUNT_PERCENT : 0;
     const discountAmount = Math.round((baseTotal + extraPrice) * (discountPercent / 100));
-
     let promoDiscountAmount = 0;
     if (promoCode) {
       const promo = promoCodes.find(p => p.code === promoCode && p.enabled);
@@ -265,128 +292,63 @@ export function useStore() {
         else if (promo.fixedOff) promoDiscountAmount = promo.fixedOff;
       }
     }
-
     const totalPrice = baseTotal + extraPrice - discountAmount - promoDiscountAmount;
-
     return { baseTotal, extrasPrice: extraPrice, discountAmount, promoDiscountAmount, totalPrice };
   }, [promoCodes]);
 
   const validateInterval = useCallback((roomId: string, start: string, end: string, excludeBookingId?: string, staffId?: string, skipWindowCheck = false) => {
     const startTs = new Date(start).getTime();
     const endTs = new Date(end).getTime();
-
     if (!skipWindowCheck) {
-      const localDate = getLocalDateString(startTs);
+      const d = new Date(startTs);
+      const localDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       const window = getOperatingWindow(localDate);
-      if (!window) return { ok: false, reason: 'Venue is closed on this date' };
-
+      if (!window) return { ok: false, reason: 'Venue is closed' };
       const openParts = window.open.split(':');
       const closeParts = window.close.split(':');
       const startOfDayTs = new Date(localDate + 'T00:00:00').getTime();
       const openTs = startOfDayTs + (parseInt(openParts[0]) * 3600000) + (parseInt(openParts[1]) * 60000);
       let closeTs = startOfDayTs + (parseInt(closeParts[0]) * 3600000) + (parseInt(closeParts[1]) * 60000);
-
       if (closeTs <= openTs) closeTs += 24 * 3600000;
-
-      if (startTs < openTs || endTs > closeTs) {
-        return { ok: false, reason: 'Requested time is outside operating hours' };
-      }
+      if (startTs < openTs || endTs > closeTs) return { ok: false, reason: 'Outside hours' };
     }
-
-    const conflicts = bookings.filter(b => {
-      if (b.id === excludeBookingId) return false;
-      if (b.status === BookingStatus.CANCELLED) return false;
-      if (b.room_id !== roomId) return false;
-      const bStart = new Date(b.start_at).getTime();
-      const bEnd = new Date(b.end_at).getTime();
-      return (startTs < bEnd && endTs > bStart);
-    });
-    if (conflicts.length > 0) return { ok: false, reason: 'Room is already booked for this time' };
-
-    const blockConflicts = blocks.filter(b => {
-      if (b.roomId !== roomId) return false;
-      const bStart = new Date(b.start_at).getTime();
-      const bEnd = new Date(b.end_at).getTime();
-      return (startTs < bEnd && endTs > bStart);
-    });
-    if (blockConflicts.length > 0) return { ok: false, reason: 'Room is blocked for maintenance' };
-
-    if (staffId) {
-      const staffConflicts = bookings.filter(b => {
-        if (b.id === excludeBookingId) return false;
-        if (b.status === BookingStatus.CANCELLED) return false;
-        if (b.staff_id !== staffId) return false;
-        const bStart = new Date(b.start_at).getTime();
-        const bEnd = new Date(b.end_at).getTime();
-        return (startTs < bEnd && endTs > bStart);
-      });
-      if (staffConflicts.length > 0) return { ok: false, reason: 'Staff member is unavailable' };
-    }
-
+    const conflicts = bookings.filter(b => b.id !== excludeBookingId && b.status !== BookingStatus.CANCELLED && b.room_id === roomId && (startTs < new Date(b.end_at).getTime() && endTs > new Date(b.start_at).getTime()));
+    if (conflicts.length > 0) return { ok: false, reason: 'Room occupied' };
+    const blockConflicts = blocks.filter(b => b.roomId === roomId && (startTs < new Date(b.end_at).getTime() && endTs > new Date(b.start_at).getTime()));
+    if (blockConflicts.length > 0) return { ok: false, reason: 'Room blocked' };
     return { ok: true };
   }, [bookings, blocks, getOperatingWindow]);
 
   const getValidStartTimes = useCallback((date: string, durationMinutes: number, staffId?: string, serviceId?: string) => {
     const window = getOperatingWindow(date);
     if (!window || !date) return [];
-
     const times: string[] = [];
     const openH = parseInt(window.open.split(':')[0]);
     const openM = parseInt(window.open.split(':')[1]);
     let closeH = parseInt(window.close.split(':')[0]);
     const closeM = parseInt(window.close.split(':')[1]);
-
     if (closeH <= openH) closeH += 24;
-
-    const startMinutes = openH * 60 + openM;
-    const endMinutes = closeH * 60 + closeM;
-
-    const nowLocal = new Date();
-    const minLeadTimeMs = ((settings.minDaysBeforeBooking || 0) * 24 * 3600000) + ((settings.minHoursBeforeBooking || 0) * 3600000);
-    const earliestAllowedStart = new Date(nowLocal.getTime() + minLeadTimeMs);
-
+    const startMin = openH * 60 + openM;
+    const endMin = closeH * 60 + closeM;
     const [y, mm, dd] = date.split('-').map(Number);
-    const baseDate = new Date(y, mm - 1, dd, 0, 0, 0);
-
-    for (let m = startMinutes; m <= endMinutes - durationMinutes; m += SLOT_MINUTES) {
-      const slotStart = new Date(baseDate.getTime() + m * 60000);
-      if (slotStart < earliestAllowedStart) continue;
-
+    const baseTs = new Date(y, mm - 1, dd, 0, 0, 0).getTime();
+    for (let m = startMin; m <= endMin - durationMinutes; m += SLOT_MINUTES) {
+      const slotStart = new Date(baseTs + m * 60000);
       const startAt = slotStart.toISOString();
       const endAt = new Date(slotStart.getTime() + durationMinutes * 60000).toISOString();
-
-      const anyRoom = rooms.some(r => validateInterval(r.id, startAt, endAt, undefined, staffId, true).ok);
-      if (anyRoom) {
-        const hStr = slotStart.getHours().toString().padStart(2, '0');
-        const minStr = slotStart.getMinutes().toString().padStart(2, '0');
-        times.push(`${hStr}:${minStr}`);
+      if (rooms.some(r => validateInterval(r.id, startAt, endAt, undefined, staffId, true).ok)) {
+        times.push(`${slotStart.getHours().toString().padStart(2, '0')}:${slotStart.getMinutes().toString().padStart(2, '0')}`);
       }
     }
     return times;
-  }, [rooms, getOperatingWindow, validateInterval, settings.minDaysBeforeBooking, settings.minHoursBeforeBooking]);
+  }, [rooms, getOperatingWindow, validateInterval]);
 
   const findFirstAvailableRoomAndStaff = useCallback((startAt: string, endAt: string, staffId?: string, serviceId?: string) => {
-    if (staffId) {
-      for (const r of rooms) {
-        if (validateInterval(r.id, startAt, endAt, undefined, staffId, true).ok) {
-          return { room_id: r.id, staff_id: staffId };
-        }
-      }
-    }
-    const eligibleStaff = staff.filter(s => s.enabled && (!serviceId || s.servicesOffered.includes(serviceId)));
     for (const r of rooms) {
-      if (eligibleStaff.length > 0) {
-        for (const s of eligibleStaff) {
-          if (validateInterval(r.id, startAt, endAt, undefined, s.id, true).ok) {
-            return { room_id: r.id, staff_id: s.id };
-          }
-        }
-      } else if (validateInterval(r.id, startAt, endAt, undefined, undefined, true).ok) {
-        return { room_id: r.id, staff_id: undefined };
-      }
+      if (validateInterval(r.id, startAt, endAt, undefined, staffId, true).ok) return { room_id: r.id, staff_id: staffId };
     }
     return null;
-  }, [rooms, staff, validateInterval]);
+  }, [rooms, validateInterval]);
 
   const addBooking = useCallback(async (booking: Partial<Booking>) => {
     const magicToken = Math.random().toString(36).substring(2, 15);
@@ -418,38 +380,22 @@ export function useStore() {
       extras_total: booking.extras_total,
       extras_snapshot: booking.extras
     }]).select().single();
-
-    if (error) {
-      console.error("Error adding booking:", error);
-      return null;
-    }
-
+    if (error) { console.error("Error adding booking:", error); return null; }
     const newBooking = { ...data, magicToken: data.magic_token } as Booking;
     setBookings(prev => [...prev, newBooking]);
     return newBooking;
   }, []);
 
   const updateBooking = useCallback(async (id: string, patch: Partial<Booking>) => {
-    const { error } = await supabase.from('bookings').update({
-      status: patch.status,
-      notes: patch.notes,
-      deposit_paid: patch.deposit_paid,
-      deposit_forfeited: patch.deposit_forfeited
-    }).eq('id', id);
-
-    if (error) console.error("Error updating booking:", error);
-    else setBookings(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
+    const { error } = await supabase.from('bookings').update({ status: patch.status, notes: patch.notes, deposit_paid: patch.deposit_paid, deposit_forfeited: patch.deposit_forfeited }).eq('id', id);
+    if (!error) setBookings(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
   }, []);
 
-  const getBookingByMagicToken = useCallback((token: string) => {
-    return bookings.find(b => b.magicToken === token);
-  }, [bookings]);
+  const getBookingByMagicToken = useCallback((token: string) => bookings.find(b => b.magicToken === token), [bookings]);
 
   const canRescheduleOrCancel = useCallback((booking: Booking, type: 'reschedule' | 'cancel') => {
-    const cutoffHours = type === 'reschedule' ? settings.rescheduleCutoffHours : settings.cancelCutoffHours;
-    const start = new Date(booking.start_at).getTime();
-    const now = Date.now();
-    return (start - now) > (cutoffHours * 3600000);
+    const cutoff = type === 'reschedule' ? settings.rescheduleCutoffHours : settings.cancelCutoffHours;
+    return (new Date(booking.start_at).getTime() - Date.now()) > (cutoff * 3600000);
   }, [settings]);
 
   const getEnabledExtras = useCallback(() => extras.filter(e => e.enabled), [extras]);
@@ -458,103 +404,66 @@ export function useStore() {
     return Object.entries(selection).reduce((acc, [id, qty]) => {
       const extra = extras.find(e => e.id === id);
       if (!extra) return acc;
-      const unitPrice = extra.pricingMode === 'per_person' ? extra.price * guests : extra.price;
-      return acc + (unitPrice * qty);
+      return acc + ((extra.pricingMode === 'per_person' ? extra.price * guests : extra.price) * qty);
     }, 0);
   }, [extras]);
 
   const buildBookingExtrasSnapshot = useCallback((selection: Record<string, number>, guests: number) => {
     return Object.entries(selection).map(([id, qty]) => {
       const extra = extras.find(e => e.id === id)!;
-      const priceSnapshot = extra.price;
-      const unitTotal = extra.pricingMode === 'per_person' ? priceSnapshot * guests : priceSnapshot;
-      return { extraId: id, nameSnapshot: extra.name, priceSnapshot, pricingModeSnapshot: extra.pricingMode, quantity: qty, lineTotal: unitTotal * qty };
+      const unit = extra.pricingMode === 'per_person' ? extra.price * guests : extra.price;
+      return { extraId: id, nameSnapshot: extra.name, priceSnapshot: extra.price, pricingModeSnapshot: extra.pricingMode, quantity: qty, lineTotal: unit * qty };
     });
   }, [extras]);
 
   const addWaitlistEntry = useCallback(async (entry: Partial<WaitlistEntry>) => {
-    const { data, error } = await supabase.from('waitlist').insert([{
-      name: entry.name,
-      phone: entry.phone,
-      preferred_date: entry.preferredDate,
-      preferred_time: entry.preferredTime,
-      guests: entry.guests,
-      status: 'active'
-    }]).select().single();
-
-    if (error) {
-      console.error("Error adding waitlist entry:", error);
-      return { ok: false, reason: error.message };
-    }
-
+    const { data, error } = await supabase.from('waitlist').insert([{ name: entry.name, phone: entry.phone, preferred_date: entry.preferredDate, preferred_time: entry.preferredTime, guests: entry.guests, status: 'active' }]).select().single();
+    if (error) return { ok: false, reason: error.message };
     const newEntry = { ...data, preferredDate: data.preferred_date, preferredTime: data.preferred_time } as WaitlistEntry;
     setWaitlist(prev => [...prev, newEntry]);
     return { ok: true };
   }, []);
 
   const getWaitlistForDate = useCallback((date: string) => waitlist.filter(w => w.preferredDate === date), [waitlist]);
-
   const setWaitlistStatus = useCallback(async (id: string, status: WaitlistEntry['status']) => {
     const { error } = await supabase.from('waitlist').update({ status }).eq('id', id);
-    if (error) console.error("Error updating waitlist status:", error);
-    else setWaitlist(prev => prev.map(w => w.id === id ? { ...w, status } : w));
+    if (!error) setWaitlist(prev => prev.map(w => w.id === id ? { ...w, status } : w));
   }, []);
-
   const deleteWaitlistEntry = useCallback(async (id: string) => {
     const { error } = await supabase.from('waitlist').delete().eq('id', id);
-    if (error) console.error("Error deleting waitlist entry:", error);
-    else setWaitlist(prev => prev.filter(w => w.id !== id));
+    if (!error) setWaitlist(prev => prev.filter(w => w.id !== id));
   }, []);
 
-  const buildWaitlistMessage = useCallback((data: any) => `Hi, I'd like to join the waitlist for ${data.preferredDate}${data.preferredTime ? ` at ${data.preferredTime}` : ''} for ${data.guests} guests. My name is ${data.name || 'a customer'}.`, []);
+  const buildWaitlistMessage = useCallback((data: any) => `Hi, waitlist for ${data.preferredDate} at ${data.preferredTime || 'any time'} for ${data.guests} guests.`, []);
   const buildWhatsAppUrl = useCallback((message: string) => `${WHATSAPP_URL}?text=${encodeURIComponent(message)}`, []);
 
   const getBusyIntervals = useCallback((date: string, roomId: string) => {
-    const dayBookings = bookings.filter(b => {
-      if (b.room_id !== roomId || b.status === BookingStatus.CANCELLED) return false;
-      return getLocalDateString(b.start_at) === date;
-    });
-    const dayBlocks = blocks.filter(b => {
-      if (b.roomId !== roomId) return false;
-      return getLocalDateString(b.start_at) === date;
-    });
+    const dayB = bookings.filter(b => b.room_id === roomId && b.status !== BookingStatus.CANCELLED && b.start_at.startsWith(date));
+    const dayBl = blocks.filter(b => b.roomId === roomId && b.start_at.startsWith(date));
     return [
-      ...dayBookings.map(b => ({ id: b.id, type: 'booking' as const, start: new Date(b.start_at).getTime(), end: new Date(b.end_at).getTime(), customer_name: b.customer_name, status: b.status })),
-      ...dayBlocks.map(b => ({ id: b.id, type: 'block' as const, start: new Date(b.start_at).getTime(), end: new Date(b.end_at).getTime(), reason: b.reason }))
+      ...dayB.map(b => ({ id: b.id, type: 'booking' as const, start: new Date(b.start_at).getTime(), end: new Date(b.end_at).getTime(), customer_name: b.customer_name, status: b.status })),
+      ...dayBl.map(b => ({ id: b.id, type: 'block' as const, start: new Date(b.start_at).getTime(), end: new Date(b.end_at).getTime(), reason: b.reason }))
     ];
   }, [bookings, blocks]);
 
-  const getBookingsForDate = useCallback((date: string) => bookings.filter(b => getLocalDateString(b.start_at) === date), [bookings]);
-  const getBlocksForDate = useCallback((date: string) => blocks.filter(b => getLocalDateString(b.start_at) === date), [blocks]);
+  const getBookingsForDate = useCallback((date: string) => bookings.filter(b => b.start_at.startsWith(date)), [bookings]);
+  const getBlocksForDate = useCallback((date: string) => blocks.filter(b => b.start_at.startsWith(date)), [blocks]);
 
   const addBlock = useCallback(async (block: Partial<RoomBlock>) => {
-    const { data, error } = await supabase.from('room_blocks').insert([{
-      room_id: block.roomId,
-      start_at: block.start_at,
-      end_at: block.end_at,
-      reason: block.reason
-    }]).select().single();
-
-    if (error) console.error("Error adding block:", error);
-    else setBlocks(prev => [...prev, { ...data, roomId: data.room_id, createdAt: new Date(data.created_at).getTime() } as RoomBlock]);
+    const { data, error } = await supabase.from('room_blocks').insert([{ room_id: block.roomId, start_at: block.start_at, end_at: block.end_at, reason: block.reason }]).select().single();
+    if (!error) setBlocks(prev => [...prev, { ...data, roomId: data.room_id, createdAt: Date.now() } as RoomBlock]);
   }, []);
-
   const deleteBlock = useCallback(async (id: string) => {
     const { error } = await supabase.from('room_blocks').delete().eq('id', id);
-    if (error) console.error("Error deleting block:", error);
-    else setBlocks(prev => prev.filter(b => b.id !== id));
+    if (!error) setBlocks(prev => prev.filter(b => b.id !== id));
   }, []);
-
   const toggleRecurringBlock = useCallback(async (id: string, enabled: boolean) => {
     const { error } = await supabase.from('recurring_blocks').update({ enabled }).eq('id', id);
-    if (error) console.error("Error toggling recurring block:", error);
-    else setRecurringBlocks(prev => prev.map(b => b.id === id ? { ...b, enabled } : b));
+    if (!error) setRecurringBlocks(prev => prev.map(b => b.id === id ? { ...b, enabled } : b));
   }, []);
-
   const deleteRecurringBlock = useCallback(async (id: string) => {
     const { error } = await supabase.from('recurring_blocks').delete().eq('id', id);
-    if (error) console.error("Error deleting recurring block:", error);
-    else setRecurringBlocks(prev => prev.filter(b => b.id !== id));
+    if (!error) setRecurringBlocks(prev => prev.filter(b => b.id !== id));
   }, []);
 
   const updateSettings = useCallback(async (patch: Partial<VenueSettings>) => {
@@ -567,47 +476,20 @@ export function useStore() {
       min_days_before_booking: patch.minDaysBeforeBooking,
       min_hours_before_booking: patch.minHoursBeforeBooking
     }).eq('id', 1);
-
-    if (error) console.error("Error updating settings:", error);
-    else setSettings(prev => ({ ...prev, ...patch }));
+    if (!error) setSettings(prev => ({ ...prev, ...patch }));
   }, []);
 
   const addPromoCode = useCallback(async (promo: Partial<PromoCode>) => {
-    const { data, error } = await supabase.from('promo_codes').insert([{
-      code: promo.code,
-      enabled: promo.enabled,
-      percent_off: promo.percentOff,
-      fixed_off: promo.fixedOff,
-      start_date: promo.startDate,
-      end_date: promo.endDate,
-      min_guests: promo.minGuests,
-      max_uses: promo.maxUses,
-      uses: 0
-    }]).select().single();
-
-    if (error) console.error("Error adding promo code:", error);
-    else setPromoCodes(prev => [...prev, { ...data, percentOff: data.percent_off, fixedOff: data.fixed_off, startDate: data.start_date, endDate: data.end_date, minGuests: data.min_guests, maxUses: data.max_uses } as PromoCode]);
+    const { data, error } = await supabase.from('promo_codes').insert([{ ...promo, uses: 0 }]).select().single();
+    if (!error) setPromoCodes(prev => [...prev, data]);
   }, []);
-
   const updatePromoCode = useCallback(async (id: string, patch: Partial<PromoCode>) => {
-    const { error } = await supabase.from('promo_codes').update({
-      enabled: patch.enabled,
-      percent_off: patch.percentOff,
-      fixed_off: patch.fixedOff,
-      start_date: patch.startDate,
-      end_date: patch.endDate,
-      min_guests: patch.minGuests,
-      max_uses: patch.maxUses
-    }).eq('id', id);
-
-    if (error) console.error("Error updating promo code:", error);
-    else setPromoCodes(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
+    await supabase.from('promo_codes').update(patch).eq('id', id);
+    setPromoCodes(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
   }, []);
-
   const deletePromoCode = useCallback(async (id: string) => {
-    const { error } = await supabase.from('promo_codes').delete().eq('id', id);
-    if (error) console.error("Error deleting promo code:", error);
-    else setPromoCodes(prev => prev.filter(p => p.id !== id));
+    await supabase.from('promo_codes').delete().eq('id', id);
+    setPromoCodes(prev => prev.filter(p => p.id !== id));
   }, []);
 
   const getCalendarSyncConfig = useCallback(() => calSync, [calSync]);
@@ -615,162 +497,82 @@ export function useStore() {
   const regenerateCalendarToken = useCallback(() => setCalSync(prev => ({ ...prev, token: Math.random().toString(36).substring(7), lastRegeneratedAt: new Date().toISOString() })), []);
 
   const addCustomer = useCallback(async (customer: Partial<Customer>) => {
-    const { data, error } = await supabase.from('customers').insert([{
-      name: customer.name,
-      email: customer.email,
-      phone: customer.phone,
-      notes: customer.notes,
-      total_bookings: 0,
-      total_spend: 0
-    }]).select().single();
-
-    if (error) {
-      console.error("Error adding customer:", error);
-      return null;
-    }
-
-    const newCustomer = {
-      ...data,
-      totalBookings: data.total_bookings,
-      totalSpend: data.total_spend,
-      createdAt: new Date(data.created_at).getTime(),
-      updatedAt: new Date(data.updated_at).getTime()
-    } as Customer;
-    setCustomers(prev => [...prev, newCustomer]);
-    return newCustomer;
+    const { data, error } = await supabase.from('customers').insert([{ ...customer, total_bookings: 0, total_spend: 0 }]).select().single();
+    if (error) return null;
+    const c = { ...data, totalBookings: data.total_bookings, totalSpend: data.total_spend, createdAt: Date.now(), updatedAt: Date.now() } as Customer;
+    setCustomers(prev => [...prev, c]);
+    return c;
   }, []);
-
   const updateCustomer = useCallback(async (id: string, patch: Partial<Customer>) => {
-    const { error } = await supabase.from('customers').update({
-      name: patch.name,
-      email: patch.email,
-      phone: patch.phone,
-      notes: patch.notes,
-      updated_at: new Date().toISOString()
-    }).eq('id', id);
-
-    if (error) console.error("Error updating customer:", error);
-    else setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...patch, updatedAt: Date.now() } : c));
+    await supabase.from('customers').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+    setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...patch, updatedAt: Date.now() } : c));
   }, []);
-
   const deleteCustomer = useCallback(async (id: string) => {
-    const { error } = await supabase.from('customers').delete().eq('id', id);
-    if (error) console.error("Error deleting customer:", error);
-    else setCustomers(prev => prev.filter(c => c.id !== id));
+    await supabase.from('customers').delete().eq('id', id);
+    setCustomers(prev => prev.filter(c => c.id !== id));
   }, []);
 
   const updateOperatingHours = useCallback(async (day: number, patch: Partial<DayOperatingHours>) => {
-    const { error } = await supabase.from('operating_hours').update({
-      open_time: patch.open,
-      close_time: patch.close,
-      enabled: patch.enabled
-    }).eq('day', day);
-
-    if (error) console.error("Error updating operating hours:", error);
-    else setOperatingHours(prev => prev.map(oh => oh.day === day ? { ...oh, ...patch } : oh));
+    await supabase.from('operating_hours').update({ open_time: patch.open, close_time: patch.close, enabled: patch.enabled }).eq('day', day);
+    setOperatingHours(prev => prev.map(oh => oh.day === day ? { ...oh, ...patch } : oh));
   }, []);
 
   const addService = useCallback(async (service: Partial<Service>) => {
-    const { data, error } = await supabase.from('services').insert([{
-      name: service.name,
-      duration_minutes: service.durationMinutes,
-      base_price: service.basePrice,
-      description: service.description,
-      enabled: true
-    }]).select().single();
-
-    if (error) console.error("Error adding service:", error);
-    else setServices(prev => [...prev, { ...data, durationMinutes: data.duration_minutes, basePrice: data.base_price } as Service]);
+    const { data, error } = await supabase.from('services').insert([service]).select().single();
+    if (!error) setServices(prev => [...prev, data]);
   }, []);
-
   const updateService = useCallback(async (id: string, patch: Partial<Service>) => {
-    const { error } = await supabase.from('services').update({
-      name: patch.name,
-      duration_minutes: patch.durationMinutes,
-      base_price: patch.basePrice,
-      description: patch.description,
-      enabled: patch.enabled
-    }).eq('id', id);
-
-    if (error) console.error("Error updating service:", error);
-    else setServices(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
+    await supabase.from('services').update(patch).eq('id', id);
+    setServices(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
   }, []);
-
   const deleteService = useCallback(async (id: string) => {
-    const { error } = await supabase.from('services').delete().eq('id', id);
-    if (error) console.error("Error deleting service:", error);
-    else setServices(prev => prev.filter(s => s.id !== id));
+    await supabase.from('services').delete().eq('id', id);
+    setServices(prev => prev.filter(s => s.id !== id));
   }, []);
 
   const addExtra = useCallback(async (extra: Partial<Extra>) => {
-    const { data, error } = await supabase.from('extras').insert([{
-      name: extra.name,
-      price: extra.price,
-      pricing_mode: extra.pricingMode,
-      enabled: true,
-      sort_order: extras.length + 1
-    }]).select().single();
-
-    if (error) console.error("Error adding extra:", error);
-    else setExtras(prev => [...prev, { ...data, pricingMode: data.pricing_mode, sortOrder: data.sort_order } as Extra]);
+    const { data, error } = await supabase.from('extras').insert([extra]).select().single();
+    if (!error) setExtras(prev => [...prev, data]);
   }, []);
-
   const updateExtra = useCallback(async (id: string, patch: Partial<Extra>) => {
-    const { error } = await supabase.from('extras').update({
-      name: patch.name,
-      price: patch.price,
-      pricing_mode: patch.pricingMode,
-      enabled: patch.enabled,
-      sort_order: patch.sortOrder
-    }).eq('id', id);
-
-    if (error) console.error("Error updating extra:", error);
-    else setExtras(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
+    await supabase.from('extras').update(patch).eq('id', id);
+    setExtras(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
   }, []);
-
   const deleteExtra = useCallback(async (id: string) => {
-    const { error } = await supabase.from('extras').delete().eq('id', id);
-    if (error) console.error("Error deleting extra:", error);
-    else setExtras(prev => prev.filter(e => e.id !== id));
+    await supabase.from('extras').delete().eq('id', id);
+    setExtras(prev => prev.filter(e => e.id !== id));
   }, []);
 
   const updateStaff = useCallback(async (id: string, patch: Partial<StaffMember>) => {
-    const { error } = await supabase.from('staff_members').update({
-      name: patch.name,
-      enabled: patch.enabled,
-      services_offered: patch.servicesOffered,
-      buffer_before: patch.bufferBefore,
-      buffer_after: patch.bufferAfter
-    }).eq('id', id);
-
-    if (error) console.error("Error updating staff:", error);
-    else setStaff(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
+    await supabase.from('staff_members').update(patch).eq('id', id);
+    setStaff(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
   }, []);
-
   const addStaff = useCallback(async (member: Partial<StaffMember>) => {
-    const { data, error } = await supabase.from('staff_members').insert([{
-      name: member.name,
-      enabled: true,
-      services_offered: member.servicesOffered || [],
-      buffer_before: member.bufferBefore || 0,
-      buffer_after: member.bufferAfter || 0
-    }]).select().single();
-
-    if (error) console.error("Error adding staff:", error);
-    else setStaff(prev => [...prev, { ...data, servicesOffered: data.services_offered, bufferBefore: data.buffer_before, bufferAfter: data.buffer_after } as StaffMember]);
+    const { data, error } = await supabase.from('staff_members').insert([member]).select().single();
+    if (!error) setStaff(prev => [...prev, data]);
   }, []);
-
   const deleteStaff = useCallback(async (id: string) => {
-    const { error } = await supabase.from('staff_members').delete().eq('id', id);
-    if (error) console.error("Error deleting staff:", error);
-    else setStaff(prev => prev.filter(s => s.id !== id));
+    await supabase.from('staff_members').delete().eq('id', id);
+    setStaff(prev => prev.filter(s => s.id !== id));
   }, []);
 
-  return {
-    loading, bookings, rooms, services, staff, blocks, recurringBlocks, specialHours, settings, promoCodes, customers, waitlist, extras, operatingHours,
+  const value = useMemo(() => ({
+    loading, bookings, rooms, services, staff, blocks, recurringBlocks, specialHours, settings, promoCodes, customers, waitlist, extras, operatingHours, calSync,
     getOperatingWindow, calculatePricing, getValidStartTimes, findFirstAvailableRoomAndStaff, addBooking, updateBooking, getBookingByMagicToken, canRescheduleOrCancel,
     getEnabledExtras, computeExtrasTotal, buildBookingExtrasSnapshot, addWaitlistEntry, getWaitlistForDate, setWaitlistStatus, deleteWaitlistEntry, buildWaitlistMessage, buildWhatsAppUrl, getBusyIntervals, getBookingsForDate, getBlocksForDate,
     addBlock, deleteBlock, toggleRecurringBlock, deleteRecurringBlock, updateSettings, addPromoCode, updatePromoCode, deletePromoCode, getCalendarSyncConfig, setCalendarSyncConfig, regenerateCalendarToken, validateInterval, addCustomer, updateCustomer, deleteCustomer,
     updateOperatingHours, addService, updateService, deleteService, addExtra, updateExtra, deleteExtra, updateStaff, addStaff, deleteStaff
-  };
+  }), [loading, bookings, rooms, services, staff, blocks, recurringBlocks, specialHours, settings, promoCodes, customers, waitlist, extras, operatingHours, calSync, getOperatingWindow, calculatePricing, getValidStartTimes, findFirstAvailableRoomAndStaff, addBooking, updateBooking, getBookingByMagicToken, canRescheduleOrCancel, getEnabledExtras, computeExtrasTotal, buildBookingExtrasSnapshot, addWaitlistEntry, getWaitlistForDate, setWaitlistStatus, deleteWaitlistEntry, buildWaitlistMessage, buildWhatsAppUrl, getBusyIntervals, getBookingsForDate, getBlocksForDate, addBlock, deleteBlock, toggleRecurringBlock, deleteRecurringBlock, updateSettings, addPromoCode, updatePromoCode, deletePromoCode, getCalendarSyncConfig, setCalendarSyncConfig, regenerateCalendarToken, validateInterval, addCustomer, updateCustomer, deleteCustomer, updateOperatingHours, addService, updateService, deleteService, addExtra, updateExtra, deleteExtra, updateStaff, addStaff, deleteStaff]);
+
+  return (
+    <StoreContext.Provider value= { value } >
+    { children }
+    </StoreContext.Provider>
+  );
+}
+
+export function useStore() {
+  const context = useContext(StoreContext);
+  if (!context) throw new Error('useStore must be used within a StoreProvider');
+  return context;
 }

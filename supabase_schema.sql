@@ -1,9 +1,24 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- Drop existing tables to recreate with correct defaults
+DROP TABLE IF EXISTS room_blocks CASCADE;
+DROP TABLE IF EXISTS recurring_blocks CASCADE;
+DROP TABLE IF EXISTS bookings CASCADE;
+DROP TABLE IF EXISTS staff_members CASCADE;
+DROP TABLE IF EXISTS services CASCADE;
+DROP TABLE IF EXISTS rooms CASCADE;
+DROP TABLE IF EXISTS customers CASCADE;
+DROP TABLE IF EXISTS waitlist CASCADE;
+DROP TABLE IF EXISTS venue_settings CASCADE;
+DROP TABLE IF EXISTS operating_hours CASCADE;
+DROP TABLE IF EXISTS special_hours CASCADE;
+DROP TABLE IF EXISTS promo_codes CASCADE;
+DROP TABLE IF EXISTS extras CASCADE;
+
 -- Rooms Table
 CREATE TABLE rooms (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id TEXT PRIMARY KEY,
   code TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   min_capacity INTEGER NOT NULL DEFAULT 8,
@@ -14,7 +29,7 @@ CREATE TABLE rooms (
 
 -- Services Table
 CREATE TABLE services (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   duration_minutes INTEGER NOT NULL,
   base_price NUMERIC NOT NULL DEFAULT 0,
@@ -25,7 +40,7 @@ CREATE TABLE services (
 
 -- Staff Members Table
 CREATE TABLE staff_members (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
   name TEXT NOT NULL,
   enabled BOOLEAN DEFAULT true,
   services_offered TEXT[] DEFAULT '{}',
@@ -36,7 +51,7 @@ CREATE TABLE staff_members (
 
 -- Customers Table
 CREATE TABLE customers (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   phone TEXT,
@@ -50,14 +65,14 @@ CREATE TABLE customers (
 
 -- Bookings Table
 CREATE TABLE bookings (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  room_id UUID REFERENCES rooms(id),
+  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  room_id TEXT REFERENCES rooms(id),
   room_name TEXT NOT NULL,
-  service_id UUID REFERENCES services(id),
-  staff_id UUID REFERENCES staff_members(id),
+  service_id TEXT REFERENCES services(id),
+  staff_id TEXT REFERENCES staff_members(id),
   start_at TIMESTAMPTZ NOT NULL,
   end_at TIMESTAMPTZ NOT NULL,
-  status TEXT NOT NULL DEFAULT 'PENDING', -- PENDING, CONFIRMED, CANCELLED, NO_SHOW
+  status TEXT NOT NULL DEFAULT 'PENDING',
   guests INTEGER NOT NULL,
   customer_name TEXT NOT NULL,
   customer_email TEXT NOT NULL,
@@ -76,26 +91,26 @@ CREATE TABLE bookings (
   deposit_paid BOOLEAN DEFAULT false,
   deposit_forfeited BOOLEAN DEFAULT false,
   extras_total NUMERIC DEFAULT 0,
-  extras_snapshot JSONB DEFAULT '[]', -- Snapshot of selected extras at booking time
+  extras_snapshot JSONB DEFAULT '[]',
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- Waitlist Table
 CREATE TABLE waitlist (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
   name TEXT NOT NULL,
   phone TEXT NOT NULL,
   preferred_date DATE NOT NULL,
   preferred_time TIME,
   guests INTEGER NOT NULL,
-  status TEXT DEFAULT 'active', -- active, contacted, closed
+  status TEXT DEFAULT 'active',
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- Room Blocks Table
 CREATE TABLE room_blocks (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  room_id UUID REFERENCES rooms(id),
+  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  room_id TEXT REFERENCES rooms(id),
   start_at TIMESTAMPTZ NOT NULL,
   end_at TIMESTAMPTZ NOT NULL,
   reason TEXT,
@@ -104,9 +119,9 @@ CREATE TABLE room_blocks (
 
 -- Recurring Blocks Table
 CREATE TABLE recurring_blocks (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  day_of_week INTEGER NOT NULL, -- 0-6
-  room_id UUID REFERENCES rooms(id),
+  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  day_of_week INTEGER NOT NULL,
+  room_id TEXT REFERENCES rooms(id),
   start_time TIME NOT NULL,
   end_time TIME NOT NULL,
   reason TEXT,
@@ -114,7 +129,7 @@ CREATE TABLE recurring_blocks (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Venue Settings Table (Single row)
+-- Venue Settings Table
 CREATE TABLE venue_settings (
   id INTEGER PRIMARY KEY DEFAULT 1,
   cancel_cutoff_hours INTEGER DEFAULT 24,
@@ -130,7 +145,7 @@ CREATE TABLE venue_settings (
 
 -- Operating Hours
 CREATE TABLE operating_hours (
-  day INTEGER PRIMARY KEY, -- 0-6
+  day INTEGER PRIMARY KEY,
   open_time TIME NOT NULL,
   close_time TIME NOT NULL,
   enabled BOOLEAN DEFAULT true
@@ -146,7 +161,7 @@ CREATE TABLE special_hours (
 
 -- Promo Codes
 CREATE TABLE promo_codes (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
   code TEXT NOT NULL UNIQUE,
   enabled BOOLEAN DEFAULT true,
   percent_off NUMERIC,
@@ -161,77 +176,69 @@ CREATE TABLE promo_codes (
 
 -- Extras Table
 CREATE TABLE extras (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT,
   price NUMERIC NOT NULL,
-  pricing_mode TEXT NOT NULL, -- flat, per_person
+  pricing_mode TEXT NOT NULL,
   enabled BOOLEAN DEFAULT true,
   sort_order INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Insert Default Data
-INSERT INTO venue_settings (id) VALUES (1);
+-- Seed Data
+INSERT INTO venue_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO operating_hours (day, open_time, close_time, enabled) VALUES
-(0, '12:00', '23:00', true),
-(1, '12:00', '23:00', true),
-(2, '12:00', '23:00', true),
-(3, '12:00', '23:00', true),
-(4, '12:00', '23:00', true),
-(5, '12:00', '02:00', true),
-(6, '12:00', '02:00', true);
+(0, '15:00', '03:00', false),
+(1, '22:00', '03:00', true),
+(2, '22:00', '03:00', true),
+(3, '17:00', '03:00', true),
+(4, '17:00', '03:00', true),
+(5, '17:00', '03:00', true),
+(6, '15:00', '03:00', true)
+ON CONFLICT (day) DO NOTHING;
 
-INSERT INTO rooms (code, name, min_capacity, max_capacity) VALUES
-('A', 'The Platinum Suite', 8, 20),
-('B', 'The Royal Box', 12, 30),
-('C', 'The Studio', 4, 10);
+INSERT INTO rooms (id, code, name, min_capacity, max_capacity) VALUES
+('room-a', 'A', 'Terrace', 8, 100),
+('room-b', 'B', 'Vox', 8, 100),
+('room-c', 'C', 'Attic', 8, 100)
+ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO services (name, duration_minutes, base_price) VALUES
-('Standard Karaoke Session', 120, 0);
+INSERT INTO services (id, name, duration_minutes, base_price) VALUES
+('srv-1', 'Standard Karaoke Session', 120, 0)
+ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO extras (name, price, pricing_mode, sort_order) VALUES
-('Pizza Party Platter', 45, 'flat', 1),
-('Bottle of Prosecco', 35, 'flat', 2),
-('Unlimited Soft Drinks', 5, 'per_person', 3);
+INSERT INTO extras (id, name, price, pricing_mode, sort_order) VALUES
+('ext-1', 'Pizza Party Platter', 45, 'flat', 1),
+('ext-2', 'Bottle of Prosecco', 35, 'flat', 2),
+('ext-3', 'Unlimited Soft Drinks', 5, 'per_person', 3)
+ON CONFLICT (id) DO NOTHING;
 
--- RLS Policies (Simplest: Allow all for now as requested)
+-- RLS Policies
 ALTER TABLE rooms ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access" ON rooms FOR ALL USING (true);
-
 ALTER TABLE services ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access" ON services FOR ALL USING (true);
-
 ALTER TABLE staff_members ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access" ON staff_members FOR ALL USING (true);
-
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access" ON customers FOR ALL USING (true);
-
 ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access" ON bookings FOR ALL USING (true);
-
 ALTER TABLE waitlist ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access" ON waitlist FOR ALL USING (true);
-
 ALTER TABLE room_blocks ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access" ON room_blocks FOR ALL USING (true);
-
 ALTER TABLE recurring_blocks ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access" ON recurring_blocks FOR ALL USING (true);
-
 ALTER TABLE venue_settings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access" ON venue_settings FOR ALL USING (true);
-
 ALTER TABLE operating_hours ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access" ON operating_hours FOR ALL USING (true);
-
 ALTER TABLE special_hours ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access" ON special_hours FOR ALL USING (true);
-
 ALTER TABLE promo_codes ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access" ON promo_codes FOR ALL USING (true);
-
 ALTER TABLE extras ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access" ON extras FOR ALL USING (true);

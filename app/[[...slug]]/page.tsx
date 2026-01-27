@@ -9,6 +9,7 @@ import Admin from '@/pages/Admin';
 import ManageBooking from '@/pages/ManageBooking';
 import { WHATSAPP_URL, LOGO_URL } from '@/constants';
 import { RouterContext, RouteState } from '@/lib/routerShim';
+import { StoreProvider } from '@/store';
 
 function Header({ navigate }: { navigate: (p: string) => void }) {
   return (
@@ -107,44 +108,46 @@ export default function Page() {
 
   return (
     <RouterContext.Provider value={{ route, navigate, back }}>
-      <div className="min-h-screen bg-zinc-950 text-zinc-50 pt-16 font-sans flex flex-col">
-        <Header navigate={navigate} />
+      <StoreProvider>
+        <div className="min-h-screen bg-zinc-950 text-zinc-50 pt-16 font-sans flex flex-col">
+          <Header navigate={navigate} />
 
-        <main className="w-full flex-grow relative">
-          {renderContent()}
-        </main>
+          <main className="w-full flex-grow relative">
+            {renderContent()}
+          </main>
 
-        <footer className="bg-zinc-950 border-t border-zinc-900 py-16 px-4 sm:px-10 mt-20">
-          <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start gap-12">
-            <div className="space-y-4">
-              <img src={LOGO_URL} alt="LKC" className="h-8 opacity-40 grayscale" />
-              <p className="text-zinc-600 text-xs max-w-xs leading-relaxed uppercase font-bold tracking-widest">Premium nightlife for groups of 8 to 100 in the heart of the city.</p>
-            </div>
-            <div className="grid grid-cols-2 gap-20">
+          <footer className="bg-zinc-950 border-t border-zinc-900 py-16 px-4 sm:px-10 mt-20">
+            <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start gap-12">
               <div className="space-y-4">
-                <h4 className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Discover</h4>
-                <ul className="text-xs space-y-2 text-zinc-500 uppercase font-bold tracking-tighter list-none p-0">
-                  <li><button onClick={() => navigate('/')} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white uppercase font-bold tracking-tighter text-xs text-left">Book Room</button></li>
-                  <li><a href="#" className="no-underline text-inherit">Packages</a></li>
-                  <li><a href="#" className="no-underline text-inherit">Catering</a></li>
-                </ul>
+                <img src={LOGO_URL} alt="LKC" className="h-8 opacity-40 grayscale" />
+                <p className="text-zinc-600 text-xs max-w-xs leading-relaxed uppercase font-bold tracking-widest">Premium nightlife for groups of 8 to 100 in the heart of the city.</p>
               </div>
-              <div className="space-y-4">
-                <h4 className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Company</h4>
-                <ul className="text-xs space-y-2 text-zinc-500 uppercase font-bold tracking-tighter list-none p-0">
-                  <li><button onClick={() => navigate('/admin')} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white uppercase font-bold tracking-tighter text-xs text-left">Staff Console</button></li>
-                  <li><a href="#" className="no-underline text-inherit">Terms</a></li>
-                  <li><a href="#" className="no-underline text-inherit">Privacy</a></li>
-                </ul>
+              <div className="grid grid-cols-2 gap-20">
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Discover</h4>
+                  <ul className="text-xs space-y-2 text-zinc-500 uppercase font-bold tracking-tighter list-none p-0">
+                    <li><button onClick={() => navigate('/')} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white uppercase font-bold tracking-tighter text-xs text-left">Book Room</button></li>
+                    <li><a href="#" className="no-underline text-inherit">Packages</a></li>
+                    <li><a href="#" className="no-underline text-inherit">Catering</a></li>
+                  </ul>
+                </div>
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Company</h4>
+                  <ul className="text-xs space-y-2 text-zinc-500 uppercase font-bold tracking-tighter list-none p-0">
+                    <li><button onClick={() => navigate('/admin')} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white uppercase font-bold tracking-tighter text-xs text-left">Staff Console</button></li>
+                    <li><a href="#" className="no-underline text-inherit">Terms</a></li>
+                    <li><a href="#" className="no-underline text-inherit">Privacy</a></li>
+                  </ul>
+                </div>
               </div>
             </div>
-          </div>
-          <div className="max-w-7xl mx-auto border-t border-zinc-900 mt-16 pt-8 text-[9px] text-zinc-700 uppercase tracking-widest font-bold">
-            &copy; {new Date().getFullYear()} London Karaoke Club. Professional Standards Only.
-          </div>
-        </footer>
-        <FloatingWhatsApp currentPath={route.path} />
-      </div>
+            <div className="max-w-7xl mx-auto border-t border-zinc-900 mt-16 pt-8 text-[9px] text-zinc-700 uppercase tracking-widest font-bold">
+              &copy; {new Date().getFullYear()} London Karaoke Club. Professional Standards Only.
+            </div>
+          </footer>
+          <FloatingWhatsApp currentPath={route.path} />
+        </div>
+      </StoreProvider>
     </RouterContext.Provider>
   );
 }
