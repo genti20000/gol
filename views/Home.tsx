@@ -86,8 +86,9 @@ export default function Home() {
                     value={serviceId}
                     onChange={(e) => setServiceId(e.target.value)}
                     className="w-full h-14 px-4 input-luxury text-sm font-semibold"
+                    style={{ backgroundColor: '#18191b', color: 'white' }}
                   >
-                    {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    {services.map(s => <option key={s.id} value={s.id} style={{ backgroundColor: '#18191b' }}>{s.name}</option>)}
                   </select>
                 </div>
 
@@ -98,8 +99,9 @@ export default function Home() {
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
                     className="w-full h-14 px-4 input-luxury text-sm font-semibold"
+                    style={{ backgroundColor: '#18191b', color: 'white' }}
                   >
-                    {days.map(d => <option key={d.iso} value={d.iso}>{d.label}</option>)}
+                    {days.map(d => <option key={d.iso} value={d.iso} style={{ backgroundColor: '#18191b' }}>{d.label}</option>)}
                   </select>
                 </div>
 
@@ -112,8 +114,8 @@ export default function Home() {
                         key={s}
                         onClick={() => setGuests(s)}
                         className={`h-12 rounded-lg text-xs font-bold transition-all border ${guests === s
-                            ? 'border-amber-500 bg-amber-500/10 text-amber-500'
-                            : 'border-zinc-800 bg-black/40 text-zinc-500 hover:border-zinc-600'
+                          ? 'border-amber-500 bg-amber-500/10 text-amber-500'
+                          : 'border-zinc-800 bg-black/40 text-zinc-500 hover:border-zinc-600'
                           }`}
                       >
                         {s === 100 ? '100+' : s}
@@ -131,8 +133,8 @@ export default function Home() {
                         key={e.hours}
                         onClick={() => setExtraHours(e.hours)}
                         className={`h-12 px-4 rounded-lg text-xs font-bold flex justify-between items-center transition-all border ${extraHours === e.hours
-                            ? 'border-amber-500 bg-amber-500/10 text-amber-500'
-                            : 'border-zinc-800 bg-black/40 text-zinc-500 hover:border-zinc-600'
+                          ? 'border-amber-500 bg-amber-500/10 text-amber-500'
+                          : 'border-zinc-800 bg-black/40 text-zinc-500 hover:border-zinc-600'
                           }`}
                       >
                         <span>{e.hours + 2} Hours</span>
