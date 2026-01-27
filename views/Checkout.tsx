@@ -3,8 +3,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
-import { BookingStatus, Extra } from '@/types';
-import { getGuestLabel } from '@/constants';
+import { BookingStatus, RateType, Extra } from '@/types';
+import { LOGO_URL, BASE_DURATION_HOURS, getGuestLabel } from '@/constants';
 
 export default function Checkout() {
   const { route, navigate, back } = useRouterShim();
@@ -43,6 +43,7 @@ export default function Checkout() {
       return;
     }
 
+    // Simulate Payment
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     const bookingExtras = store.buildBookingExtrasSnapshot(extrasSelection, guests);
@@ -96,134 +97,178 @@ export default function Checkout() {
   };
 
   return (
-    <div className="relative min-h-screen pt-24 pb-32 px-4 sm:px-10">
-      <div className="max-w-6xl mx-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-          {/* Main Flow */}
-          <div className="lg:col-span-7 space-y-12">
-            <header className="space-y-4 animate-fade-in-up">
-              <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-[0.3em]">
-                <span className={currentStep === 'extras' ? 'text-amber-500' : 'text-zinc-600'}>01 EXTRAS</span>
-                <div className="h-px w-8 bg-zinc-800" />
-                <span className={currentStep === 'details' ? 'text-amber-500' : 'text-zinc-600'}>02 GUEST DETAILS</span>
-              </div>
-              <h1 className="text-4xl font-extrabold tracking-tighter uppercase">
-                {currentStep === 'extras' ? 'Enhance Your ' : 'Finalize your '}
-                <span className="gold-gradient-text">{currentStep === 'extras' ? 'Session' : 'Booking'}</span>
-              </h1>
-            </header>
+    <div className="w-full px-4 py-8 md:py-12 md:max-w-6xl md:mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12">
+      <div className="order-2 lg:order-1 space-y-8 md:space-y-12">
+        {currentStep === 'extras' ? (
+          <div className="space-y-8 animate-in fade-in duration-500">
+            <div className="space-y-2">
+              <h2 className="text-2xl md:text-3xl font-bold uppercase tracking-tighter">Enhance Your <span className="text-amber-500">Session</span></h2>
+              <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-widest">Select optional food & drink packages</p>
+            </div>
 
-            {currentStep === 'extras' ? (
-              <div className="space-y-8 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
-                <div className="grid grid-cols-1 gap-4">
-                  {enabledExtras.map((extra: Extra) => (
-                    <div key={extra.id} className={`glass-panel p-6 rounded-2xl flex items-center justify-between gap-6 transition-all ${extrasSelection[extra.id] ? 'border-amber-500/40 bg-amber-500/5' : 'glass-panel-hover'}`}>
-                      <div className="space-y-1">
-                        <h4 className="text-sm font-bold uppercase tracking-tight">{extra.name}</h4>
-                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-                          £{extra.price} {extra.pricingMode === 'per_person' ? 'per person' : 'flat'}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-4 bg-zinc-950 px-2 py-1 rounded-xl border border-zinc-800">
-                        <button onClick={() => updateExtraQty(extra.id, -1)} className="w-8 h-8 flex items-center justify-center text-zinc-500 hover:text-white"><i className="fa-solid fa-minus text-[10px]"></i></button>
-                        <span className="w-4 text-center text-xs font-bold text-amber-500">{extrasSelection[extra.id] || 0}</span>
-                        <button onClick={() => updateExtraQty(extra.id, 1)} className="w-8 h-8 flex items-center justify-center text-zinc-500 hover:text-white"><i className="fa-solid fa-plus text-[10px]"></i></button>
-                      </div>
+            <div className="grid grid-cols-1 gap-4">
+              {enabledExtras.length > 0 ? (
+                enabledExtras.map((extra: Extra) => (
+                  <div key={extra.id} className={`p-6 rounded-[1.5rem] border transition-all flex items-center justify-between gap-6 ${extrasSelection[extra.id] ? 'bg-amber-500/5 border-amber-500/40' : 'glass-panel border-zinc-800'}`}>
+                    <div className="flex-1">
+                      <p className="text-sm font-bold uppercase tracking-tight text-white">{extra.name}</p>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mt-1">
+                        £{extra.price} {extra.pricingMode === 'per_person' ? 'per guest' : 'flat rate'}
+                      </p>
+                      {extra.description && <p className="text-[10px] text-zinc-600 mt-2 line-clamp-1">{extra.description}</p>}
                     </div>
-                  ))}
-                </div>
-                <div className="flex gap-4 pt-8">
-                  <button onClick={back} className="flex-1 h-14 rounded-xl border border-zinc-800 font-bold uppercase tracking-widest text-[10px]">Back</button>
-                  <button onClick={() => setCurrentStep('details')} className="flex-[2] h-14 gold-gradient rounded-xl font-bold uppercase tracking-widest text-[10px] text-black gold-glow">Continue to Details</button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-8 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
-                <div className="glass-panel p-8 rounded-3xl space-y-6 card-luxury">
-                  <div className="grid sm:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Full Name</label>
-                      <input type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full h-12 px-4 input-luxury text-sm font-semibold" placeholder="Name on booking" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Email Address</label>
-                      <input type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="w-full h-12 px-4 input-luxury text-sm font-semibold" placeholder="For the confirmation" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Phone Number</label>
-                      <input type="tel" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="w-full h-12 px-4 input-luxury text-sm font-semibold" placeholder="07xxx xxxxxx" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Notes</label>
-                      <input type="text" value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} className="w-full h-12 px-4 input-luxury text-sm font-semibold" placeholder="Birthdays, events etc." />
+
+                    <div className="flex items-center gap-4 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800">
+                      <button
+                        onClick={() => updateExtraQty(extra.id, -1)}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
+                      >
+                        <i className="fa-solid fa-minus text-[10px]"></i>
+                      </button>
+                      <span className="w-6 text-center text-xs font-mono font-bold text-amber-500">{extrasSelection[extra.id] || 0}</span>
+                      <button
+                        onClick={() => updateExtraQty(extra.id, 1)}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
+                      >
+                        <i className="fa-solid fa-plus text-[10px]"></i>
+                      </button>
                     </div>
                   </div>
+                ))
+              ) : (
+                <p className="text-[10px] text-zinc-600 uppercase tracking-widest italic py-10 text-center">No extras available for this session.</p>
+              )}
+            </div>
+
+            <div className="flex gap-4">
+              <button
+                onClick={back}
+                className="flex-1 bg-zinc-900 border border-zinc-800 py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-white hover:border-zinc-700 transition-all text-[10px] min-h-[44px] active:scale-95 cursor-pointer"
+              >
+                Back
+              </button>
+              <button
+                onClick={() => setCurrentStep('details')}
+                className="flex-[2] gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-lg shadow-amber-500/10 hover:scale-[1.02] transition-all text-[10px] min-h-[44px] active:scale-95 cursor-pointer"
+              >
+                Continue to Details
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+            <div className="space-y-2">
+              <h2 className="text-2xl md:text-3xl font-bold uppercase tracking-tighter">Guest <span className="text-amber-500">Details</span></h2>
+              <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-widest">Complete your reservation</p>
+            </div>
+
+            <div className="glass-panel p-6 md:p-8 rounded-[1.5rem] md:rounded-[2rem] space-y-5 md:space-y-6">
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Full Name</label>
+                <input type="text" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner min-h-[44px]" />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Email Address</label>
+                <input type="email" required value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner min-h-[44px]" />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Phone Number</label>
+                <input type="tel" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner min-h-[44px]" />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Special Requests</label>
+                <textarea rows={3} value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner resize-none min-h-[100px]" />
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <button
+                onClick={() => setCurrentStep('extras')}
+                className="flex-1 bg-zinc-900 border border-zinc-800 py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-white text-[10px] min-h-[44px] cursor-pointer active:scale-95"
+              >
+                Back
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={isProcessing || !formData.name || !formData.email}
+                className="flex-[2] gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-50 text-[10px] min-h-[44px] cursor-pointer"
+              >
+                {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : `Confirm & Pay £${store.settings.deposit_enabled ? store.settings.deposit_amount : pricing.totalPrice + extrasTotal}`}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="lg:sticky lg:top-24 h-fit">
+        <div className="glass-panel p-8 rounded-[2rem] border-zinc-800 space-y-8 shadow-2xl">
+          <div className="space-y-4">
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Summary</h3>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">{new Date(date).toLocaleDateString('en-GB', { dateStyle: 'full' })} at {time}</p>
+              </div>
+              <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest">{getGuestLabel(guests)}</span>
+            </div>
+          </div>
+
+          <div className="space-y-3 border-t border-zinc-900 pt-6">
+            <div className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-zinc-400">
+              <span>Base Session (2h)</span>
+              <span>£{pricing.baseTotal}</span>
+            </div>
+            {extraHours > 0 && (
+              <div className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-zinc-400">
+                <span>Extended Time (+{extraHours}h)</span>
+                <span>£{pricing.extrasPrice}</span>
+              </div>
+            )}
+            {Object.entries(extrasSelection).map(([id, qty]) => {
+              const extra = store.extras.find(e => e.id === id);
+              if (!extra) return null;
+              const cost = extra.pricingMode === 'per_person' ? extra.price * guests * qty : extra.price * qty;
+              return (
+                <div key={id} className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-zinc-400 animate-in slide-in-from-left-2">
+                  <span>{extra.name} (x{qty})</span>
+                  <span>£{cost}</span>
                 </div>
-                <div className="flex gap-4 pt-8">
-                  <button onClick={() => setCurrentStep('extras')} className="flex-1 h-14 rounded-xl border border-zinc-800 font-bold uppercase tracking-widest text-[10px]">Back</button>
-                  <button onClick={handleSubmit} disabled={isProcessing} className="flex-[2] h-14 gold-gradient rounded-xl font-bold uppercase tracking-widest text-[10px] text-black gold-glow disabled:opacity-50">
-                    {isProcessing ? 'Processing...' : `Confirm & Pay £${store.settings.deposit_enabled ? store.settings.deposit_amount : pricing.totalPrice + extrasTotal}`}
-                  </button>
-                </div>
+              );
+            })}
+            {pricing.discountAmount > 0 && (
+              <div className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-green-500">
+                <span>Midweek Discount</span>
+                <span>-£{pricing.discountAmount}</span>
+              </div>
+            )}
+            {pricing.promoDiscountAmount > 0 && (
+              <div className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-amber-500">
+                <span>Promo Applied</span>
+                <span>-£{pricing.promoDiscountAmount}</span>
               </div>
             )}
           </div>
 
-          {/* Sidebar Summary */}
-          <div className="lg:col-span-5">
-            <div className="sticky top-24 glass-panel p-8 rounded-3xl space-y-8 animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-              <h3 className="text-xl font-bold uppercase tracking-tighter">Summary</h3>
-
-              <div className="space-y-3 border-b border-zinc-900 pb-8">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Scheduled For</span>
-                  <span className="text-xs font-bold uppercase tracking-tight">{new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} @ {time}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Group Size</span>
-                  <span className="text-xs font-bold uppercase tracking-tight">{getGuestLabel(guests)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Duration</span>
-                  <span className="text-xs font-bold uppercase tracking-tight">{totalDuration} Hours</span>
-                </div>
+          <div className="border-t border-zinc-800 pt-6 space-y-4">
+            <div className="flex justify-between items-end">
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">Total Price</span>
+              <span className="text-4xl font-bold text-white tracking-tighter">£{pricing.totalPrice + extrasTotal}</span>
+            </div>
+            {store.settings.deposit_enabled && (
+              <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl flex justify-between items-center">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Deposit Due Now</span>
+                <span className="text-xl font-bold text-amber-500 tracking-tighter">£{store.settings.deposit_amount}</span>
               </div>
+            )}
+          </div>
 
-              <div className="space-y-4">
-                <div className="flex justify-between text-xs font-bold uppercase tracking-widest">
-                  <span className="text-zinc-500">Room Session</span>
-                  <span>£{pricing.baseTotal + pricing.extrasPrice}</span>
-                </div>
-                {pricing.discountAmount > 0 && (
-                  <div className="flex justify-between text-xs font-bold uppercase tracking-widest text-amber-500">
-                    <span>Midweek Offer</span>
-                    <span>-£{pricing.discountAmount}</span>
-                  </div>
-                )}
-                {Object.entries(extrasSelection).map(([id, qty]) => {
-                  const extra = store.extras.find(e => e.id === id)!;
-                  const cost = extra.pricingMode === 'per_person' ? extra.price * guests * qty : extra.price * qty;
-                  return (
-                    <div key={id} className="flex justify-between text-xs font-bold uppercase tracking-widest">
-                      <span className="text-zinc-500">{extra.name} (x{qty})</span>
-                      <span>£{cost}</span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="pt-8 border-t border-zinc-900 space-y-4">
-                <div className="flex justify-between items-end">
-                  <span className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">Total Price</span>
-                  <span className="text-4xl font-extrabold tracking-tighter">£{pricing.totalPrice + extrasTotal}</span>
-                </div>
-                {store.settings.deposit_enabled && (
-                  <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 flex justify-between items-center">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Due Now</span>
-                    <span className="text-lg font-bold text-amber-500 tracking-tighter">£{store.settings.deposit_amount}</span>
-                  </div>
-                )}
-              </div>
+          <div className="bg-zinc-900/50 p-4 rounded-2xl border border-zinc-800 space-y-3">
+            <div className="flex items-center gap-3 text-zinc-500">
+              <i className="fa-solid fa-shield-halved text-xs"></i>
+              <span className="text-[9px] font-bold uppercase tracking-widest">Secure TLS Encryption</span>
+            </div>
+            <div className="flex items-center gap-3 text-zinc-500">
+              <i className="fa-solid fa-clock text-xs"></i>
+              <span className="text-[9px] font-bold uppercase tracking-widest">{store.settings.cancelCutoffHours}h Cancellation Window</span>
             </div>
           </div>
         </div>

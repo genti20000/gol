@@ -2,88 +2,68 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
-
 :root {
     --bg: #0B0D10;
-    --text: #FFFFFF;
+    --panel: rgba(255, 255, 255, 0.06);
+    --panel2: rgba(255, 255, 255, 0.08);
+    --stroke: rgba(255, 255, 255, 0.12);
+    --stroke2: rgba(255, 255, 255, 0.18);
+    --text: rgba(255, 255, 255, 0.92);
+    --text2: rgba(255, 255, 255, 0.70);
+    --text3: rgba(255, 255, 255, 0.52);
     --accent: #F5A300;
+    --warn: #FF4D4D;
+    --pending: #C9A24A;
 }
 
 body {
-    background-color: #0B0D10 !important;
-    color: #FFFFFF !important;
-    font-family: 'Outfit', sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+    overflow-x: hidden;
 }
 
-/* Force dark style on inputs with HEX values to bypass any Tailwind build issues */
-input,
-select,
-textarea {
-    background-color: #18191b !important;
-    border: 1px solid #27272a !important;
-    color: #ffffff !important;
-    border-radius: 12px;
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
 }
-
-select {
-    appearance: none;
-    -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='rgba(255,255,255,0.5)'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 1rem center;
-    background-size: 1.2em;
+::-webkit-scrollbar-track {
+    background: #18181b;
 }
-
-option {
-    background-color: #18191b;
-    color: #ffffff;
+::-webkit-scrollbar-thumb {
+    background: #3f3f46;
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #52525b;
 }
 
 .glass-panel {
-    background: rgba(255, 255, 255, 0.05) !important;
-    backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    background: var(--panel);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--stroke);
 }
 
 .gold-gradient {
-    background: linear-gradient(135deg, #F5A300 0%, #D97706 100%);
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
 }
 
-.gold-gradient-text {
-    background: linear-gradient(135deg, #F5A300 0%, #FBBF24 50%, #D97706 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+.neon-glow {
+    box-shadow: 0 0 15px rgba(245, 158, 11, 0.3);
 }
 
-.badge-luxury {
-    background: rgba(245, 163, 0, 0.1);
-    color: #F5A300;
-    border: 1px solid rgba(245, 163, 0, 0.2);
-    padding: 3px 10px;
-    border-radius: 6px;
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
+.admin-text-primary { color: var(--text); }
+.admin-text-secondary { color: var(--text2); }
+.admin-text-muted { color: var(--text3); }
+.admin-stroke { border-color: var(--stroke); }
+.admin-stroke-strong { border-color: var(--stroke2); }
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
 }
 
-@keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-.animate-fade-in-up {
-    animation: fadeInUp 0.6s ease-out forwards;
-}
-
-.mask-edge-fade {
-    -webkit-mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
-    mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
 }

@@ -3,12 +3,13 @@
 import React, { useMemo, useState } from 'react';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
-import { getGuestLabel } from '@/constants';
+import { LOGO_URL, WHATSAPP_URL, getGuestLabel, WHATSAPP_PREFILL_ENABLED } from '@/constants';
 
 export default function Results() {
   const { route, navigate, back } = useRouterShim();
   const store = useStore();
 
+  // Robust parameter recovery with localStorage fallback
   const queryDate = useMemo(() => route.params.get('date') || (typeof window !== 'undefined' ? localStorage.getItem('lkc_search_date') : '') || '', [route.params]);
   const queryGuests = useMemo(() => parseInt(route.params.get('guests') || (typeof window !== 'undefined' ? localStorage.getItem('lkc_search_guests') : '') || '8'), [route.params]);
   const queryExtraHours = useMemo(() => parseInt(route.params.get('extraHours') || '0'), [route.params]);
@@ -66,117 +67,121 @@ export default function Results() {
     }
   };
 
-  const formattedDate = queryDate ? new Date(queryDate).toLocaleDateString('en-GB', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long'
-  }) : 'Invalid Date';
+  const handleWhatsAppWaitlist = () => {
+    if (!waitlistForm.name || !waitlistForm.phone || !waitlistForm.preferredDate) {
+      setError("Please fill in required fields first.");
+      return;
+    }
+    const message = store.buildWaitlistMessage({
+      preferredDate: waitlistForm.preferredDate,
+      guests: waitlistForm.guests,
+      preferredTime: waitlistForm.preferredTime
+    });
+    window.open(store.buildWhatsAppUrl(message), '_blank');
+  };
 
   return (
-    <div className="relative min-h-screen pt-24 pb-32 px-4 sm:px-10">
-      <div className="max-w-5xl mx-auto space-y-12">
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-8 animate-fade-in-up">
-          <div className="space-y-4">
-            <button onClick={back} className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500 hover:text-white transition-colors">
-              <i className="fa-solid fa-arrow-left"></i> Modify Search
-            </button>
-            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tighter uppercase">
-              Select Your <span className="gold-gradient-text">Time</span>
-            </h1>
-            <div className="flex flex-wrap gap-4 text-xs font-bold uppercase tracking-widest text-zinc-400">
-              <span className="flex items-center gap-2"><i className="fa-solid fa-calendar text-amber-500/50"></i> {formattedDate}</span>
-              <span className="flex items-center gap-2"><i className="fa-solid fa-users text-amber-500/50"></i> {getGuestLabel(queryGuests)}</span>
-              <span className="flex items-center gap-2"><i className="fa-solid fa-clock text-amber-500/50"></i> {2 + queryExtraHours} Hours</span>
-            </div>
-          </div>
-
-          <div className="glass-panel p-6 rounded-2xl border-amber-500/20 w-full md:w-80 card-luxury">
-            <div className="flex justify-between items-baseline mb-4">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Live Quote</span>
-              <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-extrabold tracking-tighter">£{pricing.totalPrice}</span>
-                {pricing.discountAmount > 0 && (
-                  <span className="text-sm text-zinc-600 line-through font-bold">£{pricing.subtotal}</span>
-                )}
-              </div>
-            </div>
-            <div className="space-y-2 border-t border-zinc-900 pt-4">
-              <div className="flex justify-between text-[9px] font-bold uppercase tracking-[0.2em] text-zinc-500">
-                <span>Room Base</span>
-                <span>£{pricing.baseTotal}</span>
-              </div>
-              {pricing.extrasPrice > 0 && (
-                <div className="flex justify-between text-[9px] font-bold uppercase tracking-[0.2em] text-zinc-500">
-                  <span>Additional Hours</span>
-                  <span>£{pricing.extrasPrice}</span>
-                </div>
-              )}
-              {pricing.discountAmount > 0 && (
-                <div className="flex justify-between text-[9px] font-bold uppercase tracking-[0.2em] text-amber-500">
-                  <span>Midweek Offer</span>
-                  <span>-£{pricing.discountAmount}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        </header>
-
-        {validTimes.length > 0 ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-            {validTimes.map((time, idx) => (
-              <button
-                key={time}
-                onClick={() => handleBook(time)}
-                className="glass-panel glass-panel-hover p-8 rounded-2xl flex flex-col items-center justify-center gap-2 active:scale-95 group relative overflow-hidden"
-              >
-                <div className="absolute top-0 left-0 w-1 h-full bg-amber-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-                <span className="text-2xl font-bold tracking-tighter group-hover:text-amber-500 transition-colors uppercase">{time}</span>
-                <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-600 group-hover:text-zinc-400">Available</span>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-            <div className="glass-panel rounded-3xl p-12 text-center border-dashed border-zinc-800 space-y-6">
-              <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mx-auto border border-zinc-800">
-                <i className="fa-solid fa-calendar-xmark text-2xl text-zinc-600"></i>
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-xl font-bold uppercase tracking-tight">Fully Booked</h3>
-                <p className="text-sm text-zinc-500 max-w-sm mx-auto">No availability for this combination. Join our waitlist below for instant alerts.</p>
-              </div>
-            </div>
-
-            <div className="mt-12 glass-panel rounded-3xl p-8 md:p-12 card-luxury overflow-hidden">
-              <div className="grid md:grid-cols-2 gap-12 items-center">
-                <div className="space-y-6">
-                  <div className="badge-luxury">Priority Concierge</div>
-                  <h3 className="text-3xl font-bold uppercase tracking-tighter">Join the Waitlist</h3>
-                  <p className="text-sm text-zinc-500 leading-relaxed">We monitor cancellations 24/7. Provide your details and we'll reach out the moment a slot opens.</p>
-                </div>
-
-                <form onSubmit={handleJoinWaitlist} className="space-y-4">
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Name</label>
-                      <input type="text" required value={waitlistForm.name} onChange={e => setWaitlistForm({ ...waitlistForm, name: e.target.value })} className="w-full h-12 px-4 input-luxury text-sm font-semibold" placeholder="Full Name" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Phone</label>
-                      <input type="tel" required value={waitlistForm.phone} onChange={e => setWaitlistForm({ ...waitlistForm, phone: e.target.value })} className="w-full h-12 px-4 input-luxury text-sm font-semibold" placeholder="07xxx xxxxxx" />
-                    </div>
-                  </div>
-                  <button type="submit" className="w-full h-14 bg-white text-black rounded-lg font-bold uppercase tracking-widest text-xs hover:bg-zinc-200 transition-colors">Submit Request</button>
-                  <button type="button" onClick={() => window.open(store.buildWhatsAppUrl(`Waitlist for ${formattedDate} @AnyTime`), '_blank')} className="w-full h-14 border border-zinc-800 rounded-lg font-bold uppercase tracking-widest text-xs text-zinc-400 hover:text-white hover:border-zinc-600 transition-all flex items-center justify-center gap-3">
-                    <i className="fa-brands fa-whatsapp text-lg"></i>
-                    WhatsApp Priority
-                  </button>
-                </form>
-              </div>
-            </div>
-          </div>
-        )}
+    <div className="w-full px-4 py-8 md:py-12 md:max-w-4xl md:mx-auto animate-in fade-in duration-700">
+      {/* Diagnostic Debug Readout */}
+      <div className="mb-4 p-4 bg-zinc-900/80 border border-zinc-800 rounded-xl text-[10px] font-mono text-zinc-500 uppercase tracking-widest flex flex-wrap gap-x-6 gap-y-2">
+        <span>DEBUG: Path={route.path}</span>
+        <span>Date={queryDate || 'N/A'}</span>
+        <span>Guests={queryGuests}</span>
+        <span>Slots={validTimes.length}</span>
+        <span>Lead={store.settings.minDaysBeforeBooking}d {store.settings.minHoursBeforeBooking}h</span>
       </div>
+
+      <div className="mb-6">
+        <button onClick={back} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white transition-colors flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest">
+          <i className="fa-solid fa-arrow-left"></i> Back to Search
+        </button>
+      </div>
+
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 md:gap-8 mb-10 md:mb-16">
+        <div>
+          <h2 className="text-3xl md:text-4xl font-bold uppercase tracking-tighter mb-2">Available <span className="text-amber-500">Times</span></h2>
+          <div className="text-zinc-500 font-bold uppercase tracking-widest text-[10px] space-y-1">
+            <p><span className="text-white">{getGuestLabel(queryGuests)}</span> • {queryDate ? new Date(queryDate).toLocaleDateString('en-GB', { dateStyle: 'full' }) : 'Invalid Date'}</p>
+            <p className="text-amber-500">{2 + queryExtraHours} Hour Experience</p>
+          </div>
+        </div>
+
+        <div className="glass-panel p-5 md:p-6 rounded-[1.5rem] md:rounded-[2rem] border-amber-500/20 w-full md:min-w-[280px] md:w-auto">
+          <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">
+            <span>Subtotal</span>
+            <span className="font-mono">£{pricing.baseTotal + pricing.extrasPrice}</span>
+          </div>
+          {pricing.discountAmount > 0 && (
+            <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-green-500 mb-2">
+              <span>Midweek Discount</span>
+              <span className="font-mono">-£{pricing.discountAmount}</span>
+            </div>
+          )}
+          {store.settings.deposit_enabled && (
+            <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-amber-500 mb-2 pt-2 border-t border-zinc-800/50">
+              <span>Deposit Due Now</span>
+              <span className="font-mono">£{store.settings.deposit_amount}</span>
+            </div>
+          )}
+          <div className="flex justify-between items-end border-t border-zinc-800 pt-4 mt-2">
+            <span className="text-[10px] font-bold uppercase tracking-widest">Grand Total</span>
+            <span className="text-3xl font-bold text-white tracking-tighter">£{pricing.totalPrice}</span>
+          </div>
+        </div>
+      </div>
+
+      {validTimes.length > 0 ? (
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+          {validTimes.map(time => (
+            <button key={time} onClick={() => handleBook(time)} className="bg-transparent border-none cursor-pointer glass-panel hover:border-amber-500/50 p-5 md:p-6 rounded-xl md:rounded-2xl flex flex-col items-center justify-center gap-2 transition-all group min-h-[100px] md:min-h-[120px] text-zinc-50">
+              <span className="text-xl md:text-2xl font-bold font-mono group-hover:text-amber-500 transition-colors">{time}</span>
+              <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-zinc-500">Book Now</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-12">
+          <div className="text-center py-16 md:py-24 glass-panel rounded-[1.5rem] md:rounded-[2.5rem] border-dashed border-zinc-800 border-2 px-6">
+            <i className="fa-solid fa-calendar-xmark text-3xl md:text-4xl text-zinc-700 mb-6"></i>
+            <h3 className="text-lg md:text-xl font-bold uppercase tracking-tight text-zinc-500">Fully Booked Online</h3>
+            <p className="text-zinc-600 text-[10px] md:text-xs mt-2 uppercase tracking-widest">No availability for your selection. Join the waitlist and we’ll contact you if space opens up.</p>
+          </div>
+
+          <div className="glass-panel p-8 md:p-10 rounded-[2rem] border-zinc-800 shadow-2xl space-y-8">
+            <div className="space-y-2">
+              <h3 className="text-xl font-bold uppercase tracking-tight text-white">Join Waitlist</h3>
+              <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">We'll alert you if this slot becomes available.</p>
+            </div>
+
+            <form onSubmit={handleJoinWaitlist} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Name</label>
+                <input type="text" required value={waitlistForm.name} onChange={e => setWaitlistForm({ ...waitlistForm, name: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white outline-none focus:ring-1 ring-amber-500" />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Phone</label>
+                <input type="tel" required value={waitlistForm.phone} onChange={e => setWaitlistForm({ ...waitlistForm, phone: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white outline-none focus:ring-1 ring-amber-500" />
+              </div>
+              <div className="md:col-span-2">
+                {waitlistSent ? (
+                  <div className="bg-green-500/10 border border-green-500/20 text-green-500 p-4 rounded-xl text-[10px] font-bold uppercase tracking-widest text-center">
+                    Successfully Joined Waitlist
+                  </div>
+                ) : (
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <button type="submit" className="flex-1 bg-zinc-900 border border-zinc-800 text-white py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest active:scale-95 transition-all">Submit Request</button>
+                    <button type="button" onClick={handleWhatsAppWaitlist} className="flex-1 bg-green-500 text-white py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-3 shadow-xl shadow-green-500/10">
+                      <i className="fa-brands fa-whatsapp text-lg"></i>
+                      WhatsApp Concierge
+                    </button>
+                  </div>
+                )}
+                {error && <p className="text-red-500 text-[9px] font-bold uppercase tracking-widest mt-4 text-center">{error}</p>}
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
