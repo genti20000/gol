@@ -85,7 +85,7 @@ export default function Home() {
                   <select
                     value={serviceId}
                     onChange={(e) => setServiceId(e.target.value)}
-                    className="w-full h-14 px-4 input-luxury text-sm font-semibold"
+                    className="w-full h-14 px-4 bg-zinc-900 border border-zinc-800 text-white text-sm font-semibold rounded-xl focus:outline-none focus:ring-1 focus:ring-amber-500"
                   >
                     {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
@@ -97,7 +97,7 @@ export default function Home() {
                   <select
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
-                    className="w-full h-14 px-4 input-luxury text-sm font-semibold"
+                    className="w-full h-14 px-4 bg-zinc-900 border border-zinc-800 text-white text-sm font-semibold rounded-xl focus:outline-none focus:ring-1 focus:ring-amber-500"
                   >
                     {days.map(d => <option key={d.iso} value={d.iso}>{d.label}</option>)}
                   </select>
@@ -112,8 +112,8 @@ export default function Home() {
                         key={s}
                         onClick={() => setGuests(s)}
                         className={`h-12 rounded-lg text-xs font-bold transition-all border ${guests === s
-                          ? 'border-amber-500 bg-amber-500/10 text-amber-500'
-                          : 'border-zinc-800 bg-black/40 text-zinc-500 hover:border-zinc-600'
+                            ? 'border-amber-500 bg-amber-500/10 text-amber-500'
+                            : 'border-zinc-800 bg-zinc-900 text-zinc-500 hover:border-zinc-600'
                           }`}
                       >
                         {s === 100 ? '100+' : s}
@@ -131,8 +131,8 @@ export default function Home() {
                         key={e.hours}
                         onClick={() => setExtraHours(e.hours)}
                         className={`h-12 px-4 rounded-lg text-xs font-bold flex justify-between items-center transition-all border ${extraHours === e.hours
-                          ? 'border-amber-500 bg-amber-500/10 text-amber-500'
-                          : 'border-zinc-800 bg-black/40 text-zinc-500 hover:border-zinc-600'
+                            ? 'border-amber-500 bg-amber-500/10 text-amber-500'
+                            : 'border-zinc-800 bg-zinc-900 text-zinc-500 hover:border-zinc-600'
                           }`}
                       >
                         <span>{e.hours + 2} Hours</span>
@@ -147,12 +147,12 @@ export default function Home() {
                 <div className="space-y-1">
                   <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Live Quote</div>
                   <div className="flex items-end gap-3">
-                    <span className="text-4xl font-extrabold tracking-tighter">£{pricing.total}</span>
+                    <span className="text-4xl font-extrabold tracking-tighter text-white">£{pricing.total}</span>
                     {pricing.discount > 0 && (
                       <span className="text-zinc-600 line-through text-lg font-bold mb-1">£{pricing.subtotal}</span>
                     )}
                     {pricing.isMidweek && (
-                      <span className="badge-luxury bg-amber-500/10 text-amber-500 mb-1.5 backdrop-blur-sm">-{MIDWEEK_DISCOUNT_PERCENT}% Midweek</span>
+                      <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest mb-1.5 backdrop-blur-sm">-{MIDWEEK_DISCOUNT_PERCENT}% Midweek</span>
                     )}
                   </div>
                 </div>

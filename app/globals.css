@@ -11,28 +11,39 @@
 }
 
 body {
-    background-color: var(--bg);
-    color: var(--text);
+    background-color: #0B0D10 !important;
+    color: #FFFFFF !important;
     font-family: 'Outfit', sans-serif;
 }
 
-/* Force dark style on inputs because browsers love to make them white */
+/* Force dark style on inputs with HEX values to bypass any Tailwind build issues */
 input,
 select,
 textarea {
-    @apply bg-zinc-900 border-zinc-800 text-white;
+    background-color: #18191b !important;
+    border: 1px solid #27272a !important;
+    color: #ffffff !important;
+    border-radius: 12px;
 }
 
 select {
     appearance: none;
+    -webkit-appearance: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='rgba(255,255,255,0.5)'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 1rem center;
-    background-size: 1.5em;
+    background-size: 1.2em;
+}
+
+option {
+    background-color: #18191b;
+    color: #ffffff;
 }
 
 .glass-panel {
-    @apply bg-white/5 backdrop-blur-xl border border-white/10;
+    background: rgba(255, 255, 255, 0.05) !important;
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
 }
 
 .gold-gradient {
@@ -46,7 +57,14 @@ select {
 }
 
 .badge-luxury {
-    @apply bg-amber-500/10 text-amber-500 border border-amber-500/20 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest;
+    background: rgba(245, 163, 0, 0.1);
+    color: #F5A300;
+    border: 1px solid rgba(245, 163, 0, 0.2);
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
 }
 
 @keyframes fadeInUp {
@@ -63,4 +81,9 @@ select {
 
 .animate-fade-in-up {
     animation: fadeInUp 0.6s ease-out forwards;
+}
+
+.mask-edge-fade {
+    -webkit-mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+    mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
 }
