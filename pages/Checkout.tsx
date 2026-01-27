@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
-import { BookingStatus, RateType } from '@/types';
+import { BookingStatus, RateType, Extra } from '@/types';
 import { LOGO_URL, BASE_DURATION_HOURS, getGuestLabel } from '@/constants';
 
 export default function Checkout() {
@@ -13,7 +13,7 @@ export default function Checkout() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [formData, setFormData] = useState({ name: '', email: '', phone: '', notes: '' });
   const [extrasSelection, setExtrasSelection] = useState<Record<string, number>>({});
-  const [showExtras, setShowExtras] = useState(false);
+  const [currentStep, setCurrentStep] = useState<'extras' | 'details'>('extras');
 
   const date = route.params.get('date') || '';
   const time = route.params.get('time') || '';
@@ -71,7 +71,9 @@ export default function Checkout() {
       created_at: new Date().toISOString(),
       source: 'public' as const,
       extras: bookingExtras,
-      extras_total: extrasTotal
+      extras_total: extrasTotal,
+      deposit_amount: store.settings.deposit_enabled ? store.settings.deposit_amount : 0,
+      deposit_paid: true
     };
 
     const finalBooking = store.addBooking(booking);
@@ -79,27 +81,78 @@ export default function Checkout() {
     navigate(`/confirmation?id=${finalBooking.id}`);
   };
 
-  const toggleExtra = (id: string, pricingMode: 'flat' | 'per_person') => {
+  const updateExtraQty = (id: string, delta: number) => {
     setExtrasSelection(prev => {
-      const next = { ...prev };
-      if (next[id]) {
-        delete next[id];
-      } else {
-        next[id] = 1;
-      }
-      return next;
+      const current = prev[id] || 0;
+      const next = Math.max(0, current + delta);
+      const newState = { ...prev };
+      if (next === 0) delete newState[id];
+      else newState[id] = next;
+      return newState;
     });
-  };
-
-  const setQty = (id: string, q: number) => {
-    setExtrasSelection(prev => ({ ...prev, [id]: Math.max(1, q) }));
   };
 
   return (
     <div className="w-full px-4 py-8 md:py-12 md:max-w-6xl md:mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12">
       <div className="order-2 lg:order-1 space-y-8 md:space-y-12">
-        {!showExtras ? (
-          <div className="space-y-8">
+        {currentStep === 'extras' ? (
+          <div className="space-y-8 animate-in fade-in duration-500">
+            <div className="space-y-2">
+               <h2 className="text-2xl md:text-3xl font-bold uppercase tracking-tighter">Enhance Your <span className="text-amber-500">Session</span></h2>
+               <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-widest">Select optional food & drink packages</p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              {enabledExtras.length > 0 ? (
+                enabledExtras.map((extra: Extra) => (
+                  <div key={extra.id} className={`p-6 rounded-[1.5rem] border transition-all flex items-center justify-between gap-6 ${extrasSelection[extra.id] ? 'bg-amber-500/5 border-amber-500/40' : 'glass-panel border-zinc-800'}`}>
+                    <div className="flex-1">
+                      <p className="text-sm font-bold uppercase tracking-tight text-white">{extra.name}</p>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mt-1">
+                        £{extra.price} {extra.pricingMode === 'per_person' ? 'per guest' : 'flat rate'}
+                      </p>
+                      {extra.description && <p className="text-[10px] text-zinc-600 mt-2 line-clamp-1">{extra.description}</p>}
+                    </div>
+                    
+                    <div className="flex items-center gap-4 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800">
+                      <button 
+                        onClick={() => updateExtraQty(extra.id, -1)}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
+                      >
+                        <i className="fa-solid fa-minus text-[10px]"></i>
+                      </button>
+                      <span className="w-6 text-center text-xs font-mono font-bold text-amber-500">{extrasSelection[extra.id] || 0}</span>
+                      <button 
+                        onClick={() => updateExtraQty(extra.id, 1)}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
+                      >
+                        <i className="fa-solid fa-plus text-[10px]"></i>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-[10px] text-zinc-600 uppercase tracking-widest italic py-10 text-center">No extras available for this session.</p>
+              )}
+            </div>
+
+            <div className="flex gap-4">
+              <button 
+                onClick={back} 
+                className="flex-1 bg-zinc-900 border border-zinc-800 py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-white hover:border-zinc-700 transition-all text-[10px] min-h-[44px] active:scale-95 cursor-pointer"
+              >
+                Back
+              </button>
+              <button 
+                onClick={() => setCurrentStep('details')} 
+                className="flex-[2] gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-lg shadow-amber-500/10 hover:scale-[1.02] transition-all text-[10px] min-h-[44px] active:scale-95 cursor-pointer"
+              >
+                Continue to Details
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
             <div className="space-y-2">
                <h2 className="text-2xl md:text-3xl font-bold uppercase tracking-tighter">Guest <span className="text-amber-500">Details</span></h2>
                <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-widest">Complete your reservation</p>
@@ -126,33 +179,14 @@ export default function Checkout() {
 
             <div className="flex gap-4">
               <button 
-                onClick={back} 
-                className="flex-1 bg-zinc-900 border border-zinc-800 py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-white hover:border-zinc-700 transition-all text-[10px] min-h-[44px] active:scale-95 cursor-pointer"
-              >
-                Back
-              </button>
-              <button 
-                onClick={() => setShowExtras(true)} 
-                disabled={!formData.name || !formData.email}
-                className="flex-[2] gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-lg shadow-amber-500/10 hover:scale-[1.02] transition-all disabled:opacity-50 text-[10px] min-h-[44px] active:scale-95 cursor-pointer"
-              >
-                Continue to Extras
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-8 animate-in slide-in-from-right-4">
-            {/* ... Extras UI remains unchanged ... */}
-            <div className="flex gap-4">
-              <button 
-                onClick={() => setShowExtras(false)} 
-                className="flex-1 bg-zinc-900 border border-zinc-800 py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-white text-[10px] min-h-[44px] cursor-pointer"
+                onClick={() => setCurrentStep('extras')} 
+                className="flex-1 bg-zinc-900 border border-zinc-800 py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-white text-[10px] min-h-[44px] cursor-pointer active:scale-95"
               >
                 Back
               </button>
               <button 
                 onClick={handleSubmit} 
-                disabled={isProcessing}
+                disabled={isProcessing || !formData.name || !formData.email}
                 className="flex-[2] gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-50 text-[10px] min-h-[44px] cursor-pointer"
               >
                 {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : `Confirm & Pay £${store.settings.deposit_enabled ? store.settings.deposit_amount : pricing.totalPrice + extrasTotal}`}
@@ -161,7 +195,80 @@ export default function Checkout() {
           </div>
         )}
       </div>
-      {/* ... Summary side remains unchanged ... */}
+
+      <div className="lg:sticky lg:top-24 h-fit">
+        <div className="glass-panel p-8 rounded-[2rem] border-zinc-800 space-y-8 shadow-2xl">
+           <div className="space-y-4">
+              <div className="flex justify-between items-start">
+                 <div>
+                    <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Summary</h3>
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">{new Date(date).toLocaleDateString('en-GB', { dateStyle: 'full' })} at {time}</p>
+                 </div>
+                 <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest">{getGuestLabel(guests)}</span>
+              </div>
+           </div>
+
+           <div className="space-y-3 border-t border-zinc-900 pt-6">
+              <div className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-zinc-400">
+                 <span>Base Session (2h)</span>
+                 <span>£{pricing.baseTotal}</span>
+              </div>
+              {extraHours > 0 && (
+                 <div className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-zinc-400">
+                    <span>Extended Time (+{extraHours}h)</span>
+                    <span>£{pricing.extrasPrice}</span>
+                 </div>
+              )}
+              {Object.entries(extrasSelection).map(([id, qty]) => {
+                const extra = store.extras.find(e => e.id === id);
+                if (!extra) return null;
+                const cost = extra.pricingMode === 'per_person' ? extra.price * guests * qty : extra.price * qty;
+                return (
+                  <div key={id} className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-zinc-400 animate-in slide-in-from-left-2">
+                    <span>{extra.name} (x{qty})</span>
+                    <span>£{cost}</span>
+                  </div>
+                );
+              })}
+              {pricing.discountAmount > 0 && (
+                 <div className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-green-500">
+                    <span>Midweek Discount</span>
+                    <span>-£{pricing.discountAmount}</span>
+                 </div>
+              )}
+              {pricing.promoDiscountAmount > 0 && (
+                 <div className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-amber-500">
+                    <span>Promo Applied</span>
+                    <span>-£{pricing.promoDiscountAmount}</span>
+                 </div>
+              )}
+           </div>
+
+           <div className="border-t border-zinc-800 pt-6 space-y-4">
+              <div className="flex justify-between items-end">
+                 <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">Total Price</span>
+                 <span className="text-4xl font-bold text-white tracking-tighter">£{pricing.totalPrice + extrasTotal}</span>
+              </div>
+              {store.settings.deposit_enabled && (
+                 <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl flex justify-between items-center">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Deposit Due Now</span>
+                    <span className="text-xl font-bold text-amber-500 tracking-tighter">£{store.settings.deposit_amount}</span>
+                 </div>
+              )}
+           </div>
+
+           <div className="bg-zinc-900/50 p-4 rounded-2xl border border-zinc-800 space-y-3">
+              <div className="flex items-center gap-3 text-zinc-500">
+                 <i className="fa-solid fa-shield-halved text-xs"></i>
+                 <span className="text-[9px] font-bold uppercase tracking-widest">Secure TLS Encryption</span>
+              </div>
+              <div className="flex items-center gap-3 text-zinc-500">
+                 <i className="fa-solid fa-clock text-xs"></i>
+                 <span className="text-[9px] font-bold uppercase tracking-widest">{store.settings.cancelCutoffHours}h Cancellation Window</span>
+              </div>
+           </div>
+        </div>
+      </div>
     </div>
   );
 }

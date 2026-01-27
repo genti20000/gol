@@ -179,6 +179,9 @@ export interface VenueSettings {
   // Deposit Settings
   deposit_enabled: boolean;
   deposit_amount: number;
+  // Lead Time Settings
+  minDaysBeforeBooking: number;
+  minHoursBeforeBooking: number;
 }
 
 export interface CalendarSyncConfig {

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -15,7 +16,8 @@ import {
   Customer, 
   VenueSettings, 
   CalendarSyncConfig,
-  Extra
+  Extra,
+  DayOperatingHours
 } from './types';
 import { 
   ROOMS, 
@@ -41,13 +43,14 @@ import {
   WHATSAPP_URL
 } from './constants';
 
-// Initial state defaults
 const DEFAULT_SETTINGS: VenueSettings = {
   cancelCutoffHours: 24,
   rescheduleCutoffHours: 48,
   releasePendingOnPaymentFailure: true,
   deposit_enabled: true,
   deposit_amount: 50,
+  minDaysBeforeBooking: 0,
+  minHoursBeforeBooking: 0
 };
 
 const DEFAULT_CAL_SYNC: CalendarSyncConfig = {
@@ -69,7 +72,6 @@ const DEFAULT_EXTRAS: Extra[] = [
   { id: 'ext-3', name: 'Unlimited Soft Drinks', price: 5, pricingMode: 'per_person', enabled: true, sortOrder: 3 },
 ];
 
-// Custom hook to manage the application state and business logic
 export function useStore() {
   const [loading, setLoading] = useState(true);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -87,7 +89,6 @@ export function useStore() {
   const [calSync, setCalSync] = useState<CalendarSyncConfig>(DEFAULT_CAL_SYNC);
   const [extras, setExtras] = useState<Extra[]>(DEFAULT_EXTRAS);
 
-  // Load data from localStorage on mount
   useEffect(() => {
     const load = () => {
       try {
@@ -112,7 +113,6 @@ export function useStore() {
     load();
   }, []);
 
-  // Save data to localStorage on changes
   useEffect(() => {
     if (!loading) {
       localStorage.setItem(LS_BOOKINGS, JSON.stringify(bookings));
@@ -131,7 +131,6 @@ export function useStore() {
     }
   }, [bookings, services, staff, blocks, recurringBlocks, operatingHours, specialHours, settings, promoCodes, customers, waitlist, calSync, extras, loading]);
 
-  // Retrieve the operating window for a specific date
   const getOperatingWindow = useCallback((date: string) => {
     const special = specialHours.find(s => s.date === date);
     if (special) return special.enabled ? { open: special.open!, close: special.close! } : null;
@@ -142,21 +141,17 @@ export function useStore() {
     return null;
   }, [specialHours, operatingHours]);
 
-  // Calculate session pricing based on guests, date, and promo codes
   const calculatePricing = useCallback((date: string, guests: number, extraHours: number, promoCode?: string) => {
     const tier = PRICING_TIERS.find(t => guests >= t.min && guests <= t.max);
     const basePrice = tier ? tier.price : 0;
-    
     const extraPrice = SESSION_EXTRAS.find(e => e.hours === extraHours)?.price || 0;
     const baseTotal = basePrice;
     
-    // Check for midweek discount (Mon, Tue, Wed)
     const day = new Date(date).getDay();
     const isMidweek = day >= 1 && day <= 3;
     const discountPercent = isMidweek ? MIDWEEK_DISCOUNT_PERCENT : 0;
     const discountAmount = Math.round((baseTotal + extraPrice) * (discountPercent / 100));
     
-    // Apply promo code if valid
     let promoDiscountAmount = 0;
     if (promoCode) {
       const promo = promoCodes.find(p => p.code === promoCode && p.enabled);
@@ -168,25 +163,16 @@ export function useStore() {
 
     const totalPrice = baseTotal + extraPrice - discountAmount - promoDiscountAmount;
 
-    return {
-      baseTotal,
-      extrasPrice: extraPrice,
-      discountAmount,
-      promoDiscountAmount,
-      totalPrice
-    };
+    return { baseTotal, extrasPrice: extraPrice, discountAmount, promoDiscountAmount, totalPrice };
   }, [promoCodes]);
 
-  // Validate if a room/staff time slot is free of conflicts
   const validateInterval = useCallback((roomId: string, start: string, end: string, excludeBookingId?: string, staffId?: string) => {
     const startTs = new Date(start).getTime();
     const endTs = new Date(end).getTime();
-
     const date = start.split('T')[0];
     const window = getOperatingWindow(date);
     if (!window) return { ok: false, reason: 'Venue is closed on this date' };
 
-    // Overlap checks for existing bookings
     const conflicts = bookings.filter(b => {
       if (b.id === excludeBookingId) return false;
       if (b.status === BookingStatus.CANCELLED) return false;
@@ -197,7 +183,6 @@ export function useStore() {
     });
     if (conflicts.length > 0) return { ok: false, reason: 'Room is already booked for this time' };
 
-    // Overlap checks for maintenance blocks
     const blockConflicts = blocks.filter(b => {
       if (b.roomId !== roomId) return false;
       const bStart = new Date(b.start_at).getTime();
@@ -206,7 +191,6 @@ export function useStore() {
     });
     if (blockConflicts.length > 0) return { ok: false, reason: 'Room is blocked for maintenance' };
 
-    // Overlap checks for staff availability
     if (staffId) {
       const staffConflicts = bookings.filter(b => {
         if (b.id === excludeBookingId) return false;
@@ -222,7 +206,6 @@ export function useStore() {
     return { ok: true };
   }, [bookings, blocks, getOperatingWindow]);
 
-  // Generate a list of available start times for a given date and duration
   const getValidStartTimes = useCallback((date: string, durationMinutes: number, staffId?: string, serviceId?: string) => {
     const window = getOperatingWindow(date);
     if (!window) return [];
@@ -238,22 +221,26 @@ export function useStore() {
     const startMinutes = openH * 60 + openM;
     const endMinutes = closeH * 60 + closeM;
 
+    const now = new Date();
+    const minLeadTimeMs = (settings.minDaysBeforeBooking * 24 * 3600000) + (settings.minHoursBeforeBooking * 3600000);
+    const earliestAllowedStart = new Date(now.getTime() + minLeadTimeMs);
+
     for (let m = startMinutes; m <= endMinutes - durationMinutes; m += SLOT_MINUTES) {
       const hStr = Math.floor((m % (24 * 60)) / 60).toString().padStart(2, '0');
       const minStr = (m % 60).toString().padStart(2, '0');
       const time = `${hStr}:${minStr}`;
-      
       const startAt = new Date(`${date}T${time}`).toISOString();
-      const endAt = new Date(new Date(startAt).getTime() + durationMinutes * 60000).toISOString();
+      
+      // Lead time check
+      if (new Date(startAt) < earliestAllowedStart) continue;
 
+      const endAt = new Date(new Date(startAt).getTime() + durationMinutes * 60000).toISOString();
       const anyRoom = rooms.some(r => validateInterval(r.id, startAt, endAt, undefined, staffId).ok);
       if (anyRoom) times.push(time);
     }
-
     return times;
-  }, [rooms, getOperatingWindow, validateInterval]);
+  }, [rooms, getOperatingWindow, validateInterval, settings.minDaysBeforeBooking, settings.minHoursBeforeBooking]);
 
-  // Find a free room and staff member for a specific time range
   const findFirstAvailableRoomAndStaff = useCallback((startAt: string, endAt: string, staffId?: string, serviceId?: string) => {
     if (staffId) {
       for (const r of rooms) {
@@ -262,9 +249,7 @@ export function useStore() {
         }
       }
     }
-
     const eligibleStaff = staff.filter(s => s.enabled && (!serviceId || s.servicesOffered.includes(serviceId)));
-    
     for (const r of rooms) {
       if (eligibleStaff.length > 0) {
         for (const s of eligibleStaff) {
@@ -272,37 +257,27 @@ export function useStore() {
             return { room_id: r.id, staff_id: s.id };
           }
         }
-      } else {
-        if (validateInterval(r.id, startAt, endAt).ok) {
-          return { room_id: r.id, staff_id: undefined };
-        }
+      } else if (validateInterval(r.id, startAt, endAt).ok) {
+        return { room_id: r.id, staff_id: undefined };
       }
     }
     return null;
   }, [rooms, staff, validateInterval]);
 
-  // Create a new booking record
   const addBooking = useCallback((booking: Partial<Booking>) => {
-    const newBooking = {
-      ...booking,
-      id: Math.random().toString(36).substring(2, 9),
-      magicToken: Math.random().toString(36).substring(2, 15),
-    } as Booking;
+    const newBooking = { ...booking, id: Math.random().toString(36).substring(2, 9), magicToken: Math.random().toString(36).substring(2, 15) } as Booking;
     setBookings(prev => [...prev, newBooking]);
     return newBooking;
   }, []);
 
-  // Update an existing booking record
   const updateBooking = useCallback((id: string, patch: Partial<Booking>) => {
     setBookings(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
   }, []);
 
-  // Retrieve a booking using its unique magic link token
   const getBookingByMagicToken = useCallback((token: string) => {
     return bookings.find(b => b.magicToken === token);
   }, [bookings]);
 
-  // Check if a booking is still within the window for cancellation or rescheduling
   const canRescheduleOrCancel = useCallback((booking: Booking, type: 'reschedule' | 'cancel') => {
     const cutoffHours = type === 'reschedule' ? settings.rescheduleCutoffHours : settings.cancelCutoffHours;
     const start = new Date(booking.start_at).getTime();
@@ -312,7 +287,6 @@ export function useStore() {
 
   const getEnabledExtras = useCallback(() => extras.filter(e => e.enabled), [extras]);
 
-  // Compute the total cost of selected additional services/extras
   const computeExtrasTotal = useCallback((selection: Record<string, number>, guests: number) => {
     return Object.entries(selection).reduce((acc, [id, qty]) => {
       const extra = extras.find(e => e.id === id);
@@ -322,171 +296,101 @@ export function useStore() {
     }, 0);
   }, [extras]);
 
-  // Capture a snapshot of selected extras at the time of booking
   const buildBookingExtrasSnapshot = useCallback((selection: Record<string, number>, guests: number) => {
     return Object.entries(selection).map(([id, qty]) => {
       const extra = extras.find(e => e.id === id)!;
       const priceSnapshot = extra.price;
       const unitTotal = extra.pricingMode === 'per_person' ? priceSnapshot * guests : priceSnapshot;
-      return {
-        extraId: id,
-        nameSnapshot: extra.name,
-        priceSnapshot,
-        pricingModeSnapshot: extra.pricingMode,
-        quantity: qty,
-        lineTotal: unitTotal * qty
-      };
+      return { extraId: id, nameSnapshot: extra.name, priceSnapshot, pricingModeSnapshot: extra.pricingMode, quantity: qty, lineTotal: unitTotal * qty };
     });
   }, [extras]);
 
-  // Add a entry to the waitlist
-  // Fix: Added return type to include optional reason for compatibility with callers in Results.tsx
   const addWaitlistEntry = useCallback((entry: Partial<WaitlistEntry>): { ok: boolean; reason?: string } => {
-    const newEntry = {
-      ...entry,
-      id: Math.random().toString(36).substring(2, 9),
-      status: 'active',
-      created_at: new Date().toISOString()
-    } as WaitlistEntry;
+    const newEntry = { ...entry, id: Math.random().toString(36).substring(2, 9), status: 'active', created_at: new Date().toISOString() } as WaitlistEntry;
     setWaitlist(prev => [...prev, newEntry]);
     return { ok: true };
   }, []);
 
-  const getWaitlistForDate = useCallback((date: string) => {
-    return waitlist.filter(w => w.preferredDate === date);
-  }, [waitlist]);
+  const getWaitlistForDate = useCallback((date: string) => waitlist.filter(w => w.preferredDate === date), [waitlist]);
+  const setWaitlistStatus = useCallback((id: string, status: WaitlistEntry['status']) => setWaitlist(prev => prev.map(w => w.id === id ? { ...w, status } : w)), []);
+  const deleteWaitlistEntry = useCallback((id: string) => setWaitlist(prev => prev.filter(w => w.id !== id)), []);
+  const buildWaitlistMessage = useCallback((data: any) => `Hi, I'd like to join the waitlist for ${data.preferredDate}${data.preferredTime ? ` at ${data.preferredTime}` : ''} for ${data.guests} guests. My name is ${data.name || 'a customer'}.`, []);
+  const buildWhatsAppUrl = useCallback((message: string) => `${WHATSAPP_URL}?text=${encodeURIComponent(message)}`, []);
 
-  const setWaitlistStatus = useCallback((id: string, status: WaitlistEntry['status']) => {
-    setWaitlist(prev => prev.map(w => w.id === id ? { ...w, status } : w));
-  }, []);
-
-  const deleteWaitlistEntry = useCallback((id: string) => {
-    setWaitlist(prev => prev.filter(w => w.id !== id));
-  }, []);
-
-  // Generate a message for waitlist inquiries via WhatsApp
-  const buildWaitlistMessage = useCallback((data: any) => {
-    return `Hi, I'd like to join the waitlist for ${data.preferredDate}${data.preferredTime ? ` at ${data.preferredTime}` : ''} for ${data.guests} guests. My name is ${data.name || 'a customer'}.`;
-  }, []);
-
-  const buildWhatsAppUrl = useCallback((message: string) => {
-    return `${WHATSAPP_URL}?text=${encodeURIComponent(message)}`;
-  }, []);
-
-  // Get all busy time slots (bookings and blocks) for a room on a specific day
   const getBusyIntervals = useCallback((date: string, roomId: string) => {
     const dayBookings = bookings.filter(b => b.start_at.startsWith(date) && b.room_id === roomId && b.status !== BookingStatus.CANCELLED);
     const dayBlocks = blocks.filter(b => b.start_at.startsWith(date) && b.roomId === roomId);
-    
     return [
-      ...dayBookings.map(b => ({
-        id: b.id,
-        type: 'booking' as const,
-        start: new Date(b.start_at).getTime(),
-        end: new Date(b.end_at).getTime(),
-        customer_name: b.customer_name,
-        status: b.status
-      })),
-      ...dayBlocks.map(b => ({
-        id: b.id,
-        type: 'block' as const,
-        start: new Date(b.start_at).getTime(),
-        end: new Date(b.end_at).getTime(),
-        reason: b.reason
-      }))
+      ...dayBookings.map(b => ({ id: b.id, type: 'booking' as const, start: new Date(b.start_at).getTime(), end: new Date(b.end_at).getTime(), customer_name: b.customer_name, status: b.status })),
+      ...dayBlocks.map(b => ({ id: b.id, type: 'block' as const, start: new Date(b.start_at).getTime(), end: new Date(b.end_at).getTime(), reason: b.reason }))
     ];
   }, [bookings, blocks]);
 
-  const getBookingsForDate = useCallback((date: string) => {
-    return bookings.filter(b => b.start_at.startsWith(date));
-  }, [bookings]);
+  const getBookingsForDate = useCallback((date: string) => bookings.filter(b => b.start_at.startsWith(date)), [bookings]);
+  const getBlocksForDate = useCallback((date: string) => blocks.filter(b => b.start_at.startsWith(date)), [blocks]);
 
-  const getBlocksForDate = useCallback((date: string) => {
-    return blocks.filter(b => b.start_at.startsWith(date));
-  }, [blocks]);
+  const addBlock = useCallback((block: Partial<RoomBlock>) => setBlocks(prev => [...prev, { ...block, id: Math.random().toString(36).substring(2, 9), createdAt: Date.now() } as RoomBlock]), []);
+  const deleteBlock = useCallback((id: string) => setBlocks(prev => prev.filter(b => b.id !== id)), []);
+  const toggleRecurringBlock = useCallback((id: string, enabled: boolean) => setRecurringBlocks(prev => prev.map(b => b.id === id ? { ...b, enabled } : b)), []);
+  const deleteRecurringBlock = useCallback((id: string) => setRecurringBlocks(prev => prev.filter(b => b.id !== id)), []);
 
-  const addBlock = useCallback((block: Partial<RoomBlock>) => {
-    const newBlock = { ...block, id: Math.random().toString(36).substring(2, 9), createdAt: Date.now() } as RoomBlock;
-    setBlocks(prev => [...prev, newBlock]);
-  }, []);
+  const updateSettings = useCallback((patch: Partial<VenueSettings>) => setSettings(prev => ({ ...prev, ...patch })), []);
 
-  const deleteBlock = useCallback((id: string) => {
-    setBlocks(prev => prev.filter(b => b.id !== id));
-  }, []);
-
-  const toggleRecurringBlock = useCallback((id: string, enabled: boolean) => {
-    setRecurringBlocks(prev => prev.map(b => b.id === id ? { ...b, enabled } : b));
-  }, []);
-
-  const deleteRecurringBlock = useCallback((id: string) => {
-    setRecurringBlocks(prev => prev.filter(b => b.id !== id));
-  }, []);
-
-  const updateSettings = useCallback((patch: Partial<VenueSettings>) => {
-    setSettings(prev => ({ ...prev, ...patch }));
-  }, []);
-
-  const addPromoCode = useCallback((promo: Partial<PromoCode>) => {
-    const newPromo = { ...promo, id: Math.random().toString(36).substring(2, 9), uses: 0 } as PromoCode;
-    setPromoCodes(prev => [...prev, newPromo]);
-  }, []);
-
-  const updatePromoCode = useCallback((id: string, patch: Partial<PromoCode>) => {
-    setPromoCodes(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
-  }, []);
+  const addPromoCode = useCallback((promo: Partial<PromoCode>) => setPromoCodes(prev => [...prev, { ...promo, id: Math.random().toString(36).substring(2, 9), uses: 0 } as PromoCode]), []);
+  const updatePromoCode = useCallback((id: string, patch: Partial<PromoCode>) => setPromoCodes(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p)), []);
+  const deletePromoCode = useCallback((id: string) => setPromoCodes(prev => prev.filter(p => p.id !== id)), []);
 
   const getCalendarSyncConfig = useCallback(() => calSync, [calSync]);
-  const setCalendarSyncConfig = useCallback((config: Partial<CalendarSyncConfig>) => {
-    setCalSync(prev => ({ ...prev, ...config }));
+  const setCalendarSyncConfig = useCallback((config: Partial<CalendarSyncConfig>) => setCalSync(prev => ({ ...prev, ...config })), []);
+  const regenerateCalendarToken = useCallback(() => setCalSync(prev => ({ ...prev, token: Math.random().toString(36).substring(7), lastRegeneratedAt: new Date().toISOString() })), []);
+
+  const addCustomer = useCallback((customer: Partial<Customer>) => {
+    const newCustomer = { ...customer, id: Math.random().toString(36).substring(2, 9), createdAt: Date.now(), updatedAt: Date.now(), totalBookings: customer.totalBookings || 0, totalSpend: customer.totalSpend || 0 } as Customer;
+    setCustomers(prev => [...prev, newCustomer]);
+    return newCustomer;
   }, []);
-  const regenerateCalendarToken = useCallback(() => {
-    setCalSync(prev => ({ ...prev, token: Math.random().toString(36).substring(7), lastRegeneratedAt: new Date().toISOString() }));
+  const updateCustomer = useCallback((id: string, patch: Partial<Customer>) => setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...patch, updatedAt: Date.now() } : c)), []);
+  const deleteCustomer = useCallback((id: string) => setCustomers(prev => prev.filter(c => c.id !== id)), []);
+
+  const updateOperatingHours = useCallback((day: number, patch: Partial<DayOperatingHours>) => {
+    setOperatingHours(prev => prev.map(oh => oh.day === day ? { ...oh, ...patch } : oh));
+  }, []);
+
+  const addService = useCallback((service: Partial<Service>) => {
+    setServices(prev => [...prev, { ...service, id: Math.random().toString(36).substring(2, 9), enabled: true } as Service]);
+  }, []);
+  const updateService = useCallback((id: string, patch: Partial<Service>) => {
+    setServices(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
+  }, []);
+  const deleteService = useCallback((id: string) => {
+    setServices(prev => prev.filter(s => s.id !== id));
+  }, []);
+
+  const addExtra = useCallback((extra: Partial<Extra>) => {
+    setExtras(prev => [...prev, { ...extra, id: Math.random().toString(36).substring(2, 9), enabled: true, sortOrder: prev.length + 1 } as Extra]);
+  }, []);
+  const updateExtra = useCallback((id: string, patch: Partial<Extra>) => {
+    setExtras(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
+  }, []);
+  const deleteExtra = useCallback((id: string) => {
+    setExtras(prev => prev.filter(e => e.id !== id));
+  }, []);
+
+  const updateStaff = useCallback((id: string, patch: Partial<StaffMember>) => {
+    setStaff(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
+  }, []);
+  const addStaff = useCallback((member: Partial<StaffMember>) => {
+    setStaff(prev => [...prev, { ...member, id: Math.random().toString(36).substring(2, 9), enabled: true } as StaffMember]);
+  }, []);
+  const deleteStaff = useCallback((id: string) => {
+    setStaff(prev => prev.filter(s => s.id !== id));
   }, []);
 
   return {
-    loading,
-    bookings,
-    rooms,
-    services,
-    staff,
-    blocks,
-    recurringBlocks,
-    specialHours,
-    settings,
-    promoCodes,
-    customers,
-    waitlist,
-    extras,
-    getOperatingWindow,
-    calculatePricing,
-    getValidStartTimes,
-    findFirstAvailableRoomAndStaff,
-    addBooking,
-    updateBooking,
-    getBookingByMagicToken,
-    canRescheduleOrCancel,
-    getEnabledExtras,
-    computeExtrasTotal,
-    buildBookingExtrasSnapshot,
-    addWaitlistEntry,
-    getWaitlistForDate,
-    setWaitlistStatus,
-    deleteWaitlistEntry,
-    buildWaitlistMessage,
-    buildWhatsAppUrl,
-    getBusyIntervals,
-    getBookingsForDate,
-    getBlocksForDate,
-    addBlock,
-    deleteBlock,
-    toggleRecurringBlock,
-    deleteRecurringBlock,
-    updateSettings,
-    addPromoCode,
-    updatePromoCode,
-    getCalendarSyncConfig,
-    setCalendarSyncConfig,
-    regenerateCalendarToken,
-    validateInterval
+    loading, bookings, rooms, services, staff, blocks, recurringBlocks, specialHours, settings, promoCodes, customers, waitlist, extras, operatingHours,
+    getOperatingWindow, calculatePricing, getValidStartTimes, findFirstAvailableRoomAndStaff, addBooking, updateBooking, getBookingByMagicToken, canRescheduleOrCancel,
+    getEnabledExtras, computeExtrasTotal, buildBookingExtrasSnapshot, addWaitlistEntry, getWaitlistForDate, setWaitlistStatus, deleteWaitlistEntry, buildWaitlistMessage, buildWhatsAppUrl, getBusyIntervals, getBookingsForDate, getBlocksForDate,
+    addBlock, deleteBlock, toggleRecurringBlock, deleteRecurringBlock, updateSettings, addPromoCode, updatePromoCode, deletePromoCode, getCalendarSyncConfig, setCalendarSyncConfig, regenerateCalendarToken, validateInterval, addCustomer, updateCustomer, deleteCustomer,
+    updateOperatingHours, addService, updateService, deleteService, addExtra, updateExtra, deleteExtra, updateStaff, addStaff, deleteStaff
   };
 }

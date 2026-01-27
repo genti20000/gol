@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
@@ -218,7 +219,7 @@ function BookingsTab({ store, selectedDate, setSelectedDate }: { store: any, sel
 
       {viewMode === 'day' ? (
         <div className="space-y-12">
-          <div className="overflow-x-auto no-scrollbar -mx-4 px-4">
+          <div className="overflow-x-hidden -mx-4">
              <TimelineView 
                store={store} 
                date={selectedDate} 
@@ -492,11 +493,6 @@ function MonthCalendar({ store, onSelectDay }: { store: any, onSelectDay: (d: st
 
 function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitChange, onValidationFailure }: any) {
   const [rowHeight, setRowHeight] = useState(60); 
-  const [laneWidths, setLaneWidths] = useState<Record<string, number>>({
-    'room-a': 120,
-    'room-b': 120,
-    'room-c': 120,
-  });
 
   const window = store.getOperatingWindow(date);
   if (!window) return <div className="p-10 text-center text-zinc-600 uppercase font-bold tracking-widest">Venue Closed</div>;
@@ -509,10 +505,6 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
   for (let h = startHour; h < endHour; h++) {
     hours.push(h);
   }
-
-  const updateWidth = (id: string, delta: number) => {
-    setLaneWidths(prev => ({ ...prev, [id]: Math.max(80, prev[id] + delta) }));
-  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -527,32 +519,38 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
         </div>
       </div>
 
-      <div className="relative border border-zinc-900 rounded-[2rem] overflow-hidden bg-zinc-950 flex shadow-2xl">
+      <div className="relative border border-zinc-900 rounded-[2rem] overflow-hidden bg-zinc-950 flex shadow-2xl w-full">
+        {/* Time Column */}
         <div className="w-16 shrink-0 border-r border-zinc-900 bg-zinc-900/40 z-20">
           <div className="h-24 border-b border-zinc-900"></div> 
           {hours.map(h => (
-            <div key={h} className="border-b border-zinc-800/50 flex items-start justify-center pt-2 text-[9px] font-mono text-zinc-600" style={{ height: rowHeight }}>
+            <div key={h} className="relative border-b border-zinc-800/50 flex items-start justify-center pt-2 text-[9px] font-mono text-zinc-600" style={{ height: rowHeight }}>
               {(h % 24).toString().padStart(2, '0')}:00
+              {/* Half-hour marker line sidebar */}
+              <div className="absolute top-1/2 left-0 right-0 border-t border-zinc-800/10 pointer-events-none"></div>
             </div>
           ))}
         </div>
 
-        <div className="flex-1 overflow-x-auto no-scrollbar flex">
+        {/* Lanes Container - force 3 lanes on mobile via flex-1 min-w-0 */}
+        <div className="flex-1 flex min-w-0">
           {store.rooms.map((r: Room) => (
-            <div key={r.id} className="shrink-0 border-r border-zinc-900 relative" style={{ width: laneWidths[r.id] || 120 }}>
-              <div className="h-24 border-b border-zinc-900 flex flex-col items-center justify-center p-2 text-center bg-zinc-900/20 group">
-                <span className="text-[10px] font-bold uppercase text-white mb-2 leading-tight">
-                  {r.name.toUpperCase() === 'ATTIC / PENTHOUSE' ? 'ATTIC' : r.name.toUpperCase()}
+            <div 
+              key={r.id} 
+              className="flex-1 border-r border-zinc-900 relative min-w-0" 
+            >
+              <div className="h-24 border-b border-zinc-900 flex flex-col items-center justify-center p-1 text-center bg-zinc-900/20 overflow-hidden">
+                <span className="text-[9px] sm:text-[10px] font-bold uppercase text-white leading-tight break-words">
+                  {r.name.toUpperCase()}
                 </span>
-                <div className="flex gap-2">
-                  <button onClick={() => updateWidth(r.id, -20)} className="w-6 h-6 rounded bg-zinc-800 flex items-center justify-center text-[10px] text-zinc-500 hover:text-white transition-colors">-</button>
-                  <button onClick={() => updateWidth(r.id, 20)} className="w-6 h-6 rounded bg-zinc-800 flex items-center justify-center text-[10px] text-zinc-500 hover:text-white transition-colors">+</button>
-                </div>
               </div>
 
               <div className="relative" style={{ height: hours.length * rowHeight }}>
                 {hours.map(h => (
-                  <div key={h} className="border-b border-zinc-900/30 w-full" style={{ height: rowHeight }}></div>
+                  <div key={h} className="relative border-b border-zinc-900/30 w-full" style={{ height: rowHeight }}>
+                    {/* 30-minute marker line */}
+                    <div className="absolute top-1/2 left-0 right-0 border-t border-zinc-800/40 h-0 pointer-events-none"></div>
+                  </div>
                 ))}
                 
                 <div 
@@ -563,7 +561,8 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                       const hourOffset = y / rowHeight;
                       const totalMins = Math.floor((startHour + hourOffset) * 60);
                       const h = Math.floor(totalMins / 60);
-                      const m = Math.floor((totalMins % 60) / 15) * 15;
+                      // Snap logic for 30-minute intervals
+                      const m = Math.floor((totalMins % 60) / 30) * 30;
                       const timeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
                       onTapToCreate({ date, roomId: r.id, time: timeStr });
                    }}
@@ -578,7 +577,7 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                     <div 
                       key={item.id}
                       onClick={(e) => { e.stopPropagation(); if (item.type === 'booking') onSelectBooking(item.id); }}
-                      className={`absolute left-1 right-1 rounded-lg border flex flex-col justify-center items-center px-2 cursor-pointer transition-all hover:scale-[1.02] active:scale-95 shadow-lg overflow-hidden z-10 ${
+                      className={`absolute left-0.5 right-0.5 rounded-lg border flex flex-col justify-center items-center px-0.5 cursor-pointer transition-all hover:scale-[1.02] active:scale-95 shadow-lg overflow-hidden z-10 ${
                         item.type === 'booking' ? (item.status === 'CONFIRMED' ? 'bg-amber-500 text-black border-amber-400' : 'bg-zinc-800 text-zinc-400 border-zinc-700') : 'bg-red-500/20 text-red-500 border-red-500/20 cursor-default'
                       }`}
                       style={{ 
@@ -586,7 +585,7 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                         height: durationHrs * rowHeight 
                       }}
                     >
-                      <span className="text-[8px] font-bold uppercase text-center line-clamp-2">
+                      <span className="text-[7px] font-bold uppercase text-center line-clamp-2 leading-none">
                         {item.type === 'booking' ? item.customer_name : (item.reason || 'Blocked')}
                       </span>
                     </div>
@@ -603,27 +602,61 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
 
 function CustomersTab({ store }: { store: any }) {
   const [search, setSearch] = useState('');
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [showModal, setShowModal] = useState(false);
+
   const filtered = store.customers.filter((c: Customer) => 
     c.name.toLowerCase().includes(search.toLowerCase()) || 
     c.email.toLowerCase().includes(search.toLowerCase())
   ).sort((a: Customer, b: Customer) => (b.lastBookingAt || 0) - (a.lastBookingAt || 0));
 
+  const handleEdit = (c: Customer) => {
+    setEditingCustomer(c);
+    setShowModal(true);
+  };
+
+  const handleAdd = () => {
+    setEditingCustomer(null);
+    setShowModal(true);
+  };
+
+  const handleDelete = (id: string) => {
+    if (confirm("Are you sure you want to delete this customer record?")) {
+      store.deleteCustomer(id);
+    }
+  };
+
   return (
     <div className="glass-panel p-8 rounded-[2.5rem] border-zinc-800 shadow-2xl space-y-8">
-      <div className="flex justify-between items-center gap-6">
-        <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Guest CRM</h3>
-        <input 
-          type="text" 
-          placeholder="Search by name or email..." 
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="bg-zinc-900 border border-zinc-800 rounded-xl px-6 py-3 text-sm text-white w-full max-w-sm outline-none focus:ring-1 ring-amber-500"
-        />
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+        <div className="space-y-1">
+          <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Guest CRM</h3>
+          <p className="text-zinc-600 text-[9px] font-bold uppercase tracking-widest">Customer database and history</p>
+        </div>
+        <div className="flex items-center gap-4 w-full md:w-auto">
+          <input 
+            type="text" 
+            placeholder="Search by name or email..." 
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="bg-zinc-900 border border-zinc-800 rounded-xl px-6 py-3 text-sm text-white w-full max-w-sm outline-none focus:ring-1 ring-amber-500"
+          />
+          <button 
+            onClick={handleAdd}
+            className="gold-gradient text-black px-6 py-3.5 rounded-xl text-[9px] font-bold uppercase tracking-widest shadow-lg shadow-amber-500/10 active:scale-95 transition-all whitespace-nowrap min-h-[44px]"
+          >
+            Add Guest
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filtered.map((c: Customer) => (
-          <div key={c.id} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl space-y-4 hover:border-zinc-700 transition-all group shadow-lg">
+          <div key={c.id} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl space-y-4 hover:border-zinc-700 transition-all group shadow-lg relative">
+             <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button onClick={() => handleEdit(c)} className="text-zinc-500 hover:text-white p-2" title="Edit Profile"><i className="fa-solid fa-pen-to-square"></i></button>
+                <button onClick={() => handleDelete(c.id)} className="text-zinc-700 hover:text-red-500 p-2" title="Delete Profile"><i className="fa-solid fa-trash-can"></i></button>
+             </div>
              <div className="flex justify-between items-start">
                <div className="w-10 h-10 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center font-bold text-lg">
                  {c.name.charAt(0)}
@@ -634,11 +667,11 @@ function CustomersTab({ store }: { store: any }) {
                </div>
              </div>
              <div>
-                <p className="font-bold text-white uppercase truncate">{c.name}</p>
+                <p className="font-bold text-white uppercase truncate pr-16">{c.name}</p>
                 <p className="text-[10px] text-zinc-600 font-bold lowercase tracking-tight truncate">{c.email}</p>
              </div>
              <div className="pt-4 border-t border-zinc-900 flex justify-between items-center">
-                <span className="text-[9px] font-bold uppercase tracking-widest">{c.totalBookings} Bookings</span>
+                <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">{c.totalBookings} Bookings</span>
                 {c.lastBookingAt && (
                    <span className="text-[8px] text-zinc-700 font-bold uppercase tracking-widest">Last: {new Date(c.lastBookingAt).toLocaleDateString()}</span>
                 )}
@@ -646,6 +679,69 @@ function CustomersTab({ store }: { store: any }) {
           </div>
         ))}
       </div>
+
+      {showModal && (
+        <CustomerModal 
+          store={store} 
+          onClose={() => setShowModal(false)} 
+          customer={editingCustomer || undefined} 
+        />
+      )}
+    </div>
+  );
+}
+
+function CustomerModal({ store, onClose, customer }: { store: any, onClose: () => void, customer?: Customer }) {
+  const [formData, setFormData] = useState({
+    name: customer?.name || '',
+    email: customer?.email || '',
+    phone: customer?.phone || '',
+    notes: customer?.notes || ''
+  });
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (customer) {
+      store.updateCustomer(customer.id, formData);
+    } else {
+      store.addCustomer(formData);
+    }
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={onClose}></div>
+      <form onSubmit={handleSave} className="relative w-full max-sm glass-panel p-8 rounded-[2rem] border-zinc-800 shadow-2xl animate-in zoom-in duration-300 space-y-6">
+         <div className="flex justify-between items-center">
+            <h3 className="text-lg font-bold uppercase tracking-tight text-white">{customer ? 'Edit Profile' : 'New Guest'}</h3>
+            <button type="button" onClick={onClose} className="text-zinc-600 hover:text-white p-2"><i className="fa-solid fa-x"></i></button>
+         </div>
+
+         <div className="space-y-4">
+            <div className="space-y-1.5">
+               <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Guest Name</label>
+               <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
+            </div>
+            <div className="space-y-1.5">
+               <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Email Address</label>
+               <input type="email" required value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
+            </div>
+            <div className="space-y-1.5">
+               <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Phone Number</label>
+               <input type="tel" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
+            </div>
+            <div className="space-y-1.5">
+               <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Internal Notes</label>
+               <textarea rows={3} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500 resize-none" />
+            </div>
+         </div>
+
+         <div className="flex gap-4 pt-2">
+            <button type="button" onClick={onClose} className="flex-1 bg-zinc-900 border border-zinc-800 py-3.5 rounded-xl text-[10px] font-bold uppercase tracking-widest text-white">Discard</button>
+            <button type="submit" className="flex-1 gold-gradient text-black py-3.5 rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-xl shadow-amber-500/10">Save Guest</button>
+         </div>
+      </form>
     </div>
   );
 }
@@ -730,15 +826,15 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
 
   return (
     <div className="flex flex-col lg:flex-row gap-10">
-      <div className="lg:w-64 space-y-2">
-         {(['venue', 'hours', 'services', 'staff', 'promos', 'extras', 'sync'] as const).map(s => (
+      <div className="lg:w-64 shrink-0 space-y-2 overflow-y-auto no-scrollbar max-h-[80vh]">
+         {(['venue', 'hours', 'services', 'promos', 'extras', 'sync'] as const).map(s => (
            <button key={s} onClick={() => setActiveSub(s)} className={`w-full text-left px-5 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeSub === s ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/10' : 'text-zinc-500 hover:bg-zinc-900 hover:text-white'}`}>
              {s} Configuration
            </button>
          ))}
       </div>
 
-      <div className="flex-1 glass-panel p-8 rounded-[2.5rem] border-zinc-800 shadow-2xl">
+      <div className="flex-1 glass-panel p-8 rounded-[2.5rem] border-zinc-800 shadow-2xl overflow-y-auto no-scrollbar max-h-[80vh]">
          {activeSub === 'venue' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-right-2 duration-300">
                <h3 className="text-xl font-bold uppercase tracking-tighter text-white">General Settings</h3>
@@ -766,8 +862,104 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                       <input type="number" value={store.settings.deposit_amount} onChange={e => store.updateSettings({ deposit_amount: parseInt(e.target.value) })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
                     </div>
                   )}
+
+                  {/* Lead Time Settings */}
+                  <div className="space-y-2 border-t border-zinc-900 pt-6 md:col-span-2">
+                     <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-4">Lead Time Controls</p>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="space-y-2">
+                           <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Min Days Lead Time</label>
+                           <input type="number" min="0" value={store.settings.minDaysBeforeBooking} onChange={e => store.updateSettings({ minDaysBeforeBooking: Math.max(0, parseInt(e.target.value)) })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
+                        </div>
+                        <div className="space-y-2">
+                           <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Min Hours Lead Time</label>
+                           <input type="number" min="0" value={store.settings.minHoursBeforeBooking} onChange={e => store.updateSettings({ minHoursBeforeBooking: Math.max(0, parseInt(e.target.value)) })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
+                        </div>
+                     </div>
+                  </div>
                </div>
             </div>
+         )}
+
+         {activeSub === 'hours' && (
+           <div className="space-y-8 animate-in fade-in slide-in-from-right-2 duration-300">
+             <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Operating Hours</h3>
+             <div className="space-y-4">
+               {store.operatingHours.map((oh: DayOperatingHours) => (
+                 <div key={oh.day} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                   <div className="flex items-center gap-4">
+                     <button onClick={() => store.updateOperatingHours(oh.day, { enabled: !oh.enabled })} className={`w-12 h-6 rounded-full relative transition-all ${oh.enabled ? 'bg-amber-500' : 'bg-zinc-800'}`}>
+                        <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${oh.enabled ? 'left-7' : 'left-1'}`}></div>
+                     </button>
+                     <span className="text-xs font-bold uppercase tracking-widest text-white w-24">{['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][oh.day]}</span>
+                   </div>
+                   <div className="flex items-center gap-4 w-full md:w-auto">
+                     <input type="time" disabled={!oh.enabled} value={oh.open} onChange={e => store.updateOperatingHours(oh.day, { open: e.target.value })} className="flex-1 md:flex-none bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-white font-mono text-sm disabled:opacity-20" />
+                     <span className="text-zinc-700">to</span>
+                     <input type="time" disabled={!oh.enabled} value={oh.close} onChange={e => store.updateOperatingHours(oh.day, { close: e.target.value })} className="flex-1 md:flex-none bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-white font-mono text-sm disabled:opacity-20" />
+                   </div>
+                 </div>
+               ))}
+             </div>
+           </div>
+         )}
+
+         {activeSub === 'services' && (
+           <div className="space-y-8 animate-in fade-in slide-in-from-right-2 duration-300">
+             <div className="flex justify-between items-center">
+               <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Booking Services</h3>
+               <button onClick={() => store.addService({ name: 'New Service', durationMinutes: 120, basePrice: 0 })} className="bg-zinc-900 border border-zinc-800 text-amber-500 px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest">Add Service</button>
+             </div>
+             <div className="grid grid-cols-1 gap-4">
+               {store.services.map((s: Service) => (
+                 <div key={s.id} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                   <div className="space-y-1 flex-1 w-full">
+                     <input type="text" value={s.name} onChange={e => store.updateService(s.id, { name: e.target.value })} className="w-full bg-transparent border-none text-white font-bold uppercase text-sm outline-none focus:text-amber-500" />
+                     <p className="text-[9px] text-zinc-600 font-bold uppercase tracking-widest">{s.durationMinutes} Minutes Experience</p>
+                   </div>
+                   <div className="flex items-center gap-4 w-full md:w-auto">
+                     <div className="flex items-center gap-2 bg-zinc-900 px-4 py-2 rounded-xl border border-zinc-800">
+                        <span className="text-[10px] text-zinc-500 uppercase font-bold">Mins:</span>
+                        <input type="number" step="15" value={s.durationMinutes} onChange={e => store.updateService(s.id, { durationMinutes: parseInt(e.target.value) })} className="bg-transparent border-none text-white font-mono text-xs w-16 outline-none" />
+                     </div>
+                     <button onClick={() => store.deleteService(s.id)} className="text-zinc-800 hover:text-red-500 p-2"><i className="fa-solid fa-trash-can"></i></button>
+                   </div>
+                 </div>
+               ))}
+             </div>
+           </div>
+         )}
+
+         {activeSub === 'extras' && (
+           <div className="space-y-8 animate-in fade-in slide-in-from-right-2 duration-300">
+             <div className="flex justify-between items-center">
+               <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Service Extras</h3>
+               <button onClick={() => store.addExtra({ name: 'New Extra', price: 0, pricingMode: 'flat' })} className="bg-zinc-900 border border-zinc-800 text-amber-500 px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest">Add Extra</button>
+             </div>
+             <div className="grid grid-cols-1 gap-4">
+               {store.extras.map((e: Extra) => (
+                 <div key={e.id} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                   <div className="flex-1 space-y-2 w-full">
+                     <input type="text" value={e.name} onChange={val => store.updateExtra(e.id, { name: val.target.value })} className="w-full bg-transparent border-none text-white font-bold uppercase text-sm outline-none focus:text-amber-500" />
+                     <div className="flex gap-4">
+                       <button onClick={() => store.updateExtra(e.id, { pricingMode: 'flat' })} className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded border ${e.pricingMode === 'flat' ? 'bg-amber-500 text-black border-amber-400' : 'bg-zinc-900 text-zinc-600 border-zinc-800'}`}>Flat Rate</button>
+                       <button onClick={() => store.updateExtra(e.id, { pricingMode: 'per_person' })} className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded border ${e.pricingMode === 'per_person' ? 'bg-amber-500 text-black border-amber-400' : 'bg-zinc-900 text-zinc-600 border-zinc-800'}`}>Per Person</button>
+                     </div>
+                   </div>
+                   <div className="flex items-center gap-4 w-full md:w-auto">
+                     <div className="flex items-center gap-2 bg-zinc-900 px-4 py-2 rounded-xl border border-zinc-800">
+                        <span className="text-[10px] text-zinc-500 uppercase font-bold">£:</span>
+                        <input type="number" value={e.price} onChange={val => store.updateExtra(e.id, { price: parseInt(val.target.value) })} className="bg-transparent border-none text-white font-mono text-xs w-16 outline-none" />
+                     </div>
+                     <button onClick={() => store.updateExtra(e.id, { enabled: !e.enabled })} className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-all ${e.enabled ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-zinc-900 border-zinc-800 text-zinc-800'}`}>
+                        <i className={`fa-solid ${e.enabled ? 'fa-eye' : 'fa-eye-slash'} text-[10px]`}></i>
+                     </button>
+                     <button onClick={() => store.deleteExtra(e.id)} className="text-zinc-800 hover:text-red-500 p-2"><i className="fa-solid fa-trash-can"></i></button>
+                   </div>
+                 </div>
+               ))}
+             </div>
+           </div>
          )}
 
          {activeSub === 'sync' && (
@@ -811,26 +1003,33 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                </div>
                <div className="grid grid-cols-1 gap-4">
                   {store.promoCodes.map((p: PromoCode) => (
-                    <div key={p.id} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex justify-between items-center shadow-lg">
+                    <div key={p.id} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex justify-between items-center shadow-lg group">
                        <div>
-                          <p className="text-lg font-mono font-bold text-amber-500 uppercase">{p.code}</p>
-                          <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mt-1">{p.percentOff ? `${p.percentOff}% OFF` : `£${p.fixedOff} OFF`} • {p.uses} Uses</p>
+                          <div className="flex items-center gap-3">
+                            <input type="text" value={p.code} onChange={e => store.updatePromoCode(p.id, { code: e.target.value.toUpperCase() })} className="bg-transparent border-none text-lg font-mono font-bold text-amber-500 uppercase outline-none focus:text-white" />
+                            <span className="text-[9px] text-zinc-700 font-bold uppercase tracking-widest">{p.uses} Uses</span>
+                          </div>
+                          <div className="flex items-center gap-4 mt-2">
+                             <div className="flex items-center gap-2 bg-zinc-900 px-3 py-1 rounded-lg border border-zinc-800">
+                                <span className="text-[9px] text-zinc-600 font-bold">%:</span>
+                                <input type="number" value={p.percentOff || 0} onChange={e => store.updatePromoCode(p.id, { percentOff: parseInt(e.target.value), fixedOff: undefined })} className="bg-transparent border-none text-white font-mono text-[10px] w-12 outline-none" />
+                             </div>
+                             <span className="text-zinc-800">or</span>
+                             <div className="flex items-center gap-2 bg-zinc-900 px-3 py-1 rounded-lg border border-zinc-800">
+                                <span className="text-[9px] text-zinc-600 font-bold">£:</span>
+                                <input type="number" value={p.fixedOff || 0} onChange={e => store.updatePromoCode(p.id, { fixedOff: parseInt(e.target.value), percentOff: undefined })} className="bg-transparent border-none text-white font-mono text-[10px] w-12 outline-none" />
+                             </div>
+                          </div>
                        </div>
-                       <div className="flex items-center gap-6">
-                          <span className="text-[9px] font-bold uppercase text-zinc-700">{p.startDate} — {p.endDate}</span>
-                          <button onClick={() => store.updatePromoCode(p.id, { enabled: !p.enabled })} className={`px-4 py-2 rounded-lg text-[8px] font-bold uppercase tracking-widest border ${p.enabled ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20'}`}>
+                       <div className="flex flex-col items-end gap-3">
+                          <button onClick={() => store.updatePromoCode(p.id, { enabled: !p.enabled })} className={`px-4 py-1.5 rounded-lg text-[8px] font-bold uppercase tracking-widest border transition-all ${p.enabled ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20'}`}>
                              {p.enabled ? 'Live' : 'Paused'}
                           </button>
+                          <button onClick={() => store.deletePromoCode(p.id)} className="text-zinc-800 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"><i className="fa-solid fa-trash-can"></i></button>
                        </div>
                     </div>
                   ))}
                </div>
-            </div>
-         )}
-         
-         {(['hours', 'services', 'staff', 'extras'].includes(activeSub)) && (
-            <div className="flex flex-col items-center justify-center h-64 text-zinc-800 uppercase font-bold tracking-[0.4em] text-[10px] animate-pulse">
-               Section Under Development
             </div>
          )}
       </div>
