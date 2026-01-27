@@ -129,7 +129,7 @@ export default function Page() {
               </div>
             </div>
             <div className="max-w-7xl mx-auto border-t border-zinc-900 mt-16 pt-8 text-[9px] text-zinc-700 uppercase tracking-widest font-bold">
-              &copy; {new Date().getFullYear()} London Karaoke Club. V2.0-DB.
+              &copy; {new Date().getFullYear()} London Karaoke Club. V2.1-DB.
             </div>
           </footer>
           <FloatingWhatsApp currentPath={route.path} />
