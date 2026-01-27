@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { LOGO_URL, PRICING_TIERS, EXTRAS, getGuestLabel, WHATSAPP_URL } from '@/constants';
@@ -16,18 +16,23 @@ export default function Home() {
   const [extraHours, setExtraHours] = useState(0);
   const [promoCode, setPromoCode] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [clickCount, setClickCount] = useState(0);
+  const [lastTargetPath, setLastTargetPath] = useState('');
 
-  // Auto-select first service if none selected
-  useMemo(() => {
+  // Correctly handle side-effect to select default service
+  useEffect(() => {
     if (store.services.length > 0 && !serviceId) {
-      setServiceId(store.services.filter(s => s.enabled)[0]?.id || '');
+      const defaultService = store.services.find(s => s.enabled);
+      if (defaultService) setServiceId(defaultService.id);
     }
   }, [store.services, serviceId]);
 
   const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promoCode), [date, guests, extraHours, promoCode, store]);
 
   const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
+    setClickCount(prev => prev + 1);
+    
     const searchParams = new URLSearchParams({
       serviceId,
       staffId,
@@ -36,7 +41,19 @@ export default function Home() {
       extraHours: extraHours.toString(),
       promo: promoCode
     });
-    navigate(`/book/results?${searchParams.toString()}`);
+    
+    // Persist to localStorage for fallback recovery
+    localStorage.setItem('lkc_search_date', date);
+    localStorage.setItem('lkc_search_guests', guests.toString());
+    localStorage.setItem('lkc_search_serviceId', serviceId);
+    localStorage.setItem('lkc_search_staffId', staffId);
+
+    const targetPath = `/book/results?${searchParams.toString()}`;
+    setLastTargetPath(targetPath);
+    console.log("Navigating to:", targetPath);
+    
+    // Explicitly call navigate from the shim
+    navigate(targetPath);
   };
 
   const formattedDate = useMemo(() => {
@@ -65,11 +82,14 @@ export default function Home() {
           <p className="text-sm md:text-2xl text-zinc-300 font-light max-w-2xl mx-auto uppercase tracking-widest">
             London's Premium Private Suites
           </p>
+          {/* Debug Click Counter & Path */}
+          <div className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest bg-black/50 inline-block px-3 py-1 rounded-full">
+            Clicked: {clickCount} | Target: {lastTargetPath || 'None'}
+          </div>
         </div>
 
         <form onSubmit={handleSearch} className="glass-panel p-5 sm:p-8 rounded-[1.5rem] md:rounded-[2.5rem] shadow-2xl space-y-6 md:space-y-8 text-sm">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-             {/* Service Select */}
              <div className="flex flex-col text-left gap-2">
               <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 ml-1">Service Type</label>
               <select value={serviceId} onChange={(e) => setServiceId(e.target.value)} className="bg-zinc-900/50 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 focus:ring-1 ring-amber-500 outline-none text-white w-full font-bold appearance-none shadow-inner min-h-[44px]">
@@ -77,7 +97,6 @@ export default function Home() {
               </select>
             </div>
 
-            {/* Staff Select */}
             {store.staff.length > 0 && (
                <div className="flex flex-col text-left gap-2">
                <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 ml-1">Staff Preference (Optional)</label>

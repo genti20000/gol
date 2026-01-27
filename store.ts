@@ -130,6 +130,11 @@ export function useStore() {
     }
   }, [bookings, services, staff, blocks, recurringBlocks, operatingHours, specialHours, settings, promoCodes, customers, waitlist, calSync, extras, loading]);
 
+  const getLocalDateString = (isoOrTs: string | number) => {
+    const d = new Date(isoOrTs);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
   const getOperatingWindow = useCallback((date: string) => {
     const special = specialHours.find(s => s.date === date);
     if (special) return special.enabled ? { open: special.open!, close: special.close! } : null;
@@ -168,8 +173,9 @@ export function useStore() {
   const validateInterval = useCallback((roomId: string, start: string, end: string, excludeBookingId?: string, staffId?: string) => {
     const startTs = new Date(start).getTime();
     const endTs = new Date(end).getTime();
-    const date = start.split('T')[0];
-    const window = getOperatingWindow(date);
+    
+    const localDate = getLocalDateString(startTs);
+    const window = getOperatingWindow(localDate);
     if (!window) return { ok: false, reason: 'Venue is closed on this date' };
 
     const conflicts = bookings.filter(b => {
@@ -207,7 +213,7 @@ export function useStore() {
 
   const getValidStartTimes = useCallback((date: string, durationMinutes: number, staffId?: string, serviceId?: string) => {
     const window = getOperatingWindow(date);
-    if (!window) return [];
+    if (!window || !date) return [];
 
     const times: string[] = [];
     const openH = parseInt(window.open.split(':')[0]);
@@ -220,24 +226,26 @@ export function useStore() {
     const startMinutes = openH * 60 + openM;
     const endMinutes = closeH * 60 + closeM;
 
-    const now = new Date();
+    const nowLocal = new Date();
     const minLeadTimeMs = ((settings.minDaysBeforeBooking || 0) * 24 * 3600000) + ((settings.minHoursBeforeBooking || 0) * 3600000);
-    const earliestAllowedStart = new Date(now.getTime() + minLeadTimeMs);
+    const earliestAllowedStart = new Date(nowLocal.getTime() + minLeadTimeMs);
+
+    const [y, mm, d] = date.split('-').map(Number);
+    const baseDate = new Date(y, mm - 1, d, 0, 0, 0);
 
     for (let m = startMinutes; m <= endMinutes - durationMinutes; m += SLOT_MINUTES) {
-      const hStr = Math.floor((m % (24 * 60)) / 60).toString().padStart(2, '0');
-      const minStr = (m % 60).toString().padStart(2, '0');
-      const time = `${hStr}:${minStr}`;
-      
-      // Lead time check using local date object for comparison
-      const startAtDate = new Date(`${date}T${time}`);
-      if (startAtDate < earliestAllowedStart) continue;
+      const slotStart = new Date(baseDate.getTime() + m * 60000);
+      if (slotStart < earliestAllowedStart) continue;
 
-      const startAt = startAtDate.toISOString();
-      const endAt = new Date(startAtDate.getTime() + durationMinutes * 60000).toISOString();
+      const startAt = slotStart.toISOString();
+      const endAt = new Date(slotStart.getTime() + durationMinutes * 60000).toISOString();
       
       const anyRoom = rooms.some(r => validateInterval(r.id, startAt, endAt, undefined, staffId).ok);
-      if (anyRoom) times.push(time);
+      if (anyRoom) {
+        const hStr = slotStart.getHours().toString().padStart(2, '0');
+        const minStr = slotStart.getMinutes().toString().padStart(2, '0');
+        times.push(`${hStr}:${minStr}`);
+      }
     }
     return times;
   }, [rooms, getOperatingWindow, validateInterval, settings.minDaysBeforeBooking, settings.minHoursBeforeBooking]);
@@ -319,16 +327,22 @@ export function useStore() {
   const buildWhatsAppUrl = useCallback((message: string) => `${WHATSAPP_URL}?text=${encodeURIComponent(message)}`, []);
 
   const getBusyIntervals = useCallback((date: string, roomId: string) => {
-    const dayBookings = bookings.filter(b => b.start_at.startsWith(date) && b.room_id === roomId && b.status !== BookingStatus.CANCELLED);
-    const dayBlocks = blocks.filter(b => b.start_at.startsWith(date) && b.roomId === roomId);
+    const dayBookings = bookings.filter(b => {
+      if (b.room_id !== roomId || b.status === BookingStatus.CANCELLED) return false;
+      return getLocalDateString(b.start_at) === date;
+    });
+    const dayBlocks = blocks.filter(b => {
+      if (b.roomId !== roomId) return false;
+      return getLocalDateString(b.start_at) === date;
+    });
     return [
       ...dayBookings.map(b => ({ id: b.id, type: 'booking' as const, start: new Date(b.start_at).getTime(), end: new Date(b.end_at).getTime(), customer_name: b.customer_name, status: b.status })),
       ...dayBlocks.map(b => ({ id: b.id, type: 'block' as const, start: new Date(b.start_at).getTime(), end: new Date(b.end_at).getTime(), reason: b.reason }))
     ];
   }, [bookings, blocks]);
 
-  const getBookingsForDate = useCallback((date: string) => bookings.filter(b => b.start_at.startsWith(date)), [bookings]);
-  const getBlocksForDate = useCallback((date: string) => blocks.filter(b => b.start_at.startsWith(date)), [blocks]);
+  const getBookingsForDate = useCallback((date: string) => bookings.filter(b => getLocalDateString(b.start_at) === date), [bookings]);
+  const getBlocksForDate = useCallback((date: string) => blocks.filter(b => getLocalDateString(b.start_at) === date), [blocks]);
 
   const addBlock = useCallback((block: Partial<RoomBlock>) => setBlocks(prev => [...prev, { ...block, id: Math.random().toString(36).substring(2, 9), createdAt: Date.now() } as RoomBlock]), []);
   const deleteBlock = useCallback((id: string) => setBlocks(prev => prev.filter(b => b.id !== id)), []);

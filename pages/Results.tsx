@@ -9,12 +9,13 @@ export default function Results() {
   const { route, navigate, back } = useRouterShim();
   const store = useStore();
 
-  const queryDate = route.params.get('date') || '';
-  const queryGuests = parseInt(route.params.get('guests') || '8');
-  const queryExtraHours = parseInt(route.params.get('extraHours') || '0');
-  const queryPromo = route.params.get('promo') || '';
-  const queryServiceId = route.params.get('serviceId') || '';
-  const queryStaffId = route.params.get('staffId') || '';
+  // Robust parameter recovery with localStorage fallback
+  const queryDate = useMemo(() => route.params.get('date') || localStorage.getItem('lkc_search_date') || '', [route.params]);
+  const queryGuests = useMemo(() => parseInt(route.params.get('guests') || localStorage.getItem('lkc_search_guests') || '8'), [route.params]);
+  const queryExtraHours = useMemo(() => parseInt(route.params.get('extraHours') || '0'), [route.params]);
+  const queryPromo = useMemo(() => route.params.get('promo') || '', [route.params]);
+  const queryServiceId = useMemo(() => route.params.get('serviceId') || localStorage.getItem('lkc_search_serviceId') || '', [route.params]);
+  const queryStaffId = useMemo(() => route.params.get('staffId') || localStorage.getItem('lkc_search_staffId') || '', [route.params]);
   
   const totalDurationMinutes = (2 + queryExtraHours) * 60;
 
@@ -81,9 +82,13 @@ export default function Results() {
 
   return (
     <div className="w-full px-4 py-8 md:py-12 md:max-w-4xl md:mx-auto animate-in fade-in duration-700">
-      {/* Debug Readout (Temporary for Diagnostics) */}
-      <div className="mb-4 p-4 bg-zinc-900 border border-zinc-800 rounded-xl text-[8px] font-mono text-zinc-500 uppercase tracking-widest hidden">
-        DEBUG: Date={queryDate} | Guests={queryGuests} | Slots Found={validTimes.length} | LeadTimeDays={store.settings.minDaysBeforeBooking} | LeadTimeHours={store.settings.minHoursBeforeBooking}
+      {/* Diagnostic Debug Readout */}
+      <div className="mb-4 p-4 bg-zinc-900/80 border border-zinc-800 rounded-xl text-[10px] font-mono text-zinc-500 uppercase tracking-widest flex flex-wrap gap-x-6 gap-y-2">
+        <span>DEBUG: Path={route.path}</span>
+        <span>Date={queryDate || 'N/A'}</span>
+        <span>Guests={queryGuests}</span>
+        <span>Slots={validTimes.length}</span>
+        <span>Lead={store.settings.minDaysBeforeBooking}d {store.settings.minHoursBeforeBooking}h</span>
       </div>
 
       <div className="mb-6">

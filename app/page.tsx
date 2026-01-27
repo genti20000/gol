@@ -43,23 +43,29 @@ export default function Page() {
   const [history, setHistory] = useState<RouteState[]>([]);
 
   useEffect(() => {
-    // Basic support for browser back button
-    const handlePopState = () => {
-      const url = new URL(window.location.href);
-      setRoute({ path: url.pathname || '/', params: url.searchParams });
+    const syncRouteFromUrl = () => {
+      const full = window.location.pathname + window.location.search;
+      const cleaned = full.startsWith("#") ? full.slice(1) : full;
+      const [rawPath, rawQuery = ""] = cleaned.split("?");
+      const path = (rawPath || "/").replace(/\/+$/, "") || "/";
+      const params = new URLSearchParams(rawQuery);
+      setRoute({ path, params });
     };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+
+    syncRouteFromUrl();
+    window.addEventListener('popstate', syncRouteFromUrl);
+    return () => window.removeEventListener('popstate', syncRouteFromUrl);
   }, []);
 
   const navigate = (pathWithQuery: string) => {
-    const [path, query] = pathWithQuery.split('?');
-    const params = new URLSearchParams(query || '');
+    const cleaned = pathWithQuery.startsWith("#") ? pathWithQuery.slice(1) : pathWithQuery;
+    const [rawPath, rawQuery = ""] = cleaned.split("?");
+    const path = (rawPath || "/").replace(/\/+$/, "") || "/";
+    const params = new URLSearchParams(rawQuery);
     
     setHistory(prev => [...prev, route]);
     setRoute({ path, params });
     
-    // Update browser URL silently
     window.history.pushState({}, '', pathWithQuery);
     window.scrollTo(0, 0);
   };
@@ -69,24 +75,22 @@ export default function Page() {
       const prev = history[history.length - 1];
       setHistory(prevH => prevH.slice(0, -1));
       setRoute(prev);
-      window.history.replaceState({}, '', prev.path + (prev.params.toString() ? `?${prev.params.toString()}` : ''));
+      const queryString = prev.params.toString();
+      window.history.replaceState({}, '', prev.path + (queryString ? `?${queryString}` : ''));
     } else {
       navigate('/');
     }
   };
 
-  const renderContent = () => {
-    const { path } = route;
+  const normalizedPath = (route.path || "/").replace(/\/+$/, "") || "/";
 
-    if (path === '/') return <Home />;
-    if (path === '/book/results') return <Results />;
-    if (path === '/checkout') return <Checkout />;
-    if (path === '/confirmation') return <Confirmation />;
-    if (path === '/admin') return <Admin />;
-    if (path.startsWith('/m/')) {
-        // Handle token from path /m/token
-        return <ManageBooking />;
-    }
+  const renderContent = () => {
+    if (normalizedPath === '/') return <Home />;
+    if (normalizedPath === '/book/results') return <Results />;
+    if (normalizedPath === '/checkout') return <Checkout />;
+    if (normalizedPath === '/confirmation') return <Confirmation />;
+    if (normalizedPath === '/admin' || normalizedPath.startsWith('/admin')) return <Admin />;
+    if (normalizedPath.startsWith('/m/')) return <ManageBooking />;
 
     return <Home />;
   };
@@ -95,7 +99,13 @@ export default function Page() {
     <RouterContext.Provider value={{ route, navigate, back }}>
       <div className="min-h-screen bg-zinc-950 text-zinc-50 pt-16 font-sans">
         <Header navigate={navigate} />
+        
         <main className="w-full">
+          {/* Diagnostic Debug Line */}
+          <div className="bg-black/40 text-zinc-500 text-[10px] px-4 py-1 font-mono uppercase tracking-widest border-b border-zinc-900 pointer-events-none">
+            {route.path} / {route.params.toString() || "no-params"} / {normalizedPath}
+          </div>
+
           {renderContent()}
         </main>
         
@@ -109,7 +119,7 @@ export default function Page() {
                <div className="space-y-4">
                   <h4 className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Discover</h4>
                   <ul className="text-xs space-y-2 text-zinc-500 uppercase font-bold tracking-tighter list-none p-0">
-                     <li><button onClick={() => navigate('/')} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white uppercase font-bold tracking-tighter text-xs">Book Room</button></li>
+                     <li><button onClick={() => navigate('/')} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white uppercase font-bold tracking-tighter text-xs text-left">Book Room</button></li>
                      <li><a href="#" className="no-underline text-inherit">Packages</a></li>
                      <li><a href="#" className="no-underline text-inherit">Catering</a></li>
                   </ul>
@@ -117,7 +127,7 @@ export default function Page() {
                <div className="space-y-4">
                   <h4 className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Company</h4>
                   <ul className="text-xs space-y-2 text-zinc-500 uppercase font-bold tracking-tighter list-none p-0">
-                     <li><button onClick={() => navigate('/admin')} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white uppercase font-bold tracking-tighter text-xs">Staff Console</button></li>
+                     <li><button onClick={() => navigate('/admin')} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white uppercase font-bold tracking-tighter text-xs text-left">Staff Console</button></li>
                      <li><a href="#" className="no-underline text-inherit">Terms</a></li>
                      <li><a href="#" className="no-underline text-inherit">Privacy</a></li>
                   </ul>
