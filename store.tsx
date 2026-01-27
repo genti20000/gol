@@ -381,7 +381,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       extras_snapshot: booking.extras
     }]).select().single();
     if (error) {
-      console.error("Error adding booking details:", error);
+      console.error("Supabase Error:", error);
+      alert(`Database Error: ${error.message}`);
+      return null;
+    }
+    if (!data) {
+      console.error("No data returned from insert");
+      alert("Error: Database did not return a confirmation.");
       return null;
     }
     const newBooking = { ...data, magicToken: data.magic_token } as Booking;
@@ -568,8 +574,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }), [loading, bookings, rooms, services, staff, blocks, recurringBlocks, specialHours, settings, promoCodes, customers, waitlist, extras, operatingHours, calSync, getOperatingWindow, calculatePricing, getValidStartTimes, findFirstAvailableRoomAndStaff, addBooking, updateBooking, getBookingByMagicToken, canRescheduleOrCancel, getEnabledExtras, computeExtrasTotal, buildBookingExtrasSnapshot, addWaitlistEntry, getWaitlistForDate, setWaitlistStatus, deleteWaitlistEntry, buildWaitlistMessage, buildWhatsAppUrl, getBusyIntervals, getBookingsForDate, getBlocksForDate, addBlock, deleteBlock, toggleRecurringBlock, deleteRecurringBlock, updateSettings, addPromoCode, updatePromoCode, deletePromoCode, getCalendarSyncConfig, setCalendarSyncConfig, regenerateCalendarToken, validateInterval, addCustomer, updateCustomer, deleteCustomer, updateOperatingHours, addService, updateService, deleteService, addExtra, updateExtra, deleteExtra, updateStaff, addStaff, deleteStaff]);
 
   return (
-    <StoreContext.Provider value= { value } >
-    { children }
+    <StoreContext.Provider value={value} >
+      {children}
     </StoreContext.Provider>
   );
 }
