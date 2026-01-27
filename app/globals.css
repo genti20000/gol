@@ -7,25 +7,21 @@
 :root {
     /* Restored Original Tokens */
     --bg: #0B0D10;
-    --panel: rgba(255, 255, 255, 0.06);
-    --panel2: rgba(255, 255, 255, 0.08);
-    --stroke: rgba(255, 255, 255, 0.12);
-    --stroke2: rgba(255, 255, 255, 0.18);
-    --text: rgba(255, 255, 255, 0.92);
-    --text2: rgba(255, 255, 255, 0.70);
-    --text3: rgba(255, 255, 255, 0.52);
+    --panel: rgba(255, 255, 255, 0.05);
+    /* Very transparent white */
+    --panel2: rgba(255, 255, 255, 0.1);
+    --stroke: rgba(255, 255, 255, 0.1);
+    --stroke2: rgba(255, 255, 255, 0.2);
+    --text: rgba(255, 255, 255, 0.95);
+    --text2: rgba(255, 255, 255, 0.7);
+    --text3: rgba(255, 255, 255, 0.4);
     --accent: #F5A300;
-    --warn: #FF4D4D;
-    --pending: #C9A24A;
-
-    /* Semantic Mappings for New Views */
-    --text-muted: var(--text2);
-    --text-dim: var(--text3);
-    --stroke-highlight: var(--stroke2);
+    --warn: #EF4444;
 }
 
 * {
     font-family: 'Outfit', sans-serif;
+    box-sizing: border-box;
 }
 
 body {
@@ -35,53 +31,31 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
+/* Ensure no white flashes or default white backgrounds */
+input,
+select,
+textarea {
+    background-color: rgba(0, 0, 0, 0.4) !important;
+    color: white !important;
+    border: 1px solid var(--stroke) !important;
+}
+
+option {
+    background-color: #18191b !important;
+    color: white !important;
+}
+
 ::selection {
     background: var(--accent);
     color: var(--bg);
 }
 
-::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-}
-
-::-webkit-scrollbar-track {
-    background: var(--bg);
-}
-
-::-webkit-scrollbar-thumb {
-    background: #1E293B;
-    border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: #334155;
-}
-
-/* Animations */
-@keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-.animate-fade-in-up {
-    animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-/* Premium Components - Adapted to Original Colors */
+/* Premium Components */
 .glass-panel {
     background: var(--panel);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--stroke);
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
 }
 
 .glass-panel-hover {
@@ -89,9 +63,8 @@ body {
 }
 
 .glass-panel-hover:hover {
-    border-color: var(--stroke-highlight);
     background: var(--panel2);
-    transform: translateY(-2px);
+    border-color: var(--stroke2);
 }
 
 .gold-gradient {
@@ -104,28 +77,18 @@ body {
     -webkit-text-fill-color: transparent;
 }
 
-.gold-glow {
-    box-shadow: 0 0 20px rgba(245, 158, 11, 0.2);
-    transition: box-shadow 0.3s ease;
-}
-
-.gold-glow:hover {
-    box-shadow: 0 0 30px rgba(245, 158, 11, 0.4);
-}
-
 .input-luxury {
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid var(--stroke);
-    border-radius: 8px;
-    color: white;
-    transition: all 0.3s ease;
+    background: rgba(0, 0, 0, 0.3) !important;
+    border: 1px solid var(--stroke) !important;
+    border-radius: 12px !important;
+    color: white !important;
+    appearance: none;
 }
 
 .input-luxury:focus {
-    outline: none;
-    border-color: var(--accent);
-    background: rgba(0, 0, 0, 0.4);
-    box-shadow: 0 0 0 4px rgba(245, 163, 0, 0.1);
+    outline: none !important;
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 1px var(--accent) !important;
 }
 
 .badge-luxury {
@@ -136,28 +99,25 @@ body {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    padding: 2px 8px;
-    border-radius: 4px;
+    padding: 3px 10px;
+    border-radius: 6px;
 }
 
-.admin-text-primary {
-    color: var(--text);
+/* Animations */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
-.admin-text-secondary {
-    color: var(--text2);
-}
-
-.admin-text-muted {
-    color: var(--text3);
-}
-
-.admin-stroke {
-    border-color: var(--stroke);
-}
-
-.admin-stroke-strong {
-    border-color: var(--stroke2);
+.animate-fade-in-up {
+    animation: fadeInUp 0.5s ease-out forwards;
 }
 
 /* Utilities */
@@ -168,8 +128,4 @@ body {
 .no-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
-}
-
-.mask-edge-fade {
-    mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
 }
