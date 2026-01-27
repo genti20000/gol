@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 export interface RouteState {
   path: string;
@@ -13,10 +13,17 @@ export interface RouterContextValue {
   back: () => void;
 }
 
-export const RouterContext = createContext<RouterContextValue>({
-  route: { path: '/', params: new URLSearchParams() },
-  navigate: () => {},
-  back: () => {},
-});
+export const useRouterShim = (): RouterContextValue => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
 
-export const useRouterShim = () => useContext(RouterContext);
+  return {
+    route: { 
+      path: location.pathname, 
+      params: searchParams 
+    },
+    navigate: (path: string) => navigate(path),
+    back: () => navigate(-1)
+  };
+};
