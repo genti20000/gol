@@ -49,11 +49,11 @@ export default function Page() {
       const full = window.location.pathname + window.location.search;
       const cleaned = full.startsWith("#") ? full.slice(1) : full;
       const [rawPath, rawQuery = ""] = cleaned.split("?");
-      
+
       // Normalize path: leading slash, no trailing slash
       const path = (rawPath || "/").replace(/\/+$/, "") || "/";
       const params = new URLSearchParams(rawQuery);
-      
+
       setRoute({ path, params });
     };
 
@@ -65,14 +65,14 @@ export default function Page() {
   const navigate = (pathWithQuery: string) => {
     const cleaned = pathWithQuery.startsWith("#") ? pathWithQuery.slice(1) : pathWithQuery;
     const [rawPath, rawQuery = ""] = cleaned.split("?");
-    
+
     // Normalize path for internal state matching
     const path = (rawPath || "/").replace(/\/+$/, "") || "/";
     const params = new URLSearchParams(rawQuery);
-    
+
     setHistory(prev => [...prev, route]);
     setRoute({ path, params });
-    
+
     // Push the full original string to the browser history
     window.history.pushState({}, '', cleaned);
     window.scrollTo(0, 0);
@@ -107,44 +107,36 @@ export default function Page() {
 
   return (
     <RouterContext.Provider value={{ route, navigate, back }}>
-      <div className="min-h-screen bg-zinc-950 text-zinc-50 pt-16 font-sans">
+      <div className="min-h-screen bg-zinc-950 text-zinc-50 pt-16 font-sans flex flex-col">
         <Header navigate={navigate} />
-        
-        <main className="w-full">
-          {/* Enhanced Diagnostic Debug Line */}
-          <div className="bg-black/80 text-amber-500/90 text-[10px] px-4 py-2 font-mono uppercase tracking-[0.2em] border-b border-zinc-900 pointer-events-none sticky top-16 z-[100] backdrop-blur-xl flex gap-4">
-            <span className="opacity-50">ROUTER:</span>
-            <span>PATH: {route.path}</span>
-            <span className="opacity-30">|</span>
-            <span className="truncate">QUERY: {route.params.toString() || "EMPTY"}</span>
-          </div>
 
+        <main className="w-full flex-grow relative">
           {renderContent()}
         </main>
-        
+
         <footer className="bg-zinc-950 border-t border-zinc-900 py-16 px-4 sm:px-10 mt-20">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start gap-12">
             <div className="space-y-4">
-               <img src={LOGO_URL} alt="LKC" className="h-8 opacity-40 grayscale" />
-               <p className="text-zinc-600 text-xs max-w-xs leading-relaxed uppercase font-bold tracking-widest">Premium nightlife for groups of 8 to 100 in the heart of the city.</p>
+              <img src={LOGO_URL} alt="LKC" className="h-8 opacity-40 grayscale" />
+              <p className="text-zinc-600 text-xs max-w-xs leading-relaxed uppercase font-bold tracking-widest">Premium nightlife for groups of 8 to 100 in the heart of the city.</p>
             </div>
             <div className="grid grid-cols-2 gap-20">
-               <div className="space-y-4">
-                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Discover</h4>
-                  <ul className="text-xs space-y-2 text-zinc-500 uppercase font-bold tracking-tighter list-none p-0">
-                     <li><button onClick={() => navigate('/')} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white uppercase font-bold tracking-tighter text-xs text-left">Book Room</button></li>
-                     <li><a href="#" className="no-underline text-inherit">Packages</a></li>
-                     <li><a href="#" className="no-underline text-inherit">Catering</a></li>
-                  </ul>
-               </div>
-               <div className="space-y-4">
-                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Company</h4>
-                  <ul className="text-xs space-y-2 text-zinc-500 uppercase font-bold tracking-tighter list-none p-0">
-                     <li><button onClick={() => navigate('/admin')} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white uppercase font-bold tracking-tighter text-xs text-left">Staff Console</button></li>
-                     <li><a href="#" className="no-underline text-inherit">Terms</a></li>
-                     <li><a href="#" className="no-underline text-inherit">Privacy</a></li>
-                  </ul>
-               </div>
+              <div className="space-y-4">
+                <h4 className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Discover</h4>
+                <ul className="text-xs space-y-2 text-zinc-500 uppercase font-bold tracking-tighter list-none p-0">
+                  <li><button onClick={() => navigate('/')} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white uppercase font-bold tracking-tighter text-xs text-left">Book Room</button></li>
+                  <li><a href="#" className="no-underline text-inherit">Packages</a></li>
+                  <li><a href="#" className="no-underline text-inherit">Catering</a></li>
+                </ul>
+              </div>
+              <div className="space-y-4">
+                <h4 className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Company</h4>
+                <ul className="text-xs space-y-2 text-zinc-500 uppercase font-bold tracking-tighter list-none p-0">
+                  <li><button onClick={() => navigate('/admin')} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white uppercase font-bold tracking-tighter text-xs text-left">Staff Console</button></li>
+                  <li><a href="#" className="no-underline text-inherit">Terms</a></li>
+                  <li><a href="#" className="no-underline text-inherit">Privacy</a></li>
+                </ul>
+              </div>
             </div>
           </div>
           <div className="max-w-7xl mx-auto border-t border-zinc-900 mt-16 pt-8 text-[9px] text-zinc-700 uppercase tracking-widest font-bold">

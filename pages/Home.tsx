@@ -8,7 +8,7 @@ import { LOGO_URL, PRICING_TIERS, EXTRAS, getGuestLabel, WHATSAPP_URL } from '@/
 export default function Home() {
   const { navigate } = useRouterShim();
   const store = useStore();
-  
+
   const [serviceId, setServiceId] = useState('');
   const [staffId, setStaffId] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -32,7 +32,7 @@ export default function Home() {
   const handleSearch = (e: React.FormEvent) => {
     if (e) e.preventDefault();
     setClickCount(prev => prev + 1);
-    
+
     const searchParams = new URLSearchParams({
       serviceId,
       staffId,
@@ -41,7 +41,7 @@ export default function Home() {
       extraHours: extraHours.toString(),
       promo: promoCode
     });
-    
+
     // Persist to localStorage for fallback recovery
     localStorage.setItem('lkc_search_date', date);
     localStorage.setItem('lkc_search_guests', guests.toString());
@@ -51,7 +51,7 @@ export default function Home() {
     const targetPath = `/book/results?${searchParams.toString()}`;
     setLastTargetPath(targetPath);
     console.log("Navigating to:", targetPath);
-    
+
     // Explicitly call navigate from the shim
     navigate(targetPath);
   };
@@ -74,7 +74,7 @@ export default function Home() {
       <div className="relative z-10 w-full px-4 md:max-w-4xl md:mx-auto text-center space-y-8 md:space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-700">
         <div className="space-y-4">
           <div className="flex justify-center mb-6">
-             <img src={LOGO_URL} alt="LKC Logo" className="h-16 sm:h-20 md:h-28 drop-shadow-[0_0_30px_rgba(245,158,11,0.2)]" />
+            <img src={LOGO_URL} alt="LKC Logo" className="h-16 sm:h-20 md:h-28 drop-shadow-[0_0_30px_rgba(245,158,11,0.2)]" />
           </div>
           <h1 className="text-4xl sm:text-5xl md:text-8xl font-bold tracking-tighter text-white uppercase leading-none">
             Ultimate <span className="text-amber-500">Karaoke</span>
@@ -82,15 +82,11 @@ export default function Home() {
           <p className="text-sm md:text-2xl text-zinc-300 font-light max-w-2xl mx-auto uppercase tracking-widest">
             London's Premium Private Suites
           </p>
-          {/* Debug Click Counter & Path */}
-          <div className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest bg-black/50 inline-block px-3 py-1 rounded-full">
-            Clicked: {clickCount} | Target: {lastTargetPath || 'None'}
-          </div>
         </div>
 
         <form onSubmit={handleSearch} className="glass-panel p-5 sm:p-8 rounded-[1.5rem] md:rounded-[2.5rem] shadow-2xl space-y-6 md:space-y-8 text-sm">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-             <div className="flex flex-col text-left gap-2">
+            <div className="flex flex-col text-left gap-2">
               <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 ml-1">Service Type</label>
               <select value={serviceId} onChange={(e) => setServiceId(e.target.value)} className="bg-zinc-900/50 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 focus:ring-1 ring-amber-500 outline-none text-white w-full font-bold appearance-none shadow-inner min-h-[44px]">
                 {store.services.filter(s => s.enabled).map(s => <option key={s.id} value={s.id} className="bg-zinc-950">{s.name}</option>)}
@@ -98,13 +94,13 @@ export default function Home() {
             </div>
 
             {store.staff.length > 0 && (
-               <div className="flex flex-col text-left gap-2">
-               <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 ml-1">Staff Preference (Optional)</label>
-               <select value={staffId} onChange={(e) => setStaffId(e.target.value)} className="bg-zinc-900/50 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 focus:ring-1 ring-amber-500 outline-none text-white w-full font-bold appearance-none shadow-inner min-h-[44px]">
-                 <option value="" className="bg-zinc-950">Any Available Concierge</option>
-                 {store.staff.filter(s => s.enabled && (!serviceId || s.servicesOffered.includes(serviceId))).map(s => <option key={s.id} value={s.id} className="bg-zinc-950">{s.name}</option>)}
-               </select>
-               </div>
+              <div className="flex flex-col text-left gap-2">
+                <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 ml-1">Staff Preference (Optional)</label>
+                <select value={staffId} onChange={(e) => setStaffId(e.target.value)} className="bg-zinc-900/50 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 focus:ring-1 ring-amber-500 outline-none text-white w-full font-bold appearance-none shadow-inner min-h-[44px]">
+                  <option value="" className="bg-zinc-950">Any Available Concierge</option>
+                  {store.staff.filter(s => s.enabled && (!serviceId || s.servicesOffered.includes(serviceId))).map(s => <option key={s.id} value={s.id} className="bg-zinc-950">{s.name}</option>)}
+                </select>
+              </div>
             )}
           </div>
 
@@ -116,7 +112,7 @@ export default function Home() {
                 <i className="fa-solid fa-calendar-day text-amber-500 opacity-60"></i>
               </div>
             </div>
-            
+
             <div className="flex flex-col text-left gap-2">
               <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 ml-1">Group Size</label>
               <select value={guests} onChange={(e) => setGuests(parseInt(e.target.value))} className="bg-zinc-900/50 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 focus:ring-1 ring-amber-500 outline-none text-white w-full font-bold appearance-none shadow-inner min-h-[44px]">
@@ -133,25 +129,25 @@ export default function Home() {
           </div>
 
           <div className="flex flex-col md:flex-row items-center justify-between gap-6 md:gap-8 pt-4">
-             <div className="flex flex-col items-center md:items-start gap-1">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Live Quote</div>
-                <div className="flex items-baseline gap-2">
-                   <span className="text-4xl md:text-5xl font-bold text-white tracking-tighter">£{pricing.totalPrice}</span>
-                   {pricing.discountAmount > 0 && <span className="text-green-500 font-bold text-[10px] uppercase tracking-widest">-25% Midweek</span>}
-                </div>
-             </div>
-             <button type="submit" className="w-full md:w-auto gold-gradient hover:scale-[1.02] active:scale-95 transition-all text-black font-bold py-4 md:py-5 px-16 rounded-xl md:rounded-2xl shadow-xl shadow-amber-500/10 uppercase tracking-[0.2em] text-[10px] min-h-[44px] cursor-pointer">
-                Search Availability
-             </button>
+            <div className="flex flex-col items-center md:items-start gap-1">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Live Quote</div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-4xl md:text-5xl font-bold text-white tracking-tighter">£{pricing.totalPrice}</span>
+                {pricing.discountAmount > 0 && <span className="text-green-500 font-bold text-[10px] uppercase tracking-widest">-25% Midweek</span>}
+              </div>
+            </div>
+            <button type="submit" className="w-full md:w-auto gold-gradient hover:scale-[1.02] active:scale-95 transition-all text-black font-bold py-4 md:py-5 px-16 rounded-xl md:rounded-2xl shadow-xl shadow-amber-500/10 uppercase tracking-[0.2em] text-[10px] min-h-[44px] cursor-pointer">
+              Search Availability
+            </button>
           </div>
         </form>
 
         <div className="pt-4 md:pt-8 max-w-2xl mx-auto">
-           <p className="text-zinc-500 text-[9px] md:text-[10px] uppercase font-bold tracking-[0.3em] mb-3 md:mb-4">Sold out online?</p>
-           <a href={WHATSAPP_URL} target="_blank" className="inline-flex items-center gap-3 text-green-500 hover:text-green-400 font-bold uppercase tracking-widest text-[10px] md:text-xs transition-colors no-underline">
-              <i className="fa-brands fa-whatsapp text-lg"></i>
-              Contact our concierge for priority bookings
-           </a>
+          <p className="text-zinc-500 text-[9px] md:text-[10px] uppercase font-bold tracking-[0.3em] mb-3 md:mb-4">Sold out online?</p>
+          <a href={WHATSAPP_URL} target="_blank" className="inline-flex items-center gap-3 text-green-500 hover:text-green-400 font-bold uppercase tracking-widest text-[10px] md:text-xs transition-colors no-underline">
+            <i className="fa-brands fa-whatsapp text-lg"></i>
+            Contact our concierge for priority bookings
+          </a>
         </div>
       </div>
 
@@ -183,9 +179,9 @@ function DatePickerModal({ selectedDate, onSelect, onClose, store }: { selectedD
       <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={onClose}></div>
       <div className="relative w-full max-w-sm md:max-w-md glass-panel rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-8 animate-in zoom-in duration-300">
         <div className="flex items-center justify-between mb-6 md:mb-8">
-           <button onClick={() => setCurrentView(new Date(currentView.setMonth(currentView.getMonth() - 1)))} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white p-2"><i className="fa-solid fa-chevron-left"></i></button>
-           <h3 className="text-lg md:text-xl font-bold uppercase tracking-tighter text-amber-500">{monthNames[currentView.getMonth()]} {currentView.getFullYear()}</h3>
-           <button onClick={() => setCurrentView(new Date(currentView.setMonth(currentView.getMonth() + 1)))} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white p-2"><i className="fa-solid fa-chevron-right"></i></button>
+          <button onClick={() => setCurrentView(new Date(currentView.setMonth(currentView.getMonth() - 1)))} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white p-2"><i className="fa-solid fa-chevron-left"></i></button>
+          <h3 className="text-lg md:text-xl font-bold uppercase tracking-tighter text-amber-500">{monthNames[currentView.getMonth()]} {currentView.getFullYear()}</h3>
+          <button onClick={() => setCurrentView(new Date(currentView.setMonth(currentView.getMonth() + 1)))} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white p-2"><i className="fa-solid fa-chevron-right"></i></button>
         </div>
         <div className="grid grid-cols-7 gap-1 mb-2">
           {daysOfWeek.map(d => <div key={d} className="text-[8px] font-bold text-zinc-600 text-center">{d}</div>)}
