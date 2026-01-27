@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import Home from '@/pages/Home';
-import Results from '@/pages/Results';
-import Checkout from '@/pages/Checkout';
-import Confirmation from '@/pages/Confirmation';
-import Admin from '@/pages/Admin';
-import ManageBooking from '@/pages/ManageBooking';
+import Home from '@/views/Home';
+import Results from '@/views/Results';
+import Checkout from '@/views/Checkout';
+import Confirmation from '@/views/Confirmation';
+import Admin from '@/views/Admin';
+import ManageBooking from '@/views/ManageBooking';
 import { WHATSAPP_URL, LOGO_URL } from '@/constants';
 import { RouterContext, RouteState } from '@/lib/routerShim';
 import { StoreProvider } from '@/store';
