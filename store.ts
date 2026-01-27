@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -99,7 +98,7 @@ export function useStore() {
         const rb = localStorage.getItem(LS_RECURRING_BLOCKS); if (rb) setRecurringBlocks(JSON.parse(rb));
         const oh = localStorage.getItem(LS_OPERATING_HOURS); if (oh) setOperatingHours(JSON.parse(oh));
         const sh = localStorage.getItem(LS_SPECIAL_HOURS); if (sh) setSpecialHours(JSON.parse(sh));
-        const se = localStorage.getItem(LS_SETTINGS); if (se) setSettings(JSON.parse(se));
+        const se = localStorage.getItem(LS_SETTINGS); if (se) setSettings(prev => ({ ...prev, ...JSON.parse(se) }));
         const pc = localStorage.getItem(LS_PROMO_CODES); if (pc) setPromoCodes(JSON.parse(pc));
         const cu = localStorage.getItem(LS_CUSTOMERS); if (cu) setCustomers(JSON.parse(cu));
         const wl = localStorage.getItem(LS_WAITLIST); if (wl) setWaitlist(JSON.parse(wl));
@@ -222,19 +221,21 @@ export function useStore() {
     const endMinutes = closeH * 60 + closeM;
 
     const now = new Date();
-    const minLeadTimeMs = (settings.minDaysBeforeBooking * 24 * 3600000) + (settings.minHoursBeforeBooking * 3600000);
+    const minLeadTimeMs = ((settings.minDaysBeforeBooking || 0) * 24 * 3600000) + ((settings.minHoursBeforeBooking || 0) * 3600000);
     const earliestAllowedStart = new Date(now.getTime() + minLeadTimeMs);
 
     for (let m = startMinutes; m <= endMinutes - durationMinutes; m += SLOT_MINUTES) {
       const hStr = Math.floor((m % (24 * 60)) / 60).toString().padStart(2, '0');
       const minStr = (m % 60).toString().padStart(2, '0');
       const time = `${hStr}:${minStr}`;
-      const startAt = new Date(`${date}T${time}`).toISOString();
       
-      // Lead time check
-      if (new Date(startAt) < earliestAllowedStart) continue;
+      // Lead time check using local date object for comparison
+      const startAtDate = new Date(`${date}T${time}`);
+      if (startAtDate < earliestAllowedStart) continue;
 
-      const endAt = new Date(new Date(startAt).getTime() + durationMinutes * 60000).toISOString();
+      const startAt = startAtDate.toISOString();
+      const endAt = new Date(startAtDate.getTime() + durationMinutes * 60000).toISOString();
+      
       const anyRoom = rooms.some(r => validateInterval(r.id, startAt, endAt, undefined, staffId).ok);
       if (anyRoom) times.push(time);
     }

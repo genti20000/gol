@@ -18,7 +18,11 @@ export default function Results() {
   
   const totalDurationMinutes = (2 + queryExtraHours) * 60;
 
-  const validTimes = useMemo(() => store.getValidStartTimes(queryDate, totalDurationMinutes, queryStaffId || undefined, queryServiceId || undefined), [queryDate, totalDurationMinutes, queryStaffId, queryServiceId, store]);
+  const validTimes = useMemo(() => {
+    if (!queryDate) return [];
+    return store.getValidStartTimes(queryDate, totalDurationMinutes, queryStaffId || undefined, queryServiceId || undefined);
+  }, [queryDate, totalDurationMinutes, queryStaffId, queryServiceId, store]);
+
   const pricing = useMemo(() => store.calculatePricing(queryDate, queryGuests, queryExtraHours, queryPromo), [queryDate, queryGuests, queryExtraHours, queryPromo, store]);
 
   const [waitlistForm, setWaitlistForm] = useState({ 
@@ -77,6 +81,11 @@ export default function Results() {
 
   return (
     <div className="w-full px-4 py-8 md:py-12 md:max-w-4xl md:mx-auto animate-in fade-in duration-700">
+      {/* Debug Readout (Temporary for Diagnostics) */}
+      <div className="mb-4 p-4 bg-zinc-900 border border-zinc-800 rounded-xl text-[8px] font-mono text-zinc-500 uppercase tracking-widest hidden">
+        DEBUG: Date={queryDate} | Guests={queryGuests} | Slots Found={validTimes.length} | LeadTimeDays={store.settings.minDaysBeforeBooking} | LeadTimeHours={store.settings.minHoursBeforeBooking}
+      </div>
+
       <div className="mb-6">
         <button onClick={back} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white transition-colors flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest">
           <i className="fa-solid fa-arrow-left"></i> Back to Search
@@ -87,7 +96,7 @@ export default function Results() {
         <div>
           <h2 className="text-3xl md:text-4xl font-bold uppercase tracking-tighter mb-2">Available <span className="text-amber-500">Times</span></h2>
           <div className="text-zinc-500 font-bold uppercase tracking-widest text-[10px] space-y-1">
-            <p><span className="text-white">{getGuestLabel(queryGuests)}</span> • {new Date(queryDate).toLocaleDateString('en-GB', { dateStyle: 'full' })}</p>
+            <p><span className="text-white">{getGuestLabel(queryGuests)}</span> • {queryDate ? new Date(queryDate).toLocaleDateString('en-GB', { dateStyle: 'full' }) : 'Invalid Date'}</p>
             <p className="text-amber-500">{2 + queryExtraHours} Hour Experience</p>
           </div>
         </div>
@@ -132,7 +141,40 @@ export default function Results() {
             <h3 className="text-lg md:text-xl font-bold uppercase tracking-tight text-zinc-500">Fully Booked Online</h3>
             <p className="text-zinc-600 text-[10px] md:text-xs mt-2 uppercase tracking-widest">No availability for your selection. Join the waitlist and we’ll contact you if space opens up.</p>
           </div>
-          {/* ... Waitlist form remains unchanged ... */}
+          
+          <div className="glass-panel p-8 md:p-10 rounded-[2rem] border-zinc-800 shadow-2xl space-y-8">
+            <div className="space-y-2">
+              <h3 className="text-xl font-bold uppercase tracking-tight text-white">Join Waitlist</h3>
+              <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">We'll alert you if this slot becomes available.</p>
+            </div>
+            
+            <form onSubmit={handleJoinWaitlist} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Name</label>
+                <input type="text" required value={waitlistForm.name} onChange={e => setWaitlistForm({...waitlistForm, name: e.target.value})} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white outline-none focus:ring-1 ring-amber-500" />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Phone</label>
+                <input type="tel" required value={waitlistForm.phone} onChange={e => setWaitlistForm({...waitlistForm, phone: e.target.value})} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white outline-none focus:ring-1 ring-amber-500" />
+              </div>
+              <div className="md:col-span-2">
+                {waitlistSent ? (
+                  <div className="bg-green-500/10 border border-green-500/20 text-green-500 p-4 rounded-xl text-[10px] font-bold uppercase tracking-widest text-center">
+                    Successfully Joined Waitlist
+                  </div>
+                ) : (
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <button type="submit" className="flex-1 bg-zinc-900 border border-zinc-800 text-white py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest active:scale-95 transition-all">Submit Request</button>
+                    <button type="button" onClick={handleWhatsAppWaitlist} className="flex-1 bg-green-500 text-white py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-3 shadow-xl shadow-green-500/10">
+                      <i className="fa-brands fa-whatsapp text-lg"></i>
+                      WhatsApp Concierge
+                    </button>
+                  </div>
+                )}
+                {error && <p className="text-red-500 text-[9px] font-bold uppercase tracking-widest mt-4 text-center">{error}</p>}
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
