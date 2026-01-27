@@ -66,42 +66,27 @@ export default function Home() {
   }, [date]);
 
   return (
-    <div className="relative min-h-[90vh] flex flex-col items-center justify-center overflow-hidden py-10">
-      <div className="absolute inset-0 z-0 bg-cover bg-center" style={{ backgroundImage: 'url(https://images.unsplash.com/photo-1496337589254-7e19d01ced44?auto=format&fit=crop&w=1920&q=80)' }}>
-        <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]"></div>
-      </div>
-
+    <div className="relative min-h-screen flex flex-col items-center justify-center bg-black py-10">
       <div className="relative z-10 w-full px-4 md:max-w-4xl md:mx-auto text-center space-y-8 md:space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-700">
         <div className="space-y-4">
-          <div className="flex justify-center mb-6">
-            <img src={LOGO_URL} alt="LKC Logo" className="h-16 sm:h-20 md:h-28 drop-shadow-[0_0_30px_rgba(245,158,11,0.2)]" />
-          </div>
-          <h1 className="text-4xl sm:text-5xl md:text-8xl font-bold tracking-tighter text-white uppercase leading-none">
-            Ultimate <span className="text-amber-500">Karaoke</span>
+          <h1 className="flex flex-col text-center font-bold tracking-tighter uppercase leading-[0.8]">
+            <span className="text-3xl sm:text-4xl md:text-6xl text-white">Ultimate</span>
+            <span className="text-6xl sm:text-7xl md:text-9xl text-amber-500">Karaoke</span>
           </h1>
-          <p className="text-sm md:text-2xl text-zinc-300 font-light max-w-2xl mx-auto uppercase tracking-widest">
+          <p className="text-[10px] md:text-sm text-zinc-400 font-medium max-w-2xl mx-auto uppercase tracking-[0.4em]">
             London's Premium Private Suites
           </p>
         </div>
 
-        <form onSubmit={handleSearch} className="glass-panel p-5 sm:p-8 rounded-[1.5rem] md:rounded-[2.5rem] shadow-2xl space-y-6 md:space-y-8 text-sm">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+        <form onSubmit={handleSearch} className="glass-panel p-6 sm:p-10 rounded-[2rem] md:rounded-[2.5rem] shadow-2xl space-y-6 md:space-y-10 text-sm">
+          <div className="grid grid-cols-1 md:grid-cols-1 gap-4 md:gap-6">
+            {/* Service Select */}
             <div className="flex flex-col text-left gap-2">
               <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 ml-1">Service Type</label>
               <select value={serviceId} onChange={(e) => setServiceId(e.target.value)} className="bg-zinc-900/50 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 focus:ring-1 ring-amber-500 outline-none text-white w-full font-bold appearance-none shadow-inner min-h-[44px]">
                 {store.services.filter(s => s.enabled).map(s => <option key={s.id} value={s.id} className="bg-zinc-950">{s.name}</option>)}
               </select>
             </div>
-
-            {store.staff.length > 0 && (
-              <div className="flex flex-col text-left gap-2">
-                <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 ml-1">Staff Preference (Optional)</label>
-                <select value={staffId} onChange={(e) => setStaffId(e.target.value)} className="bg-zinc-900/50 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 focus:ring-1 ring-amber-500 outline-none text-white w-full font-bold appearance-none shadow-inner min-h-[44px]">
-                  <option value="" className="bg-zinc-950">Any Available Concierge</option>
-                  {store.staff.filter(s => s.enabled && (!serviceId || s.servicesOffered.includes(serviceId))).map(s => <option key={s.id} value={s.id} className="bg-zinc-950">{s.name}</option>)}
-                </select>
-              </div>
-            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
@@ -133,7 +118,7 @@ export default function Home() {
               <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Live Quote</div>
               <div className="flex items-baseline gap-2">
                 <span className="text-4xl md:text-5xl font-bold text-white tracking-tighter">£{pricing.totalPrice}</span>
-                {pricing.discountAmount > 0 && <span className="text-green-500 font-bold text-[10px] uppercase tracking-widest">-25% Midweek</span>}
+                {pricing.discountAmount > 0 && <span className="text-green-500 font-bold text-[10px] uppercase tracking-widest ml-2">-{pricing.discountPercent || 25}% Midweek</span>}
               </div>
             </div>
             <button type="submit" className="w-full md:w-auto gold-gradient hover:scale-[1.02] active:scale-95 transition-all text-black font-bold py-4 md:py-5 px-16 rounded-xl md:rounded-2xl shadow-xl shadow-amber-500/10 uppercase tracking-[0.2em] text-[10px] min-h-[44px] cursor-pointer">
@@ -142,9 +127,9 @@ export default function Home() {
           </div>
         </form>
 
-        <div className="pt-4 md:pt-8 max-w-2xl mx-auto">
-          <p className="text-zinc-500 text-[9px] md:text-[10px] uppercase font-bold tracking-[0.3em] mb-3 md:mb-4">Sold out online?</p>
-          <a href={WHATSAPP_URL} target="_blank" className="inline-flex items-center gap-3 text-green-500 hover:text-green-400 font-bold uppercase tracking-widest text-[10px] md:text-xs transition-colors no-underline">
+        <div className="pt-8 md:pt-16 max-w-2xl mx-auto text-center">
+          <p className="text-zinc-600 text-[9px] uppercase font-bold tracking-[0.3em] mb-4">Sold out online?</p>
+          <a href={WHATSAPP_URL} target="_blank" className="inline-flex items-center gap-3 text-green-500 hover:text-green-400 font-bold uppercase tracking-[0.2em] text-[10px] transition-colors no-underline">
             <i className="fa-brands fa-whatsapp text-lg"></i>
             Contact our concierge for priority bookings
           </a>

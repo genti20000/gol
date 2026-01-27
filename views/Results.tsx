@@ -82,15 +82,6 @@ export default function Results() {
 
   return (
     <div className="w-full px-4 py-8 md:py-12 md:max-w-4xl md:mx-auto animate-in fade-in duration-700">
-      {/* Diagnostic Debug Readout */}
-      <div className="mb-4 p-4 bg-zinc-900/80 border border-zinc-800 rounded-xl text-[10px] font-mono text-zinc-500 uppercase tracking-widest flex flex-wrap gap-x-6 gap-y-2">
-        <span>DEBUG: Path={route.path}</span>
-        <span>Date={queryDate || 'N/A'}</span>
-        <span>Guests={queryGuests}</span>
-        <span>Slots={validTimes.length}</span>
-        <span>Lead={store.settings.minDaysBeforeBooking}d {store.settings.minHoursBeforeBooking}h</span>
-      </div>
-
       <div className="mb-6">
         <button onClick={back} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white transition-colors flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest">
           <i className="fa-solid fa-arrow-left"></i> Back to Search
