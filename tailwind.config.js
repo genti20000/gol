@@ -10,6 +10,8 @@ module.exports = {
             colors: {
                 bg: "#0B0D10",
                 accent: "#F5A300",
+                panel: "rgba(255, 255, 255, 0.05)",
+                stroke: "rgba(255, 255, 255, 0.1)",
             },
             fontFamily: {
                 sans: ['Outfit', 'sans-serif'],

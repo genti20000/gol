@@ -5,66 +5,34 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
 :root {
-    /* Restored Original Tokens */
     --bg: #0B0D10;
-    --panel: rgba(255, 255, 255, 0.05);
-    /* Very transparent white */
-    --panel2: rgba(255, 255, 255, 0.1);
-    --stroke: rgba(255, 255, 255, 0.1);
-    --stroke2: rgba(255, 255, 255, 0.2);
-    --text: rgba(255, 255, 255, 0.95);
-    --text2: rgba(255, 255, 255, 0.7);
-    --text3: rgba(255, 255, 255, 0.4);
+    --text: #FFFFFF;
     --accent: #F5A300;
-    --warn: #EF4444;
-}
-
-* {
-    font-family: 'Outfit', sans-serif;
-    box-sizing: border-box;
 }
 
 body {
     background-color: var(--bg);
     color: var(--text);
-    overflow-x: hidden;
-    -webkit-font-smoothing: antialiased;
+    font-family: 'Outfit', sans-serif;
 }
 
-/* Ensure no white flashes or default white backgrounds */
+/* Force dark style on inputs because browsers love to make them white */
 input,
 select,
 textarea {
-    background-color: rgba(0, 0, 0, 0.4) !important;
-    color: white !important;
-    border: 1px solid var(--stroke) !important;
+    @apply bg-zinc-900 border-zinc-800 text-white;
 }
 
-option {
-    background-color: #18191b !important;
-    color: white !important;
+select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='rgba(255,255,255,0.5)'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+    background-size: 1.5em;
 }
 
-::selection {
-    background: var(--accent);
-    color: var(--bg);
-}
-
-/* Premium Components */
 .glass-panel {
-    background: var(--panel);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid var(--stroke);
-}
-
-.glass-panel-hover {
-    transition: all 0.3s ease;
-}
-
-.glass-panel-hover:hover {
-    background: var(--panel2);
-    border-color: var(--stroke2);
+    @apply bg-white/5 backdrop-blur-xl border border-white/10;
 }
 
 .gold-gradient {
@@ -77,33 +45,10 @@ option {
     -webkit-text-fill-color: transparent;
 }
 
-.input-luxury {
-    background: rgba(0, 0, 0, 0.3) !important;
-    border: 1px solid var(--stroke) !important;
-    border-radius: 12px !important;
-    color: white !important;
-    appearance: none;
-}
-
-.input-luxury:focus {
-    outline: none !important;
-    border-color: var(--accent) !important;
-    box-shadow: 0 0 0 1px var(--accent) !important;
-}
-
 .badge-luxury {
-    background: rgba(245, 163, 0, 0.1);
-    color: var(--accent);
-    border: 1px solid rgba(245, 163, 0, 0.2);
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    padding: 3px 10px;
-    border-radius: 6px;
+    @apply bg-amber-500/10 text-amber-500 border border-amber-500/20 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest;
 }
 
-/* Animations */
 @keyframes fadeInUp {
     from {
         opacity: 0;
@@ -117,15 +62,5 @@ option {
 }
 
 .animate-fade-in-up {
-    animation: fadeInUp 0.5s ease-out forwards;
-}
-
-/* Utilities */
-.no-scrollbar::-webkit-scrollbar {
-    display: none;
-}
-
-.no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
+    animation: fadeInUp 0.6s ease-out forwards;
 }

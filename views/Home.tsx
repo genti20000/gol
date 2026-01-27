@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '@/store';
-import { useRouter } from '@/lib/routerShim';
+import { useRouterShim } from '@/lib/routerShim';
 import { PRICING_TIERS, EXTRAS, MIDWEEK_DISCOUNT_PERCENT, getGuestLabel, LOGO_URL } from '@/constants';
 
 export default function Home() {
-  const { navigate } = useRouter();
+  const { navigate } = useRouterShim();
   const { services, getOperatingWindow } = useStore();
   const [guests, setGuests] = useState(8);
   const [extraHours, setExtraHours] = useState(0);
@@ -36,7 +36,7 @@ export default function Home() {
   }, [guests, extraHours, date]);
 
   const days = useMemo(() => {
-    const arr = [];
+    const arr: { iso: string; label: string; }[] = [];
     for (let i = 0; i < 30; i++) {
       const d = new Date();
       d.setDate(d.getDate() + i);
@@ -86,9 +86,8 @@ export default function Home() {
                     value={serviceId}
                     onChange={(e) => setServiceId(e.target.value)}
                     className="w-full h-14 px-4 input-luxury text-sm font-semibold"
-                    style={{ backgroundColor: '#18191b', color: 'white' }}
                   >
-                    {services.map(s => <option key={s.id} value={s.id} style={{ backgroundColor: '#18191b' }}>{s.name}</option>)}
+                    {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
 
@@ -99,9 +98,8 @@ export default function Home() {
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
                     className="w-full h-14 px-4 input-luxury text-sm font-semibold"
-                    style={{ backgroundColor: '#18191b', color: 'white' }}
                   >
-                    {days.map(d => <option key={d.iso} value={d.iso} style={{ backgroundColor: '#18191b' }}>{d.label}</option>)}
+                    {days.map(d => <option key={d.iso} value={d.iso}>{d.label}</option>)}
                   </select>
                 </div>
 
