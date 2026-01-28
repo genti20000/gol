@@ -34,8 +34,8 @@ const DEFAULT_SETTINGS: VenueSettings = {
   cancelCutoffHours: 24,
   rescheduleCutoffHours: 48,
   releasePendingOnPaymentFailure: true,
-  deposit_enabled: true,
-  deposit_amount: 50,
+  deposit_enabled: false,
+  deposit_amount: 0,
   minDaysBeforeBooking: 0,
   minHoursBeforeBooking: 0
 };
@@ -362,6 +362,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       status: booking.status,
       guests: booking.guests,
       customer_name: booking.customer_name,
+      customer_surname: booking.customer_surname,
       customer_email: booking.customer_email,
       customer_phone: booking.customer_phone,
       notes: booking.notes,
@@ -390,7 +391,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       alert("Error: Database did not return a confirmation.");
       return null;
     }
-    const newBooking = { ...data, magicToken: data.magic_token } as Booking;
+    const newBooking = { ...data, magicToken: data.magic_token, booking_ref: data.booking_ref } as Booking;
     setBookings(prev => [...prev, newBooking]);
     return newBooking;
   }, []);
@@ -426,7 +427,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [extras]);
 
   const addWaitlistEntry = useCallback(async (entry: Partial<WaitlistEntry>) => {
-    const { data, error } = await supabase.from('waitlist').insert([{ name: entry.name, phone: entry.phone, preferred_date: entry.preferredDate, preferred_time: entry.preferredTime, guests: entry.guests, status: 'active' }]).select().single();
+    const { data, error } = await supabase.from('waitlist').insert([{ name: entry.name, surname: entry.surname, phone: entry.phone, preferred_date: entry.preferredDate, preferred_time: entry.preferredTime, guests: entry.guests, status: 'active' }]).select().single();
     if (error) return { ok: false, reason: error.message };
     const newEntry = { ...data, preferredDate: data.preferred_date, preferredTime: data.preferred_time } as WaitlistEntry;
     setWaitlist(prev => [...prev, newEntry]);

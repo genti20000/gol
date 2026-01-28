@@ -11,9 +11,9 @@ export default function Checkout() {
   const store = useStore();
 
   const [isProcessing, setIsProcessing] = useState(false);
-  const [formData, setFormData] = useState({ name: '', email: '', phone: '', notes: '' });
+  const [formData, setFormData] = useState({ name: '', surname: '', email: '', phone: '', notes: '' });
   const [extrasSelection, setExtrasSelection] = useState<Record<string, number>>({});
-  const [currentStep, setCurrentStep] = useState<'extras' | 'details'>('extras');
+  const [currentStep, setCurrentStep] = useState<'extras' | 'details'>('details'); // Start with details if no extras
 
   const date = route.params.get('date') || '';
   const time = route.params.get('time') || '';
@@ -28,6 +28,13 @@ export default function Checkout() {
   const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promo), [date, guests, extraHours, promo, store]);
   const enabledExtras = useMemo(() => store.getEnabledExtras(), [store]);
   const extrasTotal = useMemo(() => store.computeExtrasTotal(extrasSelection, guests), [extrasSelection, guests, store]);
+
+  // Skip extras step if no extras are available
+  useEffect(() => {
+    if (enabledExtras.length === 0) {
+      setCurrentStep('details');
+    }
+  }, [enabledExtras.length]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +65,7 @@ export default function Checkout() {
       status: BookingStatus.CONFIRMED,
       guests,
       customer_name: formData.name,
+      customer_surname: formData.surname,
       customer_email: formData.email,
       customer_phone: formData.phone,
       notes: formData.notes,
@@ -72,8 +80,8 @@ export default function Checkout() {
       source: 'public' as const,
       extras: bookingExtras,
       extras_total: extrasTotal,
-      deposit_amount: store.settings.deposit_enabled ? store.settings.deposit_amount : 0,
-      deposit_paid: true
+      deposit_amount: 0,
+      deposit_paid: false
     };
 
     const finalBooking = await store.addBooking(booking);
@@ -99,7 +107,7 @@ export default function Checkout() {
   return (
     <div className="w-full px-4 py-8 md:py-12 md:max-w-6xl md:mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12">
       <div className="order-2 lg:order-1 space-y-8 md:space-y-12">
-        {currentStep === 'extras' ? (
+        {enabledExtras.length > 0 && currentStep === 'extras' ? (
           <div className="space-y-8 animate-in fade-in duration-500">
             <div className="space-y-2">
               <h2 className="text-2xl md:text-3xl font-bold uppercase tracking-tighter">Enhance Your <span className="text-amber-500">Session</span></h2>
@@ -107,37 +115,33 @@ export default function Checkout() {
             </div>
 
             <div className="grid grid-cols-1 gap-4">
-              {enabledExtras.length > 0 ? (
-                enabledExtras.map((extra: Extra) => (
-                  <div key={extra.id} className={`p-6 rounded-[1.5rem] border transition-all flex items-center justify-between gap-6 ${extrasSelection[extra.id] ? 'bg-amber-500/5 border-amber-500/40' : 'glass-panel border-zinc-800'}`}>
-                    <div className="flex-1">
-                      <p className="text-sm font-bold uppercase tracking-tight text-white">{extra.name}</p>
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mt-1">
-                        £{extra.price} {extra.pricingMode === 'per_person' ? 'per guest' : 'flat rate'}
-                      </p>
-                      {extra.description && <p className="text-[10px] text-zinc-600 mt-2 line-clamp-1">{extra.description}</p>}
-                    </div>
-
-                    <div className="flex items-center gap-4 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800">
-                      <button
-                        onClick={() => updateExtraQty(extra.id, -1)}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
-                      >
-                        <i className="fa-solid fa-minus text-[10px]"></i>
-                      </button>
-                      <span className="w-6 text-center text-xs font-mono font-bold text-amber-500">{extrasSelection[extra.id] || 0}</span>
-                      <button
-                        onClick={() => updateExtraQty(extra.id, 1)}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
-                      >
-                        <i className="fa-solid fa-plus text-[10px]"></i>
-                      </button>
-                    </div>
+              {enabledExtras.map((extra: Extra) => (
+                <div key={extra.id} className={`p-6 rounded-[1.5rem] border transition-all flex items-center justify-between gap-6 ${extrasSelection[extra.id] ? 'bg-amber-500/5 border-amber-500/40' : 'glass-panel border-zinc-800'}`}>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold uppercase tracking-tight text-white">{extra.name}</p>
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mt-1">
+                      £{extra.price} {extra.pricingMode === 'per_person' ? 'per guest' : 'flat rate'}
+                    </p>
+                    {extra.description && <p className="text-[10px] text-zinc-600 mt-2 line-clamp-1">{extra.description}</p>}
                   </div>
-                ))
-              ) : (
-                <p className="text-[10px] text-zinc-600 uppercase tracking-widest italic py-10 text-center">No extras available for this session.</p>
-              )}
+
+                  <div className="flex items-center gap-4 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800">
+                    <button
+                      onClick={() => updateExtraQty(extra.id, -1)}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
+                    >
+                      <i className="fa-solid fa-minus text-[10px]"></i>
+                    </button>
+                    <span className="w-6 text-center text-xs font-mono font-bold text-amber-500">{extrasSelection[extra.id] || 0}</span>
+                    <button
+                      onClick={() => updateExtraQty(extra.id, 1)}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
+                    >
+                      <i className="fa-solid fa-plus text-[10px]"></i>
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
 
             <div className="flex gap-4">
@@ -155,7 +159,7 @@ export default function Checkout() {
               </button>
             </div>
           </div>
-        ) : (
+        ) : currentStep === 'details' ? (
           <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
             <div className="space-y-2">
               <h2 className="text-2xl md:text-3xl font-bold uppercase tracking-tighter">Guest <span className="text-amber-500">Details</span></h2>
@@ -163,9 +167,15 @@ export default function Checkout() {
             </div>
 
             <div className="glass-panel p-6 md:p-8 rounded-[1.5rem] md:rounded-[2rem] space-y-5 md:space-y-6">
-              <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Full Name</label>
-                <input type="text" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner min-h-[44px]" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
+                <div className="flex flex-col gap-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">First Name</label>
+                  <input type="text" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner min-h-[44px]" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Surname</label>
+                  <input type="text" required value={formData.surname} onChange={e => setFormData({ ...formData, surname: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner min-h-[44px]" />
+                </div>
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Email Address</label>
@@ -182,22 +192,24 @@ export default function Checkout() {
             </div>
 
             <div className="flex gap-4">
-              <button
-                onClick={() => setCurrentStep('extras')}
-                className="flex-1 bg-zinc-900 border border-zinc-800 py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-white text-[10px] min-h-[44px] cursor-pointer active:scale-95"
-              >
-                Back
-              </button>
+              {enabledExtras.length > 0 && (
+                <button
+                  onClick={() => setCurrentStep('extras')}
+                  className="flex-1 bg-zinc-900 border border-zinc-800 py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-white text-[10px] min-h-[44px] cursor-pointer active:scale-95"
+                >
+                  Back
+                </button>
+              )}
               <button
                 onClick={handleSubmit}
-                disabled={isProcessing || !formData.name || !formData.email}
-                className="flex-[2] gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-50 text-[10px] min-h-[44px] cursor-pointer"
+                disabled={isProcessing || !formData.name || !formData.surname || !formData.email}
+                className={`${enabledExtras.length > 0 ? 'flex-[2]' : 'w-full'} gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-50 text-[10px] min-h-[44px] cursor-pointer`}
               >
-                {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : `Confirm & Pay £${store.settings.deposit_enabled ? store.settings.deposit_amount : pricing.totalPrice + extrasTotal}`}
+                {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : `Confirm & Pay £${pricing.totalPrice + extrasTotal}`}
               </button>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
 
       <div className="lg:sticky lg:top-24 h-fit">
@@ -265,10 +277,6 @@ export default function Checkout() {
             <div className="flex items-center gap-3 text-zinc-500">
               <i className="fa-solid fa-shield-halved text-xs"></i>
               <span className="text-[9px] font-bold uppercase tracking-widest">Secure TLS Encryption</span>
-            </div>
-            <div className="flex items-center gap-3 text-zinc-500">
-              <i className="fa-solid fa-clock text-xs"></i>
-              <span className="text-[9px] font-bold uppercase tracking-widest">{store.settings.cancelCutoffHours}h Cancellation Window</span>
             </div>
           </div>
         </div>

@@ -53,6 +53,7 @@ CREATE TABLE staff_members (
 CREATE TABLE customers (
   id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
   name TEXT NOT NULL,
+  surname TEXT,
   email TEXT NOT NULL UNIQUE,
   phone TEXT,
   notes TEXT,
@@ -66,6 +67,7 @@ CREATE TABLE customers (
 -- Bookings Table
 CREATE TABLE bookings (
   id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  booking_ref TEXT UNIQUE DEFAULT substring(md5(random()::text) from 1 for 8),
   room_id TEXT REFERENCES rooms(id),
   room_name TEXT NOT NULL,
   service_id TEXT REFERENCES services(id),
@@ -75,6 +77,7 @@ CREATE TABLE bookings (
   status TEXT NOT NULL DEFAULT 'PENDING',
   guests INTEGER NOT NULL,
   customer_name TEXT NOT NULL,
+  customer_surname TEXT,
   customer_email TEXT NOT NULL,
   customer_phone TEXT,
   notes TEXT,
@@ -99,6 +102,7 @@ CREATE TABLE bookings (
 CREATE TABLE waitlist (
   id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
   name TEXT NOT NULL,
+  surname TEXT,
   phone TEXT NOT NULL,
   preferred_date DATE NOT NULL,
   preferred_time TIME,
@@ -135,8 +139,8 @@ CREATE TABLE venue_settings (
   cancel_cutoff_hours INTEGER DEFAULT 24,
   reschedule_cutoff_hours INTEGER DEFAULT 48,
   release_pending_on_failure BOOLEAN DEFAULT true,
-  deposit_enabled BOOLEAN DEFAULT true,
-  deposit_amount NUMERIC DEFAULT 50,
+  deposit_enabled BOOLEAN DEFAULT false,
+  deposit_amount NUMERIC DEFAULT 0,
   min_days_before_booking INTEGER DEFAULT 0,
   min_hours_before_booking INTEGER DEFAULT 0,
   updated_at TIMESTAMPTZ DEFAULT now(),

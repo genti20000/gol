@@ -65,6 +65,7 @@ export interface BookingExtraSelection {
 
 export interface Booking {
   id: string;
+  booking_ref?: string;
   room_id: string;
   room_name: string;
   service_id?: string;
@@ -74,6 +75,7 @@ export interface Booking {
   status: BookingStatus;
   guests: number;
   customer_name: string;
+  customer_surname?: string;
   customer_email: string;
   customer_phone?: string;
   notes?: string;
@@ -99,6 +101,7 @@ export interface Booking {
 export interface WaitlistEntry {
   id: string;
   name: string;
+  surname?: string;
   phone: string;
   preferredDate: string; // "YYYY-MM-DD"
   preferredTime?: string; // "HH:MM"
@@ -127,9 +130,9 @@ export interface RecurringBlock {
 }
 
 export interface DayOperatingHours {
-  day: number; 
-  open: string; 
-  close: string; 
+  day: number;
+  open: string;
+  close: string;
   enabled: boolean;
 }
 
@@ -156,6 +159,7 @@ export interface PromoCode {
 export interface Customer {
   id: string;
   name: string;
+  surname?: string;
   email: string;
   phone?: string;
   notes?: string;
