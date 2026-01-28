@@ -393,6 +393,78 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
     const newBooking = { ...data, magicToken: data.magic_token, booking_ref: data.booking_ref } as Booking;
     setBookings(prev => [...prev, newBooking]);
+
+    // Auto-create or update customer in CRM
+    if (booking.customer_email) {
+      try {
+        // Check if customer already exists
+        const { data: existingCustomer } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('email', booking.customer_email)
+          .single();
+
+        if (existingCustomer) {
+          // Update existing customer
+          const { data: updated } = await supabase
+            .from('customers')
+            .update({
+              total_bookings: existingCustomer.total_bookings + 1,
+              total_spend: existingCustomer.total_spend + (booking.total_price || 0),
+              last_booking_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existingCustomer.id)
+            .select()
+            .single();
+
+          if (updated) {
+            setCustomers(prev => prev.map(c => c.id === updated.id ? {
+              ...updated,
+              totalBookings: updated.total_bookings,
+              totalSpend: updated.total_spend,
+              createdAt: new Date(updated.created_at).getTime(),
+              updatedAt: new Date(updated.updated_at).getTime(),
+              lastBookingAt: new Date(updated.last_booking_at).getTime()
+            } : c));
+          }
+        } else {
+          // Create new customer
+          const fullName = booking.customer_surname
+            ? `${booking.customer_name} ${booking.customer_surname}`
+            : booking.customer_name;
+
+          const { data: newCustomer } = await supabase
+            .from('customers')
+            .insert([{
+              name: fullName,
+              surname: booking.customer_surname,
+              email: booking.customer_email,
+              phone: booking.customer_phone,
+              total_bookings: 1,
+              total_spend: booking.total_price || 0,
+              last_booking_at: new Date().toISOString()
+            }])
+            .select()
+            .single();
+
+          if (newCustomer) {
+            setCustomers(prev => [...prev, {
+              ...newCustomer,
+              totalBookings: newCustomer.total_bookings,
+              totalSpend: newCustomer.total_spend,
+              createdAt: new Date(newCustomer.created_at).getTime(),
+              updatedAt: new Date(newCustomer.updated_at).getTime(),
+              lastBookingAt: new Date(newCustomer.last_booking_at).getTime()
+            }]);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to auto-sync customer to CRM:", err);
+        // Don't fail the booking if customer sync fails
+      }
+    }
+
     return newBooking;
   }, []);
 
