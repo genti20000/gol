@@ -562,8 +562,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addPromoCode = useCallback(async (promo: Partial<PromoCode>) => {
-    const { data, error } = await supabase.from('promo_codes').insert([{ ...promo, uses: 0 }]).select().single();
-    if (!error) setPromoCodes(prev => [...prev, data]);
+    const { data, error } = await supabase.from('promo_codes').insert([{
+      code: promo.code,
+      enabled: promo.enabled,
+      percent_off: promo.percentOff,
+      fixed_off: promo.fixedOff,
+      start_date: promo.startDate,
+      end_date: promo.endDate,
+      min_guests: promo.minGuests,
+      max_uses: promo.maxUses,
+      uses: 0
+    }]).select().single();
+    if (!error && data) {
+      setPromoCodes(prev => [...prev, {
+        ...data,
+        percentOff: data.percent_off,
+        fixedOff: data.fixed_off,
+        startDate: data.start_date,
+        endDate: data.end_date,
+        minGuests: data.min_guests,
+        maxUses: data.max_uses
+      }]);
+    }
   }, []);
   const updatePromoCode = useCallback(async (id: string, patch: Partial<PromoCode>) => {
     await supabase.from('promo_codes').update(patch).eq('id', id);
@@ -613,8 +633,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addExtra = useCallback(async (extra: Partial<Extra>) => {
-    const { data, error } = await supabase.from('extras').insert([extra]).select().single();
-    if (!error) setExtras(prev => [...prev, data]);
+    const id = `ext-${Date.now()}`;
+    const { data, error } = await supabase.from('extras').insert([{ ...extra, id, sort_order: 999 }]).select().single();
+    if (!error && data) {
+      setExtras(prev => [...prev, {
+        ...data,
+        pricingMode: data.pricing_mode as 'flat' | 'per_person',
+        sortOrder: data.sort_order
+      }]);
+    }
   }, []);
   const updateExtra = useCallback(async (id: string, patch: Partial<Extra>) => {
     await supabase.from('extras').update(patch).eq('id', id);

@@ -690,6 +690,7 @@ function CustomersTab({ store }: { store: any }) {
 function CustomerModal({ store, onClose, customer }: { store: any, onClose: () => void, customer?: Customer }) {
   const [formData, setFormData] = useState({
     name: customer?.name || '',
+    surname: customer?.surname || '',
     email: customer?.email || '',
     phone: customer?.phone || '',
     notes: customer?.notes || ''
@@ -708,16 +709,22 @@ function CustomerModal({ store, onClose, customer }: { store: any, onClose: () =
   return (
     <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={onClose}></div>
-      <form onSubmit={handleSave} className="relative w-full max-sm glass-panel p-8 rounded-[2rem] border-zinc-800 shadow-2xl animate-in zoom-in duration-300 space-y-6">
+      <form onSubmit={handleSave} className="relative w-full max-w-md glass-panel p-8 rounded-[2rem] border-zinc-800 shadow-2xl animate-in zoom-in duration-300 space-y-6">
         <div className="flex justify-between items-center">
           <h3 className="text-lg font-bold uppercase tracking-tight text-white">{customer ? 'Edit Profile' : 'New Guest'}</h3>
           <button type="button" onClick={onClose} className="text-zinc-600 hover:text-white p-2"><i className="fa-solid fa-x"></i></button>
         </div>
 
         <div className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Guest Name</label>
-            <input type="text" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">First Name</label>
+              <input type="text" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Surname</label>
+              <input type="text" value={formData.surname} onChange={e => setFormData({ ...formData, surname: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
+            </div>
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Email Address</label>
@@ -819,6 +826,13 @@ function BlocksTab({ store, selectedDate }: { store: any, selectedDate: string }
 
 function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string | null }) {
   const [activeSub, setActiveSub] = useState('venue');
+  const [showSaved, setShowSaved] = useState(false);
+
+  const handleSettingChange = async (updateFn: () => Promise<void>) => {
+    await updateFn();
+    setShowSaved(true);
+    setTimeout(() => setShowSaved(false), 2000);
+  };
 
   return (
     <div className="flex flex-col lg:flex-row gap-10">
@@ -830,32 +844,37 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
         ))}
       </div>
 
-      <div className="flex-1 glass-panel p-8 rounded-[2.5rem] border-zinc-800 shadow-2xl overflow-y-auto no-scrollbar max-h-[80vh]">
+      <div className="flex-1 glass-panel p-8 rounded-[2.5rem] border-zinc-800 shadow-2xl overflow-y-auto no-scrollbar max-h-[80vh] relative">
+        {showSaved && (
+          <div className="absolute top-4 right-4 z-50 bg-green-500/10 border border-green-500/20 text-green-500 px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest animate-in fade-in slide-in-from-top-2 duration-300">
+            <i className="fa-solid fa-check mr-2"></i>Saved
+          </div>
+        )}
         {activeSub === 'venue' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-right-2 duration-300">
             <h3 className="text-xl font-bold uppercase tracking-tighter text-white">General Settings</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-2">
                 <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Cancellation Cutoff (Hours)</label>
-                <input type="number" value={store.settings.cancelCutoffHours} onChange={async e => await store.updateSettings({ cancelCutoffHours: parseInt(e.target.value) })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
+                <input type="number" value={store.settings.cancelCutoffHours} onChange={async e => { await store.updateSettings({ cancelCutoffHours: parseInt(e.target.value) }); setShowSaved(true); setTimeout(() => setShowSaved(false), 2000); }} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Reschedule Cutoff (Hours)</label>
-                <input type="number" value={store.settings.rescheduleCutoffHours} onChange={async e => await store.updateSettings({ rescheduleCutoffHours: parseInt(e.target.value) })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
+                <input type="number" value={store.settings.rescheduleCutoffHours} onChange={async e => { await store.updateSettings({ rescheduleCutoffHours: parseInt(e.target.value) }); setShowSaved(true); setTimeout(() => setShowSaved(false), 2000); }} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
               </div>
               <div className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex items-center justify-between">
                 <div>
                   <p className="text-sm font-bold text-white uppercase">Require Deposit</p>
                   <p className="text-[9px] text-zinc-600 uppercase font-bold tracking-widest mt-1">Guests must pay to confirm</p>
                 </div>
-                <button onClick={async () => await store.updateSettings({ deposit_enabled: !store.settings.deposit_enabled })} className={`w-12 h-6 rounded-full relative transition-all ${store.settings.deposit_enabled ? 'bg-amber-500' : 'bg-zinc-800'}`}>
+                <button onClick={async () => { await store.updateSettings({ deposit_enabled: !store.settings.deposit_enabled }); setShowSaved(true); setTimeout(() => setShowSaved(false), 2000); }} className={`w-12 h-6 rounded-full relative transition-all ${store.settings.deposit_enabled ? 'bg-amber-500' : 'bg-zinc-800'}`}>
                   <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${store.settings.deposit_enabled ? 'left-7' : 'left-1'}`}></div>
                 </button>
               </div>
               {store.settings.deposit_enabled && (
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Deposit Amount (£)</label>
-                  <input type="number" value={store.settings.deposit_amount} onChange={async e => await store.updateSettings({ deposit_amount: parseInt(e.target.value) })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
+                  <input type="number" value={store.settings.deposit_amount} onChange={async e => { await store.updateSettings({ deposit_amount: parseInt(e.target.value) }); setShowSaved(true); setTimeout(() => setShowSaved(false), 2000); }} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
                 </div>
               )}
 
