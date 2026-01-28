@@ -79,16 +79,6 @@ export default function Home() {
         </div>
 
         <form onSubmit={handleSearch} className="glass-panel p-6 sm:p-10 rounded-[2rem] md:rounded-[2.5rem] shadow-2xl space-y-6 md:space-y-10 text-sm">
-          <div className="grid grid-cols-1 md:grid-cols-1 gap-4 md:gap-6">
-            {/* Service Select */}
-            <div className="flex flex-col text-left gap-2">
-              <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 ml-1">Service Type</label>
-              <select value={serviceId} onChange={(e) => setServiceId(e.target.value)} className="bg-zinc-900/50 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 focus:ring-1 ring-amber-500 outline-none text-white w-full font-bold appearance-none shadow-inner min-h-[44px]">
-                {store.services.filter(s => s.enabled).map(s => <option key={s.id} value={s.id} className="bg-zinc-950">{s.name}</option>)}
-              </select>
-            </div>
-          </div>
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
             <div className="flex flex-col text-left gap-2">
               <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 ml-1">Date</label>
