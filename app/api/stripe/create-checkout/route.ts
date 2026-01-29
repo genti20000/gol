@@ -80,8 +80,8 @@ export async function POST(req: Request) {
         bookingId,
       },
       allow_promotion_codes: true,
-      success_url: `${siteUrl}/booking/processing?id=${bookingId}`,
-      cancel_url: `${siteUrl}/booking/cancelled?id=${bookingId}`,
+      success_url: `${resolvedSiteUrl}/booking/processing?id=${bookingId}`,
+      cancel_url: `${resolvedSiteUrl}/booking/cancelled?id=${bookingId}`,
     });
 
     return NextResponse.json({ url: session.url });
