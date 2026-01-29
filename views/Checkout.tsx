@@ -44,6 +44,11 @@ export default function Checkout() {
   const queryStaffId = route.params.get('staffId') || undefined;
 
   const totalDuration = 2 + extraHours;
+  const isValidDateTime = useMemo(() => {
+    if (!date || !time) return false;
+    const parsed = new Date(`${date}T${time}`);
+    return Number.isFinite(parsed.getTime());
+  }, [date, time]);
 
   const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promo), [date, guests, extraHours, promo, store]);
   const enabledExtras = useMemo(() => store.getEnabledExtras(), [store]);
@@ -124,6 +129,10 @@ export default function Checkout() {
     setIsProcessing(true);
 
     try {
+      if (!isValidDateTime) {
+        setPaymentError('Please select a valid date and time before continuing.');
+        return;
+      }
       const startAt = new Date(`${date}T${time}`).toISOString();
       const endAt = new Date(new Date(startAt).getTime() + totalDuration * 3600000).toISOString();
 
@@ -208,6 +217,28 @@ export default function Checkout() {
       return newState;
     });
   };
+
+  if (!isValidDateTime) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="glass-panel p-8 md:p-10 rounded-[2rem] border-zinc-800 max-w-md w-full text-center space-y-6">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 mx-auto">
+            <i className="fa-solid fa-triangle-exclamation text-2xl text-amber-500"></i>
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-xl font-bold uppercase tracking-tighter text-white">Missing Booking Details</h1>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">Return to the search flow and select a valid time.</p>
+          </div>
+          <button
+            onClick={back}
+            className="w-full gold-gradient text-black py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-xl shadow-amber-500/10 active:scale-95 transition-transform"
+          >
+            Back to Availability
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

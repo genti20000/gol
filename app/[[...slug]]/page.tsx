@@ -100,7 +100,7 @@ export default function Page() {
 
   return (
     <RouterContext.Provider value={{ route, navigate, back }}>
-      <StoreProvider>
+      <StoreProvider mode={route.path.startsWith('/admin') ? 'admin' : 'public'}>
         <div className="min-h-screen bg-zinc-950 text-zinc-50 pt-16 font-sans flex flex-col">
           <Header navigate={navigate} />
 

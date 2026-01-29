@@ -2,7 +2,9 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import { useStore } from '../store';
+import { supabase } from '../lib/supabase';
 import {
   Booking,
   BookingStatus,
@@ -27,6 +29,60 @@ export default function Admin() {
   const [activeTab, setActiveTab] = useState<Tab>('bookings');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [credentials, setCredentials] = useState({ email: '', password: '' });
+
+  const allowedEmails = useMemo(
+    () => (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? '')
+      .split(',')
+      .map(email => email.trim().toLowerCase())
+      .filter(Boolean),
+    []
+  );
+
+  const isAllowed = useMemo(() => {
+    if (!session?.user?.email) return false;
+    if (allowedEmails.length === 0) return true;
+    return allowedEmails.includes(session.user.email.toLowerCase());
+  }, [allowedEmails, session?.user?.email]);
+
+  useEffect(() => {
+    let isMounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!isMounted) return;
+      setSession(data.session);
+      setAuthLoading(false);
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      isMounted = false;
+      data.subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setAuthError(null);
+    const { error } = await supabase.auth.signInWithPassword({
+      email: credentials.email,
+      password: credentials.password
+    });
+    if (error) {
+      setAuthError(error.message);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+  };
 
   useEffect(() => {
     const config = store.getCalendarSyncConfig();
@@ -73,6 +129,75 @@ export default function Admin() {
     store.loading
   ]);
 
+  if (authLoading) {
+    return <div className="p-20 text-center font-bold animate-pulse text-zinc-500 uppercase tracking-widest text-xs">Checking Admin Session...</div>;
+  }
+
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <form onSubmit={handleLogin} className="glass-panel p-8 md:p-10 rounded-[2rem] border-zinc-800 max-w-md w-full space-y-6 shadow-2xl">
+          <div className="space-y-2 text-center">
+            <h1 className="text-2xl font-bold uppercase tracking-tighter text-white">Admin Sign In</h1>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">Authorised staff only</p>
+          </div>
+          <div className="space-y-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Email</label>
+              <input
+                type="email"
+                required
+                value={credentials.email}
+                onChange={(event) => setCredentials(prev => ({ ...prev, email: event.target.value }))}
+                className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner"
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Password</label>
+              <input
+                type="password"
+                required
+                value={credentials.password}
+                onChange={(event) => setCredentials(prev => ({ ...prev, password: event.target.value }))}
+                className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner"
+              />
+            </div>
+          </div>
+          {authError && (
+            <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-red-200 text-center">
+              {authError}
+            </div>
+          )}
+          <button type="submit" className="w-full gold-gradient text-black py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-xl shadow-amber-500/10 active:scale-95 transition-transform">
+            Sign In
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  if (!isAllowed) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="glass-panel p-8 md:p-10 rounded-[2rem] border-red-500/30 max-w-md w-full text-center space-y-6">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-500/10 border border-red-500/30 mx-auto">
+            <i className="fa-solid fa-ban text-2xl text-red-400"></i>
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-xl font-bold uppercase tracking-tighter">Access Denied</h1>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">Your account is not authorised to access the admin console.</p>
+          </div>
+          <button
+            onClick={handleSignOut}
+            className="w-full bg-zinc-900 border border-zinc-800 py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest text-white"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (store.loading) return <div className="p-20 text-center font-bold animate-pulse text-zinc-500 uppercase tracking-widest text-xs">Initialising Admin Console...</div>;
 
   return (
@@ -86,17 +211,28 @@ export default function Admin() {
           </div>
         </div>
 
-        <nav className="flex bg-zinc-900/50 p-1.5 rounded-2xl border border-zinc-800 w-full lg:w-auto overflow-x-auto no-scrollbar shadow-2xl">
-          {(['bookings', 'customers', 'blocks', 'settings', 'reports'] as Tab[]).map(t => (
+        <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 w-full lg:w-auto">
+          <nav className="flex bg-zinc-900/50 p-1.5 rounded-2xl border border-zinc-800 w-full lg:w-auto overflow-x-auto no-scrollbar shadow-2xl">
+            {(['bookings', 'customers', 'blocks', 'settings', 'reports'] as Tab[]).map(t => (
+              <button
+                key={t}
+                onClick={() => setActiveTab(t)}
+                className={`flex-1 lg:flex-none px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all whitespace-nowrap min-h-[44px] ${activeTab === t ? 'bg-amber-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+              >
+                {t}
+              </button>
+            ))}
+          </nav>
+          <div className="flex items-center gap-3 text-[9px] uppercase tracking-widest text-zinc-500">
+            <span>{session.user.email}</span>
             <button
-              key={t}
-              onClick={() => setActiveTab(t)}
-              className={`flex-1 lg:flex-none px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all whitespace-nowrap min-h-[44px] ${activeTab === t ? 'bg-amber-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+              onClick={handleSignOut}
+              className="bg-zinc-900 border border-zinc-800 py-2 px-4 rounded-full text-[9px] font-bold uppercase tracking-widest text-zinc-300 hover:text-white transition-colors"
             >
-              {t}
+              Sign Out
             </button>
-          ))}
-        </nav>
+          </div>
+        </div>
       </div>
 
       <div className="animate-in fade-in duration-500">
