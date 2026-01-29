@@ -5,6 +5,8 @@ import Home from '@/views/Home';
 import Results from '@/views/Results';
 import Checkout from '@/views/Checkout';
 import Confirmation from '@/views/Confirmation';
+import Processing from '@/views/Processing';
+import Cancelled from '@/views/Cancelled';
 import Admin from '@/views/Admin';
 import ManageBooking from '@/views/ManageBooking';
 import { WHATSAPP_URL, LOGO_URL } from '@/constants';
@@ -88,6 +90,9 @@ export default function Page() {
     if (p === '/book/results') return <Results />;
     if (p === '/checkout') return <Checkout />;
     if (p === '/confirmation') return <Confirmation />;
+    if (p === '/booking/processing') return <Processing />;
+    if (p === '/booking/confirmed') return <Confirmation />;
+    if (p === '/booking/cancelled') return <Cancelled />;
     if (p === '/admin' || p.startsWith('/admin')) return <Admin />;
     if (p.startsWith('/m/')) return <ManageBooking />;
     return <Home />;

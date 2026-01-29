@@ -76,6 +76,15 @@ export async function POST(request: Request) {
   }
 
   switch (event.type) {
+    case 'checkout.session.completed': {
+      const session = event.data.object as Stripe.Checkout.Session;
+      await updateBookingFromMetadata(session.metadata, {
+        status: BookingStatus.CONFIRMED,
+        deposit_paid: true,
+        deposit_forfeited: false
+      });
+      break;
+    }
     case 'payment_intent.succeeded': {
       const intent = event.data.object as Stripe.PaymentIntent;
       await updateBookingFromMetadata(intent.metadata, {
