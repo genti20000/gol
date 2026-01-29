@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { BookingStatus } from '@/types';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '', {
-  apiVersion: '2024-06-20'
+  apiVersion: '2024-04-10'
 });
 
 const updateBookingFromMetadata = async (
