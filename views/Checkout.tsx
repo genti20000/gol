@@ -99,7 +99,8 @@ export default function Checkout() {
       });
 
       if (!checkoutResponse.ok) {
-        setPaymentError('Unable to start the payment. Please try again.');
+        const errorBody = await checkoutResponse.json().catch(() => ({}));
+        setPaymentError(errorBody?.error || 'Unable to start the payment. Please try again.');
         return;
       }
 
