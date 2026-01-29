@@ -632,9 +632,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setServices(prev => prev.filter(s => s.id !== id));
   }, []);
 
+  const toExtraDbPayload = useCallback((extra: Partial<Extra>) => {
+    const { pricingMode, sortOrder, ...rest } = extra;
+    const payload: Record<string, unknown> = { ...rest };
+    if (pricingMode !== undefined) payload.pricing_mode = pricingMode;
+    if (sortOrder !== undefined) payload.sort_order = sortOrder;
+    return payload;
+  }, []);
+
   const addExtra = useCallback(async (extra: Partial<Extra>) => {
     const id = `ext-${Date.now()}`;
-    const { data, error } = await supabase.from('extras').insert([{ ...extra, id, sort_order: 999 }]).select().single();
+    const payload = toExtraDbPayload({
+      ...extra,
+      id,
+      enabled: extra.enabled ?? true,
+      sortOrder: extra.sortOrder ?? 999
+    });
+    const { data, error } = await supabase.from('extras').insert([payload]).select().single();
     if (!error && data) {
       setExtras(prev => [...prev, {
         ...data,
@@ -642,11 +656,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         sortOrder: data.sort_order
       }]);
     }
-  }, []);
+  }, [toExtraDbPayload]);
   const updateExtra = useCallback(async (id: string, patch: Partial<Extra>) => {
-    await supabase.from('extras').update(patch).eq('id', id);
+    const dbPatch = toExtraDbPayload(patch);
+    await supabase.from('extras').update(dbPatch).eq('id', id);
     setExtras(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
-  }, []);
+  }, [toExtraDbPayload]);
   const deleteExtra = useCallback(async (id: string) => {
     await supabase.from('extras').delete().eq('id', id);
     setExtras(prev => prev.filter(e => e.id !== id));
