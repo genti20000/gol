@@ -7,27 +7,33 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 
-if (!stripeSecretKey) {
-  throw new Error("STRIPE_SECRET_KEY is not set.");
-}
-
-if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error("Supabase credentials are not configured.");
-}
-
-if (!siteUrl) {
-  throw new Error("NEXT_PUBLIC_SITE_URL is not set.");
-}
-
-const stripe = new Stripe(stripeSecretKey, {
-  apiVersion: "2024-04-10",
-});
-
-// initialize supabase client with env vars
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
 export async function POST(req: Request) {
   try {
+    if (!stripeSecretKey) {
+      return NextResponse.json({ error: "STRIPE_SECRET_KEY is not set." }, { status: 500 });
+    }
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json(
+        { error: "Supabase credentials are not configured." },
+        { status: 500 },
+      );
+    }
+
+    if (!siteUrl) {
+      return NextResponse.json(
+        { error: "NEXT_PUBLIC_SITE_URL is not set." },
+        { status: 500 },
+      );
+    }
+
+    const stripe = new Stripe(stripeSecretKey, {
+      apiVersion: "2024-04-10",
+    });
+
+    // initialize supabase client with env vars
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
     const { bookingId } = await req.json();
 
     if (!bookingId || typeof bookingId !== "string") {
