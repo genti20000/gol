@@ -2,7 +2,9 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import { useStore } from '../store';
+import { supabase } from '../lib/supabase';
 import {
   Booking,
   BookingStatus,
@@ -27,6 +29,60 @@ export default function Admin() {
   const [activeTab, setActiveTab] = useState<Tab>('bookings');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [credentials, setCredentials] = useState({ email: '', password: '' });
+
+  const allowedEmails = useMemo(
+    () => (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? '')
+      .split(',')
+      .map(email => email.trim().toLowerCase())
+      .filter(Boolean),
+    []
+  );
+
+  const isAllowed = useMemo(() => {
+    if (!session?.user?.email) return false;
+    if (allowedEmails.length === 0) return true;
+    return allowedEmails.includes(session.user.email.toLowerCase());
+  }, [allowedEmails, session?.user?.email]);
+
+  useEffect(() => {
+    let isMounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!isMounted) return;
+      setSession(data.session);
+      setAuthLoading(false);
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      isMounted = false;
+      data.subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setAuthError(null);
+    const { error } = await supabase.auth.signInWithPassword({
+      email: credentials.email,
+      password: credentials.password
+    });
+    if (error) {
+      setAuthError(error.message);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+  };
 
   useEffect(() => {
     const config = store.getCalendarSyncConfig();
@@ -73,6 +129,75 @@ export default function Admin() {
     store.loading
   ]);
 
+  if (authLoading) {
+    return <div className="p-20 text-center font-bold animate-pulse text-zinc-500 uppercase tracking-widest text-xs">Checking Admin Session...</div>;
+  }
+
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <form onSubmit={handleLogin} className="glass-panel p-8 md:p-10 rounded-[2rem] border-zinc-800 max-w-md w-full space-y-6 shadow-2xl">
+          <div className="space-y-2 text-center">
+            <h1 className="text-2xl font-bold uppercase tracking-tighter text-white">Admin Sign In</h1>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">Authorised staff only</p>
+          </div>
+          <div className="space-y-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Email</label>
+              <input
+                type="email"
+                required
+                value={credentials.email}
+                onChange={(event) => setCredentials(prev => ({ ...prev, email: event.target.value }))}
+                className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner"
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Password</label>
+              <input
+                type="password"
+                required
+                value={credentials.password}
+                onChange={(event) => setCredentials(prev => ({ ...prev, password: event.target.value }))}
+                className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner"
+              />
+            </div>
+          </div>
+          {authError && (
+            <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-red-200 text-center">
+              {authError}
+            </div>
+          )}
+          <button type="submit" className="w-full gold-gradient text-black py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-xl shadow-amber-500/10 active:scale-95 transition-transform">
+            Sign In
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  if (!isAllowed) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="glass-panel p-8 md:p-10 rounded-[2rem] border-red-500/30 max-w-md w-full text-center space-y-6">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-500/10 border border-red-500/30 mx-auto">
+            <i className="fa-solid fa-ban text-2xl text-red-400"></i>
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-xl font-bold uppercase tracking-tighter">Access Denied</h1>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">Your account is not authorised to access the admin console.</p>
+          </div>
+          <button
+            onClick={handleSignOut}
+            className="w-full bg-zinc-900 border border-zinc-800 py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest text-white"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (store.loading) return <div className="p-20 text-center font-bold animate-pulse text-zinc-500 uppercase tracking-widest text-xs">Initialising Admin Console...</div>;
 
   return (
@@ -86,17 +211,28 @@ export default function Admin() {
           </div>
         </div>
 
-        <nav className="flex bg-zinc-900/50 p-1.5 rounded-2xl border border-zinc-800 w-full lg:w-auto overflow-x-auto no-scrollbar shadow-2xl">
-          {(['bookings', 'customers', 'blocks', 'settings', 'reports'] as Tab[]).map(t => (
+        <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 w-full lg:w-auto">
+          <nav className="flex bg-zinc-900/50 p-1.5 rounded-2xl border border-zinc-800 w-full lg:w-auto overflow-x-auto no-scrollbar shadow-2xl">
+            {(['bookings', 'customers', 'blocks', 'settings', 'reports'] as Tab[]).map(t => (
+              <button
+                key={t}
+                onClick={() => setActiveTab(t)}
+                className={`flex-1 lg:flex-none px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all whitespace-nowrap min-h-[44px] ${activeTab === t ? 'bg-amber-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+              >
+                {t}
+              </button>
+            ))}
+          </nav>
+          <div className="flex items-center gap-3 text-[9px] uppercase tracking-widest text-zinc-500">
+            <span>{session.user.email}</span>
             <button
-              key={t}
-              onClick={() => setActiveTab(t)}
-              className={`flex-1 lg:flex-none px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all whitespace-nowrap min-h-[44px] ${activeTab === t ? 'bg-amber-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+              onClick={handleSignOut}
+              className="bg-zinc-900 border border-zinc-800 py-2 px-4 rounded-full text-[9px] font-bold uppercase tracking-widest text-zinc-300 hover:text-white transition-colors"
             >
-              {t}
+              Sign Out
             </button>
-          ))}
-        </nav>
+          </div>
+        </div>
       </div>
 
       <div className="animate-in fade-in duration-500">
@@ -490,18 +626,60 @@ function MonthCalendar({ store, onSelectDay }: { store: any, onSelectDay: (d: st
 
 function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitChange, onValidationFailure }: any) {
   const [rowHeight, setRowHeight] = useState(60);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
 
   const window = store.getOperatingWindow(date);
   if (!window) return <div className="p-10 text-center text-zinc-600 uppercase font-bold tracking-widest">Venue Closed</div>;
 
+  const isPastDay = new Date(date).getTime() < new Date().setHours(0, 0, 0, 0);
   const startHour = parseInt(window.open.split(':')[0]);
   let endHour = parseInt(window.close.split(':')[0]);
   if (endHour <= startHour) endHour += 24;
+  const startMinutes = startHour * 60;
+  const endMinutes = endHour * 60;
 
   const hours: number[] = [];
   for (let h = startHour; h < endHour; h++) {
     hours.push(h);
   }
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>, roomId: string) => {
+    if (isPastDay) return;
+    event.preventDefault();
+    const bookingId = event.dataTransfer.getData('text/plain');
+    if (!bookingId) return;
+    const booking = store.bookings.find((b: Booking) => b.id === bookingId);
+    if (!booking) return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const y = event.clientY - rect.top;
+    const hourOffset = y / rowHeight;
+    const rawMinutes = Math.round((startMinutes + hourOffset * 60) / SLOT_MINUTES) * SLOT_MINUTES;
+    const durationMinutes = Math.max(0, Math.round((new Date(booking.end_at).getTime() - new Date(booking.start_at).getTime()) / 60000));
+    const maxStartMinutes = endMinutes - durationMinutes;
+    const clampedMinutes = Math.min(Math.max(rawMinutes, startMinutes), maxStartMinutes);
+    const baseTs = new Date(`${date}T00:00:00`).getTime();
+    const startAt = new Date(baseTs + clampedMinutes * 60000).toISOString();
+    const endAt = new Date(new Date(startAt).getTime() + durationMinutes * 60000).toISOString();
+
+    if (booking.room_id === roomId && new Date(booking.start_at).getTime() === new Date(startAt).getTime()) {
+      return;
+    }
+
+    const check = store.validateInterval(roomId, startAt, endAt, booking.id, booking.staff_id);
+    if (!check.ok) {
+      onValidationFailure(check.reason);
+      return;
+    }
+
+    const roomName = store.rooms.find((r: Room) => r.id === roomId)?.name || booking.room_name;
+    onCommitChange(booking, {
+      start_at: startAt,
+      end_at: endAt,
+      room_id: roomId,
+      room_name: roomName
+    });
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -563,6 +741,12 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                     const timeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
                     onTapToCreate({ date, roomId: r.id, time: timeStr });
                   }}
+                  onDragOver={(event) => {
+                    if (isPastDay) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'move';
+                  }}
+                  onDrop={(event) => handleDrop(event, r.id)}
                 ></div>
 
                 {store.getBusyIntervals(date, r.id).map((item: any) => {
@@ -574,27 +758,29 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                     <div
                       key={item.id}
                       onClick={(e) => { e.stopPropagation(); if (item.type === 'booking') onSelectBooking(item.id); }}
-                      className={`absolute left-0.5 right-0.5 rounded-lg border flex flex-col justify-center items-center px-0.5 cursor-pointer transition-all hover:scale-[1.02] active:scale-95 shadow-lg overflow-hidden z-10 ${item.type === 'booking' ? (item.status === 'CONFIRMED' ? 'bg-amber-500 text-black border-amber-400' : 'bg-zinc-800 text-zinc-400 border-zinc-700') : 'bg-red-500/20 text-red-500 border-red-500/20 cursor-default'
+                      draggable={item.type === 'booking' && !isPastDay}
+                      onDragStart={(event) => {
+                        if (item.type !== 'booking' || isPastDay) return;
+                        event.dataTransfer.effectAllowed = 'move';
+                        event.dataTransfer.setData('text/plain', item.id);
+                        setDraggingId(item.id);
+                      }}
+                      onDragEnd={() => setDraggingId(null)}
+                      className={`absolute left-0.5 right-0.5 rounded-lg border flex flex-col justify-center items-center px-0.5 transition-all hover:scale-[1.02] active:scale-95 shadow-lg overflow-hidden z-10 ${item.type === 'booking'
+                        ? (item.status === 'CONFIRMED'
+                          ? 'bg-amber-500 text-black border-amber-400'
+                          : 'bg-zinc-800 text-zinc-400 border-zinc-700')
+                        : 'bg-red-500/20 text-red-500 border-red-500/20 cursor-default'
+                        } ${item.type === 'booking' ? (isPastDay ? 'cursor-pointer' : 'cursor-grab') : ''} ${draggingId === item.id ? 'opacity-70 cursor-grabbing' : ''}`
                         }`}
                       style={{
                         top: startOffsetHrs * rowHeight,
                         height: durationHrs * rowHeight
                       }}
                     >
-                      {item.type === 'booking' ? (
-                        <>
-                          <span className="text-[7px] font-bold uppercase text-center line-clamp-2 leading-none">
-                            {[item.customer_name, item.customer_surname].filter(Boolean).join(' ')}
-                          </span>
-                          <span className="text-[7px] font-bold uppercase text-center text-black/70 leading-none">
-                            {getGuestLabel(item.guests || 0)}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="text-[7px] font-bold uppercase text-center line-clamp-2 leading-none">
-                          {item.reason || 'Blocked'}
-                        </span>
-                      )}
+                      <span className="text-[7px] font-bold uppercase text-center line-clamp-2 leading-none">
+                        {item.type === 'booking' ? `${item.customer_name} • ${item.guests} GUESTS` : (item.reason || 'Blocked')}
+                      </span>
                     </div>
                   );
                 })}
@@ -1194,34 +1380,6 @@ function BookingModal({ store, onClose, initialDate, booking, prefill }: { store
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="sm:col-span-2 space-y-1.5">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Existing Guest</label>
-            <select
-              value={selectedCustomerId}
-              onChange={e => {
-                const id = e.target.value;
-                setSelectedCustomerId(id);
-                const selected = store.customers.find((c: Customer) => c.id === id);
-                if (selected) {
-                  setFormData({
-                    ...formData,
-                    name: selected.name || '',
-                    surname: selected.surname || '',
-                    email: selected.email || '',
-                    phone: selected.phone || ''
-                  });
-                }
-              }}
-              className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner"
-            >
-              <option value="">New guest...</option>
-              {store.customers.map((c: Customer) => (
-                <option key={c.id} value={c.id}>
-                  {[c.name, c.surname].filter(Boolean).join(' ')} • {c.email}
-                </option>
-              ))}
-            </select>
-          </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">First Name</label>
             <input type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />

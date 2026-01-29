@@ -1,19 +1,39 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { BookingStatus, RateType, Extra } from '@/types';
 import { LOGO_URL, BASE_DURATION_HOURS, getGuestLabel } from '@/constants';
+
+type StripeEmbeddedCheckout = {
+  mount: (element: HTMLElement) => void;
+  destroy: () => void;
+};
+
+type StripeJs = {
+  initEmbeddedCheckout: (options: { clientSecret: string }) => Promise<StripeEmbeddedCheckout>;
+};
+
+type StripeFactory = (publishableKey: string) => StripeJs;
+
+declare global {
+  interface Window {
+    Stripe?: StripeFactory;
+  }
+}
 
 export default function Checkout() {
   const { route, navigate, back } = useRouterShim();
   const store = useStore();
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [embeddedClientSecret, setEmbeddedClientSecret] = useState<string | null>(null);
   const [formData, setFormData] = useState({ name: '', surname: '', email: '', phone: '', notes: '' });
   const [extrasSelection, setExtrasSelection] = useState<Record<string, number>>({});
-  const [currentStep, setCurrentStep] = useState<'extras' | 'details'>('details'); // Start with details if no extras
+  const [currentStep, setCurrentStep] = useState<'extras' | 'details' | 'payment'>('details');
+  const embeddedCheckoutRef = useRef<HTMLDivElement | null>(null);
 
   const date = route.params.get('date') || '';
   const time = route.params.get('time') || '';
@@ -24,72 +44,166 @@ export default function Checkout() {
   const queryStaffId = route.params.get('staffId') || undefined;
 
   const totalDuration = 2 + extraHours;
+  const isValidDateTime = useMemo(() => {
+    if (!date || !time) return false;
+    const parsed = new Date(`${date}T${time}`);
+    return Number.isFinite(parsed.getTime());
+  }, [date, time]);
 
   const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promo), [date, guests, extraHours, promo, store]);
   const enabledExtras = useMemo(() => store.getEnabledExtras(), [store]);
   const extrasTotal = useMemo(() => store.computeExtrasTotal(extrasSelection, guests), [extrasSelection, guests, store]);
-
-  // Skip extras step if no extras are available
-  useEffect(() => {
-    if (enabledExtras.length === 0) {
-      setCurrentStep('details');
+  const stripePromise = useMemo(() => {
+    const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+    if (!publishableKey) {
+      return null;
     }
+
+    return new Promise<StripeJs | null>((resolve) => {
+      if (typeof window === 'undefined') {
+        resolve(null);
+        return;
+      }
+
+      if (window.Stripe) {
+        resolve(window.Stripe(publishableKey));
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://js.stripe.com/v3/';
+      script.async = true;
+      script.onload = () => {
+        if (window.Stripe) {
+          resolve(window.Stripe(publishableKey));
+        } else {
+          resolve(null);
+        }
+      };
+      script.onerror = () => resolve(null);
+      document.head.appendChild(script);
+    });
+  }, []);
+
+  // Show extras step first when available, otherwise go straight to details
+  useEffect(() => {
+    if (enabledExtras.length > 0) {
+      setCurrentStep('extras');
+      return;
+    }
+    setCurrentStep('details');
   }, [enabledExtras.length]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsProcessing(true);
-
-    const startAt = new Date(`${date}T${time}`).toISOString();
-    const endAt = new Date(new Date(startAt).getTime() + totalDuration * 3600000).toISOString();
-
-    const assignment = store.findFirstAvailableRoomAndStaff(startAt, endAt, queryStaffId, queryServiceId);
-    if (!assignment) {
-      alert("This slot has been taken. Please choose another time.");
-      navigate('/');
+  useEffect(() => {
+    if (!embeddedClientSecret || !embeddedCheckoutRef.current) {
       return;
     }
 
-    // Simulate Payment
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    let embeddedCheckout: StripeEmbeddedCheckout | null = null;
+    let isMounted = true;
 
-    const bookingExtras = store.buildBookingExtrasSnapshot(extrasSelection, guests);
-
-    const booking = {
-      room_id: assignment.room_id,
-      room_name: store.rooms.find(r => r.id === assignment.room_id)!.name,
-      staff_id: assignment.staff_id,
-      service_id: queryServiceId,
-      start_at: startAt,
-      end_at: endAt,
-      status: BookingStatus.CONFIRMED,
-      guests,
-      customer_name: formData.name,
-      customer_surname: formData.surname,
-      customer_email: formData.email,
-      customer_phone: formData.phone,
-      notes: formData.notes,
-      base_total: pricing.baseTotal,
-      extras_hours: extraHours,
-      extras_price: pricing.extrasPrice,
-      discount_amount: pricing.discountAmount,
-      promo_code: promo || undefined,
-      promo_discount_amount: pricing.promoDiscountAmount,
-      total_price: pricing.totalPrice + extrasTotal,
-      created_at: new Date().toISOString(),
-      source: 'public' as const,
-      extras: bookingExtras,
-      extras_total: extrasTotal,
-      deposit_amount: 0,
-      deposit_paid: false
+    const mountEmbeddedCheckout = async () => {
+      if (!stripePromise) {
+        setPaymentError('Stripe is not configured for embedded checkout.');
+        return;
+      }
+      const stripe = await stripePromise;
+      if (!stripe || !isMounted || !embeddedCheckoutRef.current) {
+        return;
+      }
+      embeddedCheckout = await stripe.initEmbeddedCheckout({ clientSecret: embeddedClientSecret });
+      embeddedCheckout.mount(embeddedCheckoutRef.current);
     };
 
-    const finalBooking = await store.addBooking(booking);
-    setIsProcessing(false);
-    if (finalBooking) {
-      navigate(`/confirmation?id=${finalBooking.id}`);
-    } else {
-      alert("Something went wrong while creating your booking.");
+    mountEmbeddedCheckout();
+
+    return () => {
+      isMounted = false;
+      embeddedCheckout?.destroy();
+    };
+  }, [embeddedClientSecret, stripePromise]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPaymentError(null);
+    setIsProcessing(true);
+
+    try {
+      if (!isValidDateTime) {
+        setPaymentError('Please select a valid date and time before continuing.');
+        return;
+      }
+      const startAt = new Date(`${date}T${time}`).toISOString();
+      const endAt = new Date(new Date(startAt).getTime() + totalDuration * 3600000).toISOString();
+
+      const assignment = store.findFirstAvailableRoomAndStaff(startAt, endAt, queryStaffId, queryServiceId);
+      if (!assignment) {
+        alert("This slot has been taken. Please choose another time.");
+        navigate('/');
+        return;
+      }
+
+      const bookingExtras = store.buildBookingExtrasSnapshot(extrasSelection, guests);
+
+      const booking = {
+        room_id: assignment.room_id,
+        room_name: store.rooms.find(r => r.id === assignment.room_id)!.name,
+        staff_id: assignment.staff_id,
+        service_id: queryServiceId,
+        start_at: startAt,
+        end_at: endAt,
+        status: BookingStatus.PENDING,
+        guests,
+        customer_name: formData.name,
+        customer_surname: formData.surname,
+        customer_email: formData.email,
+        customer_phone: formData.phone,
+        notes: formData.notes,
+        base_total: pricing.baseTotal,
+        extras_hours: extraHours,
+        extras_price: pricing.extrasPrice,
+        discount_amount: pricing.discountAmount,
+        promo_code: promo || undefined,
+        promo_discount_amount: pricing.promoDiscountAmount,
+        total_price: pricing.totalPrice + extrasTotal,
+        created_at: new Date().toISOString(),
+        source: 'public' as const,
+        extras: bookingExtras,
+        extras_total: extrasTotal,
+        deposit_amount: 0,
+        deposit_paid: false
+      };
+
+      const finalBooking = await store.addBooking(booking);
+      if (!finalBooking) {
+        setPaymentError('Something went wrong while creating your booking.');
+        return;
+      }
+
+      const checkoutResponse = await fetch('/api/stripe/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingId: finalBooking.id })
+      });
+
+      if (!checkoutResponse.ok) {
+        const errorBody = await checkoutResponse.json().catch(() => ({}));
+        setPaymentError(errorBody?.error || 'Unable to start the payment. Please try again.');
+        return;
+      }
+
+      const { clientSecret } = await checkoutResponse.json();
+      if (!clientSecret) {
+        setPaymentError('Unable to start the payment. Please try again.');
+        return;
+      }
+
+      setEmbeddedClientSecret(clientSecret);
+      setCurrentStep('payment');
+    } catch (error) {
+      setPaymentError('Something went wrong while processing the payment.');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -104,7 +218,30 @@ export default function Checkout() {
     });
   };
 
+  if (!isValidDateTime) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="glass-panel p-8 md:p-10 rounded-[2rem] border-zinc-800 max-w-md w-full text-center space-y-6">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 mx-auto">
+            <i className="fa-solid fa-triangle-exclamation text-2xl text-amber-500"></i>
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-xl font-bold uppercase tracking-tighter text-white">Missing Booking Details</h1>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">Return to the search flow and select a valid time.</p>
+          </div>
+          <button
+            onClick={back}
+            className="w-full gold-gradient text-black py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-xl shadow-amber-500/10 active:scale-95 transition-transform"
+          >
+            Back to Availability
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
+    <>
     <div className="w-full px-4 py-8 md:py-12 md:max-w-6xl md:mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12">
       <div className="order-2 lg:order-1 space-y-8 md:space-y-12">
         {enabledExtras.length > 0 && currentStep === 'extras' ? (
@@ -185,31 +322,47 @@ export default function Checkout() {
                 <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Phone Number</label>
                 <input type="tel" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner min-h-[44px]" />
               </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Special Requests</label>
-                <textarea rows={3} value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner resize-none min-h-[100px]" />
-              </div>
-            </div>
-
-            <div className="flex gap-4">
-              {enabledExtras.length > 0 && (
-                <button
-                  onClick={() => setCurrentStep('extras')}
-                  className="flex-1 bg-zinc-900 border border-zinc-800 py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-white text-[10px] min-h-[44px] cursor-pointer active:scale-95"
-                >
-                  Back
-                </button>
-              )}
-              <button
-                onClick={handleSubmit}
-                disabled={isProcessing || !formData.name || !formData.surname || !formData.email}
-                className={`${enabledExtras.length > 0 ? 'flex-[2]' : 'w-full'} gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-50 text-[10px] min-h-[44px] cursor-pointer`}
-              >
-                {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : `Confirm & Pay £${pricing.totalPrice + extrasTotal}`}
-              </button>
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Special Requests</label>
+              <textarea rows={3} value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner resize-none min-h-[100px]" />
             </div>
           </div>
-        ) : null}
+
+          {paymentError && (
+            <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-red-200">
+              {paymentError}
+            </div>
+          )}
+
+          <div className="flex gap-4">
+            {enabledExtras.length > 0 && (
+              <button
+                onClick={() => setCurrentStep('extras')}
+                className="flex-1 bg-zinc-900 border border-zinc-800 py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-white text-[10px] min-h-[44px] cursor-pointer active:scale-95"
+              >
+                Back
+              </button>
+            )}
+            <button
+              onClick={handleSubmit}
+              disabled={isProcessing || !formData.name || !formData.surname || !formData.email}
+              className={`${enabledExtras.length > 0 ? 'flex-[2]' : 'w-full'} gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-50 text-[10px] min-h-[44px] cursor-pointer`}
+            >
+              {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : `Confirm & Pay £${pricing.totalPrice + extrasTotal}`}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6 animate-in fade-in duration-500">
+          <div className="space-y-2">
+            <h2 className="text-2xl md:text-3xl font-bold uppercase tracking-tighter">Complete <span className="text-amber-500">Payment</span></h2>
+            <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-widest">Secure checkout powered by Stripe</p>
+          </div>
+          <div className="glass-panel p-4 md:p-6 rounded-[1.5rem] md:rounded-[2rem]">
+            <div ref={embeddedCheckoutRef} className="min-h-[420px]" />
+          </div>
+        </div>
+      )}
       </div>
 
       <div className="lg:sticky lg:top-24 h-fit">
@@ -282,5 +435,6 @@ export default function Checkout() {
         </div>
       </div>
     </div>
+    </>
   );
 }
