@@ -354,12 +354,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [rooms, validateInterval]);
 
   const addBooking = useCallback(async (booking: Partial<Booking>) => {
+    const normalizedStaffId = typeof booking.staff_id === 'string' && booking.staff_id.trim().length > 0
+      ? booking.staff_id
+      : null;
     const magicToken = Math.random().toString(36).substring(2, 15);
     const { data, error } = await supabase.from('bookings').insert([{
       room_id: booking.room_id,
       room_name: booking.room_name,
       service_id: booking.service_id,
-      staff_id: booking.staff_id,
+      staff_id: normalizedStaffId,
       start_at: booking.start_at,
       end_at: booking.end_at,
       status: booking.status,
