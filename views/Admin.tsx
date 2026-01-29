@@ -17,7 +17,7 @@ import {
   WaitlistEntry,
   Extra
 } from '../types';
-import { ROOMS, LOGO_URL, PRICING_TIERS, EXTRAS, SLOT_MINUTES, BUFFER_MINUTES, getGuestLabel } from '../constants';
+import { ROOMS, LOGO_URL, PRICING_TIERS, EXTRAS, SLOT_MINUTES, BUFFER_MINUTES } from '../constants';
 
 type Tab = 'bookings' | 'customers' | 'blocks' | 'settings' | 'reports';
 type ViewMode = 'day' | 'week' | 'month';
@@ -581,20 +581,9 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                         height: durationHrs * rowHeight
                       }}
                     >
-                      {item.type === 'booking' ? (
-                        <>
-                          <span className="text-[7px] font-bold uppercase text-center line-clamp-2 leading-none">
-                            {[item.customer_name, item.customer_surname].filter(Boolean).join(' ')}
-                          </span>
-                          <span className="text-[7px] font-bold uppercase text-center text-black/70 leading-none">
-                            {getGuestLabel(item.guests || 0)}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="text-[7px] font-bold uppercase text-center line-clamp-2 leading-none">
-                          {item.reason || 'Blocked'}
-                        </span>
-                      )}
+                      <span className="text-[7px] font-bold uppercase text-center line-clamp-2 leading-none">
+                        {item.type === 'booking' ? item.customer_name : (item.reason || 'Blocked')}
+                      </span>
                     </div>
                   );
                 })}
@@ -895,11 +884,11 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Min Days Lead Time</label>
-                    <input type="number" min="0" value={store.settings.minDaysBeforeBooking} onChange={async e => { await store.updateSettings({ minDaysBeforeBooking: Math.max(0, parseInt(e.target.value)) }); setShowSaved(true); setTimeout(() => setShowSaved(false), 2000); }} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
+                    <input type="number" min="0" value={store.settings.minDaysBeforeBooking} onChange={async e => await store.updateSettings({ minDaysBeforeBooking: Math.max(0, parseInt(e.target.value)) })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Min Hours Lead Time</label>
-                    <input type="number" min="0" value={store.settings.minHoursBeforeBooking} onChange={async e => { await store.updateSettings({ minHoursBeforeBooking: Math.max(0, parseInt(e.target.value)) }); setShowSaved(true); setTimeout(() => setShowSaved(false), 2000); }} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
+                    <input type="number" min="0" value={store.settings.minHoursBeforeBooking} onChange={async e => await store.updateSettings({ minHoursBeforeBooking: Math.max(0, parseInt(e.target.value)) })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
                   </div>
                 </div>
               </div>
@@ -1115,7 +1104,6 @@ function ReportsTab({ store }: { store: any }) {
 function BookingModal({ store, onClose, initialDate, booking, prefill }: { store: any, onClose: () => void, initialDate: string, booking?: Booking, prefill?: any }) {
   const [formData, setFormData] = useState({
     name: booking?.customer_name || '',
-    surname: booking?.customer_surname || '',
     email: booking?.customer_email || '',
     phone: booking?.customer_phone || '',
     date: booking ? new Date(booking.start_at).toISOString().split('T')[0] : (prefill?.date || initialDate),
@@ -1131,7 +1119,6 @@ function BookingModal({ store, onClose, initialDate, booking, prefill }: { store
     deposit_forfeited: booking?.deposit_forfeited || false,
     deposit_amount: booking?.deposit_amount || (store.settings.deposit_enabled ? store.settings.deposit_amount : 0)
   });
-  const [selectedCustomerId, setSelectedCustomerId] = useState('');
 
   const isPastDay = new Date(formData.date).getTime() < new Date().setHours(0, 0, 0, 0);
 
@@ -1146,7 +1133,6 @@ function BookingModal({ store, onClose, initialDate, booking, prefill }: { store
 
     const basePatch = {
       customer_name: formData.name,
-      customer_surname: formData.surname,
       customer_email: formData.email,
       customer_phone: formData.phone,
       start_at: startAt,
@@ -1195,40 +1181,8 @@ function BookingModal({ store, onClose, initialDate, booking, prefill }: { store
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="sm:col-span-2 space-y-1.5">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Existing Guest</label>
-            <select
-              value={selectedCustomerId}
-              onChange={e => {
-                const id = e.target.value;
-                setSelectedCustomerId(id);
-                const selected = store.customers.find((c: Customer) => c.id === id);
-                if (selected) {
-                  setFormData({
-                    ...formData,
-                    name: selected.name || '',
-                    surname: selected.surname || '',
-                    email: selected.email || '',
-                    phone: selected.phone || ''
-                  });
-                }
-              }}
-              className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner"
-            >
-              <option value="">New guest...</option>
-              {store.customers.map((c: Customer) => (
-                <option key={c.id} value={c.id}>
-                  {[c.name, c.surname].filter(Boolean).join(' ')} • {c.email}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">First Name</label>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Client Name</label>
             <input type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Surname</label>
-            <input type="text" value={formData.surname} onChange={e => setFormData({ ...formData, surname: e.target.value })} required className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Email</label>
