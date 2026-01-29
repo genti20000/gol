@@ -1,13 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
-import Script from 'next/script';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { BookingStatus, RateType, Extra } from '@/types';
 import { LOGO_URL, BASE_DURATION_HOURS, getGuestLabel } from '@/constants';
-
-const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
 
 export default function Checkout() {
   const { route, navigate, back } = useRouterShim();
@@ -15,7 +12,6 @@ export default function Checkout() {
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
-  const [stripeClient, setStripeClient] = useState<any>(null);
   const [formData, setFormData] = useState({ name: '', surname: '', email: '', phone: '', notes: '' });
   const [extrasSelection, setExtrasSelection] = useState<Record<string, number>>({});
   const [currentStep, setCurrentStep] = useState<'extras' | 'details'>('details');
@@ -49,16 +45,6 @@ export default function Checkout() {
     setIsProcessing(true);
 
     try {
-      if (!stripePublishableKey) {
-        setPaymentError('Payments are currently unavailable. Please try again later.');
-        return;
-      }
-
-      if (!stripeClient) {
-        setPaymentError('Payment services are still loading. Please try again.');
-        return;
-      }
-
       const startAt = new Date(`${date}T${time}`).toISOString();
       const endAt = new Date(new Date(startAt).getTime() + totalDuration * 3600000).toISOString();
 
@@ -66,43 +52,6 @@ export default function Checkout() {
       if (!assignment) {
         alert("This slot has been taken. Please choose another time.");
         navigate('/');
-        return;
-      }
-
-      const intentResponse = await fetch('/api/stripe/create-intent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: pricing.totalPrice + extrasTotal,
-          currency: 'gbp',
-          metadata: {
-            date,
-            time,
-            guests,
-            promo
-          }
-        })
-      });
-
-      if (!intentResponse.ok) {
-        setPaymentError('Unable to start the payment. Please try again.');
-        return;
-      }
-
-      const { clientSecret } = await intentResponse.json();
-      if (!clientSecret) {
-        setPaymentError('Unable to start the payment. Please try again.');
-        return;
-      }
-
-      const paymentResult = await stripeClient.confirmCardPayment(clientSecret);
-      if (paymentResult.error) {
-        setPaymentError(paymentResult.error.message || 'Payment failed. Please try again.');
-        return;
-      }
-
-      if (paymentResult.paymentIntent?.status !== 'succeeded') {
-        setPaymentError('Payment was not completed. Please try again.');
         return;
       }
 
@@ -115,7 +64,7 @@ export default function Checkout() {
         service_id: queryServiceId,
         start_at: startAt,
         end_at: endAt,
-        status: BookingStatus.CONFIRMED,
+        status: BookingStatus.PENDING,
         guests,
         customer_name: formData.name,
         customer_surname: formData.surname,
@@ -138,11 +87,30 @@ export default function Checkout() {
       };
 
       const finalBooking = await store.addBooking(booking);
-      if (finalBooking) {
-        navigate(`/confirmation?id=${finalBooking.id}`);
-      } else {
+      if (!finalBooking) {
         setPaymentError('Something went wrong while creating your booking.');
+        return;
       }
+
+      const checkoutResponse = await fetch('/api/stripe/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingId: finalBooking.id })
+      });
+
+      if (!checkoutResponse.ok) {
+        const errorBody = await checkoutResponse.json().catch(() => ({}));
+        setPaymentError(errorBody?.error || 'Unable to start the payment. Please try again.');
+        return;
+      }
+
+      const { url } = await checkoutResponse.json();
+      if (!url) {
+        setPaymentError('Unable to start the payment. Please try again.');
+        return;
+      }
+
+      window.location.href = url;
     } catch (error) {
       setPaymentError('Something went wrong while processing the payment.');
     } finally {
@@ -163,15 +131,6 @@ export default function Checkout() {
 
   return (
     <>
-      <Script
-        src="https://js.stripe.com/v3/"
-        strategy="afterInteractive"
-        onLoad={() => {
-          if (!stripePublishableKey) return;
-          const stripeInstance = (window as any).Stripe?.(stripePublishableKey);
-          setStripeClient(stripeInstance ?? null);
-        }}
-      />
     <div className="w-full px-4 py-8 md:py-12 md:max-w-6xl md:mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12">
       <div className="order-2 lg:order-1 space-y-8 md:space-y-12">
         {enabledExtras.length > 0 && currentStep === 'extras' ? (
