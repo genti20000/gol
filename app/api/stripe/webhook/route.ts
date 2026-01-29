@@ -85,25 +85,6 @@ export async function POST(request: Request) {
       });
       break;
     }
-    case 'payment_intent.succeeded': {
-      const intent = event.data.object as Stripe.PaymentIntent;
-      await updateBookingFromMetadata(intent.metadata, {
-        status: BookingStatus.CONFIRMED,
-        deposit_paid: true,
-        deposit_forfeited: false
-      });
-      break;
-    }
-    case 'payment_intent.payment_failed':
-    case 'payment_intent.canceled': {
-      const intent = event.data.object as Stripe.PaymentIntent;
-      await updateBookingFromMetadata(intent.metadata, {
-        status: BookingStatus.CANCELLED,
-        deposit_paid: false,
-        deposit_forfeited: true
-      });
-      break;
-    }
     default:
       break;
   }
