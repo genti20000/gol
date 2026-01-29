@@ -13,7 +13,7 @@ export default function Checkout() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [formData, setFormData] = useState({ name: '', surname: '', email: '', phone: '', notes: '' });
   const [extrasSelection, setExtrasSelection] = useState<Record<string, number>>({});
-  const [currentStep, setCurrentStep] = useState<'extras' | 'details'>('details'); // Start with details if no extras
+  const [currentStep, setCurrentStep] = useState<'extras' | 'details'>('details');
 
   const date = route.params.get('date') || '';
   const time = route.params.get('time') || '';
@@ -29,11 +29,13 @@ export default function Checkout() {
   const enabledExtras = useMemo(() => store.getEnabledExtras(), [store]);
   const extrasTotal = useMemo(() => store.computeExtrasTotal(extrasSelection, guests), [extrasSelection, guests, store]);
 
-  // Skip extras step if no extras are available
+  // Show extras step first when available, otherwise go straight to details
   useEffect(() => {
-    if (enabledExtras.length === 0) {
-      setCurrentStep('details');
+    if (enabledExtras.length > 0) {
+      setCurrentStep('extras');
+      return;
     }
+    setCurrentStep('details');
   }, [enabledExtras.length]);
 
   const handleSubmit = async (e: React.FormEvent) => {
