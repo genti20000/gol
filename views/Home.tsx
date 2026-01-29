@@ -5,13 +5,22 @@ import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { LOGO_URL, PRICING_TIERS, EXTRAS, getGuestLabel, WHATSAPP_URL } from '@/constants';
 
+const formatDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+const getMinBookingDateTime = (settings: { minDaysBeforeBooking?: number; minHoursBeforeBooking?: number }) => {
+  const leadDays = settings.minDaysBeforeBooking || 0;
+  const leadHours = settings.minHoursBeforeBooking || 0;
+  const leadMs = (leadDays * 24 + leadHours) * 3600000;
+  return new Date(Date.now() + leadMs);
+};
+
 export default function Home() {
   const { navigate } = useRouterShim();
   const store = useStore();
 
   const [serviceId, setServiceId] = useState('');
   const [staffId, setStaffId] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(formatDateKey(new Date()));
   const [guests, setGuests] = useState(8);
   const [extraHours, setExtraHours] = useState(0);
   const [promoCode, setPromoCode] = useState('');
@@ -26,6 +35,13 @@ export default function Home() {
       if (defaultService) setServiceId(defaultService.id);
     }
   }, [store.services, serviceId]);
+
+  useEffect(() => {
+    const minDate = formatDateKey(getMinBookingDateTime(store.settings));
+    if (date < minDate) {
+      setDate(minDate);
+    }
+  }, [date, store.settings]);
 
   const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promoCode), [date, guests, extraHours, promoCode, store]);
 
@@ -137,6 +153,7 @@ function DatePickerModal({ selectedDate, onSelect, onClose, store }: { selectedD
   const [currentView, setCurrentView] = useState(new Date(selectedDate));
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const daysOfWeek = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+  const minDateKey = formatDateKey(getMinBookingDateTime(store.settings));
 
   const calendarDays = useMemo(() => {
     const year = currentView.getFullYear();
@@ -162,11 +179,16 @@ function DatePickerModal({ selectedDate, onSelect, onClose, store }: { selectedD
           {daysOfWeek.map(d => <div key={d} className="text-[8px] font-bold text-zinc-600 text-center">{d}</div>)}
           {calendarDays.map((d, i) => {
             if (!d) return <div key={i}></div>;
-            const ds = d.toISOString().split('T')[0];
+            const ds = formatDateKey(d);
             const isOpen = store.getOperatingWindow(ds);
+            const isPast = ds < minDateKey;
             const isSelected = ds === selectedDate;
             return (
-              <div key={i} onClick={() => isOpen && onSelect(ds)} className={`h-9 md:h-10 flex items-center justify-center rounded-lg md:rounded-xl text-xs font-bold cursor-pointer transition-all ${!isOpen ? 'opacity-20 cursor-not-allowed' : isSelected ? 'bg-amber-500 text-black' : 'hover:bg-zinc-800 text-zinc-300'}`}>
+              <div
+                key={i}
+                onClick={() => isOpen && !isPast && onSelect(ds)}
+                className={`h-9 md:h-10 flex items-center justify-center rounded-lg md:rounded-xl text-xs font-bold cursor-pointer transition-all ${!isOpen || isPast ? 'opacity-20 cursor-not-allowed' : isSelected ? 'bg-amber-500 text-black' : 'hover:bg-zinc-800 text-zinc-300'}`}
+              >
                 {d.getDate()}
               </div>
             );
