@@ -5,8 +5,6 @@ import { createClient } from "@supabase/supabase-js";
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
-
 export async function POST(req: Request) {
   try {
     if (!stripeSecretKey) {
@@ -20,14 +18,6 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!siteUrl) {
-      return NextResponse.json(
-        { error: "NEXT_PUBLIC_SITE_URL is not set." },
-        { status: 500 },
-      );
-    }
-
-    const resolvedSiteUrl = siteUrl.replace(/\/$/, "");
     const stripe = new Stripe(stripeSecretKey, {
       apiVersion: "2024-04-10",
     });
@@ -64,7 +54,8 @@ export async function POST(req: Request) {
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      payment_method_types: ["card"],
+      ui_mode: "embedded",
+      redirect_on_completion: "never",
       line_items: [
         {
           price_data: {
@@ -81,11 +72,9 @@ export async function POST(req: Request) {
         bookingId,
       },
       allow_promotion_codes: true,
-      success_url: `${resolvedSiteUrl}/booking/processing?id=${bookingId}`,
-      cancel_url: `${resolvedSiteUrl}/booking/cancelled?id=${bookingId}`,
     });
 
-    return NextResponse.json({ url: session.url });
+    return NextResponse.json({ clientSecret: session.client_secret });
   } catch (error) {
     console.error("Failed to create Stripe Checkout session.", error);
     return NextResponse.json({ error: "Unable to start checkout." }, { status: 500 });

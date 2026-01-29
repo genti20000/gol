@@ -1,10 +1,27 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { BookingStatus, RateType, Extra } from '@/types';
 import { LOGO_URL, BASE_DURATION_HOURS, getGuestLabel } from '@/constants';
+
+type StripeEmbeddedCheckout = {
+  mount: (element: HTMLElement) => void;
+  destroy: () => void;
+};
+
+type StripeJs = {
+  initEmbeddedCheckout: (options: { clientSecret: string }) => Promise<StripeEmbeddedCheckout>;
+};
+
+type StripeFactory = (publishableKey: string) => StripeJs;
+
+declare global {
+  interface Window {
+    Stripe?: StripeFactory;
+  }
+}
 
 export default function Checkout() {
   const { route, navigate, back } = useRouterShim();
@@ -12,9 +29,11 @@ export default function Checkout() {
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [embeddedClientSecret, setEmbeddedClientSecret] = useState<string | null>(null);
   const [formData, setFormData] = useState({ name: '', surname: '', email: '', phone: '', notes: '' });
   const [extrasSelection, setExtrasSelection] = useState<Record<string, number>>({});
-  const [currentStep, setCurrentStep] = useState<'extras' | 'details'>('details');
+  const [currentStep, setCurrentStep] = useState<'extras' | 'details' | 'payment'>('details');
+  const embeddedCheckoutRef = useRef<HTMLDivElement | null>(null);
 
   const date = route.params.get('date') || '';
   const time = route.params.get('time') || '';
@@ -29,6 +48,37 @@ export default function Checkout() {
   const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promo), [date, guests, extraHours, promo, store]);
   const enabledExtras = useMemo(() => store.getEnabledExtras(), [store]);
   const extrasTotal = useMemo(() => store.computeExtrasTotal(extrasSelection, guests), [extrasSelection, guests, store]);
+  const stripePromise = useMemo(() => {
+    const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+    if (!publishableKey) {
+      return null;
+    }
+
+    return new Promise<StripeJs | null>((resolve) => {
+      if (typeof window === 'undefined') {
+        resolve(null);
+        return;
+      }
+
+      if (window.Stripe) {
+        resolve(window.Stripe(publishableKey));
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://js.stripe.com/v3/';
+      script.async = true;
+      script.onload = () => {
+        if (window.Stripe) {
+          resolve(window.Stripe(publishableKey));
+        } else {
+          resolve(null);
+        }
+      };
+      script.onerror = () => resolve(null);
+      document.head.appendChild(script);
+    });
+  }, []);
 
   // Show extras step first when available, otherwise go straight to details
   useEffect(() => {
@@ -38,6 +88,35 @@ export default function Checkout() {
     }
     setCurrentStep('details');
   }, [enabledExtras.length]);
+
+  useEffect(() => {
+    if (!embeddedClientSecret || !embeddedCheckoutRef.current) {
+      return;
+    }
+
+    let embeddedCheckout: StripeEmbeddedCheckout | null = null;
+    let isMounted = true;
+
+    const mountEmbeddedCheckout = async () => {
+      if (!stripePromise) {
+        setPaymentError('Stripe is not configured for embedded checkout.');
+        return;
+      }
+      const stripe = await stripePromise;
+      if (!stripe || !isMounted || !embeddedCheckoutRef.current) {
+        return;
+      }
+      embeddedCheckout = await stripe.initEmbeddedCheckout({ clientSecret: embeddedClientSecret });
+      embeddedCheckout.mount(embeddedCheckoutRef.current);
+    };
+
+    mountEmbeddedCheckout();
+
+    return () => {
+      isMounted = false;
+      embeddedCheckout?.destroy();
+    };
+  }, [embeddedClientSecret, stripePromise]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,13 +183,14 @@ export default function Checkout() {
         return;
       }
 
-      const { url } = await checkoutResponse.json();
-      if (!url) {
+      const { clientSecret } = await checkoutResponse.json();
+      if (!clientSecret) {
         setPaymentError('Unable to start the payment. Please try again.');
         return;
       }
 
-      window.location.href = url;
+      setEmbeddedClientSecret(clientSecret);
+      setCurrentStep('payment');
     } catch (error) {
       setPaymentError('Something went wrong while processing the payment.');
     } finally {
@@ -211,37 +291,47 @@ export default function Checkout() {
                 <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Phone Number</label>
                 <input type="tel" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner min-h-[44px]" />
               </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Special Requests</label>
-                <textarea rows={3} value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner resize-none min-h-[100px]" />
-              </div>
-            </div>
-
-            {paymentError && (
-              <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-red-200">
-                {paymentError}
-              </div>
-            )}
-
-            <div className="flex gap-4">
-              {enabledExtras.length > 0 && (
-                <button
-                  onClick={() => setCurrentStep('extras')}
-                  className="flex-1 bg-zinc-900 border border-zinc-800 py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-white text-[10px] min-h-[44px] cursor-pointer active:scale-95"
-                >
-                  Back
-                </button>
-              )}
-              <button
-                onClick={handleSubmit}
-                disabled={isProcessing || !formData.name || !formData.surname || !formData.email}
-                className={`${enabledExtras.length > 0 ? 'flex-[2]' : 'w-full'} gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-50 text-[10px] min-h-[44px] cursor-pointer`}
-              >
-                {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : `Confirm & Pay £${pricing.totalPrice + extrasTotal}`}
-              </button>
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Special Requests</label>
+              <textarea rows={3} value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner resize-none min-h-[100px]" />
             </div>
           </div>
-        ) : null}
+
+          {paymentError && (
+            <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-red-200">
+              {paymentError}
+            </div>
+          )}
+
+          <div className="flex gap-4">
+            {enabledExtras.length > 0 && (
+              <button
+                onClick={() => setCurrentStep('extras')}
+                className="flex-1 bg-zinc-900 border border-zinc-800 py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-white text-[10px] min-h-[44px] cursor-pointer active:scale-95"
+              >
+                Back
+              </button>
+            )}
+            <button
+              onClick={handleSubmit}
+              disabled={isProcessing || !formData.name || !formData.surname || !formData.email}
+              className={`${enabledExtras.length > 0 ? 'flex-[2]' : 'w-full'} gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-50 text-[10px] min-h-[44px] cursor-pointer`}
+            >
+              {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : `Confirm & Pay £${pricing.totalPrice + extrasTotal}`}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6 animate-in fade-in duration-500">
+          <div className="space-y-2">
+            <h2 className="text-2xl md:text-3xl font-bold uppercase tracking-tighter">Complete <span className="text-amber-500">Payment</span></h2>
+            <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-widest">Secure checkout powered by Stripe</p>
+          </div>
+          <div className="glass-panel p-4 md:p-6 rounded-[1.5rem] md:rounded-[2rem]">
+            <div ref={embeddedCheckoutRef} className="min-h-[420px]" />
+          </div>
+        </div>
+      )}
       </div>
 
       <div className="lg:sticky lg:top-24 h-fit">
