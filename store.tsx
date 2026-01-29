@@ -594,7 +594,17 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     const dayB = bookings.filter(b => b.room_id === roomId && b.status !== BookingStatus.CANCELLED && b.start_at.startsWith(date));
     const dayBl = blocks.filter(b => b.roomId === roomId && b.start_at.startsWith(date));
     return [
-      ...dayB.map(b => ({ id: b.id, type: 'booking' as const, start: new Date(b.start_at).getTime(), end: new Date(b.end_at).getTime(), customer_name: b.customer_name, guests: b.guests, status: b.status })),
+      ...dayB.map(b => ({
+        id: b.id,
+        type: 'booking' as const,
+        start: new Date(b.start_at).getTime(),
+        end: new Date(b.end_at).getTime(),
+        customer_name: b.customer_name,
+        guests: b.guests,
+        status: b.status,
+        notes: b.notes,
+        extras: b.extras
+      })),
       ...dayBl.map(b => ({ id: b.id, type: 'block' as const, start: new Date(b.start_at).getTime(), end: new Date(b.end_at).getTime(), reason: b.reason }))
     ];
   }, [bookings, blocks]);
