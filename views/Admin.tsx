@@ -19,7 +19,7 @@ import {
   WaitlistEntry,
   Extra
 } from '../types';
-import { ROOMS, LOGO_URL, PRICING_TIERS, EXTRAS, SLOT_MINUTES, BUFFER_MINUTES } from '../constants';
+import { ROOMS, LOGO_URL, PRICING_TIERS, EXTRAS, SLOT_MINUTES, BUFFER_MINUTES, getGuestLabel } from '../constants';
 
 type Tab = 'bookings' | 'customers' | 'blocks' | 'settings' | 'reports';
 type ViewMode = 'day' | 'week' | 'month';
@@ -1081,11 +1081,11 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Min Days Lead Time</label>
-                    <input type="number" min="0" value={store.settings.minDaysBeforeBooking} onChange={async e => await store.updateSettings({ minDaysBeforeBooking: Math.max(0, parseInt(e.target.value)) })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
+                    <input type="number" min="0" value={store.settings.minDaysBeforeBooking} onChange={async e => { await store.updateSettings({ minDaysBeforeBooking: Math.max(0, parseInt(e.target.value)) }); setShowSaved(true); setTimeout(() => setShowSaved(false), 2000); }} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Min Hours Lead Time</label>
-                    <input type="number" min="0" value={store.settings.minHoursBeforeBooking} onChange={async e => await store.updateSettings({ minHoursBeforeBooking: Math.max(0, parseInt(e.target.value)) })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
+                    <input type="number" min="0" value={store.settings.minHoursBeforeBooking} onChange={async e => { await store.updateSettings({ minHoursBeforeBooking: Math.max(0, parseInt(e.target.value)) }); setShowSaved(true); setTimeout(() => setShowSaved(false), 2000); }} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
                   </div>
                 </div>
               </div>
@@ -1317,6 +1317,7 @@ function BookingModal({ store, onClose, initialDate, booking, prefill }: { store
     deposit_forfeited: booking?.deposit_forfeited || false,
     deposit_amount: booking?.deposit_amount || (store.settings.deposit_enabled ? store.settings.deposit_amount : 0)
   });
+  const [selectedCustomerId, setSelectedCustomerId] = useState('');
 
   const isPastDay = new Date(formData.date).getTime() < new Date().setHours(0, 0, 0, 0);
 
