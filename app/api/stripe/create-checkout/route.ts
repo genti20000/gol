@@ -27,6 +27,7 @@ export async function POST(req: Request) {
       );
     }
 
+    const resolvedSiteUrl = siteUrl.replace(/\/$/, "");
     const stripe = new Stripe(stripeSecretKey, {
       apiVersion: "2024-04-10",
     });
