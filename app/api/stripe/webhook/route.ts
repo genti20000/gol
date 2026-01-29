@@ -21,8 +21,13 @@ type Database = {
         Row: Record<string, unknown>;
         Insert: Record<string, unknown>;
         Update: BookingUpdate;
+        Relationships: [];
       };
     };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
 };
 
