@@ -20,16 +20,9 @@ export async function POST(req: Request) {
       );
     }
 
-    const requestUrl = new URL(req.url);
-    const headerHost = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-    const headerProto =
-      req.headers.get("x-forwarded-proto") ?? requestUrl.protocol.replace(":", "");
-    const resolvedSiteUrl =
-      siteUrl ?? (headerHost ? `${headerProto}://${headerHost}` : null);
-
-    if (!resolvedSiteUrl) {
+    if (!siteUrl) {
       return NextResponse.json(
-        { error: "Unable to resolve site URL for checkout redirects." },
+        { error: "NEXT_PUBLIC_SITE_URL is not set." },
         { status: 500 },
       );
     }
