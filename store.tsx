@@ -124,7 +124,9 @@ interface StoreContextValue {
 
 const StoreContext = createContext<StoreContextValue | null>(null);
 
-export function StoreProvider({ children }: { children: React.ReactNode }) {
+type StoreMode = 'public' | 'admin';
+
+export function StoreProvider({ children, mode = 'public' }: { children: React.ReactNode; mode?: StoreMode }) {
   const [loading, setLoading] = useState(true);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [rooms, setRooms] = useState<Room[]>(ROOMS);
@@ -144,35 +146,50 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        setLoading(true);
+
+        const bookingsQuery = mode === 'admin'
+          ? supabase.from('bookings').select('*')
+          : supabase
+            .from('bookings')
+            .select('id,room_id,room_name,service_id,staff_id,start_at,end_at,status,guests');
+
+        const baseQueries = [
+          bookingsQuery,
+          supabase.from('rooms').select('*'),
+          supabase.from('services').select('*'),
+          supabase.from('room_blocks').select('*'),
+          supabase.from('special_hours').select('*'),
+          supabase.from('operating_hours').select('*').order('day', { ascending: true }),
+          supabase.from('venue_settings').select('*').single(),
+          supabase.from('extras').select('*').order('sort_order', { ascending: true })
+        ];
+
+        const adminQueries = mode === 'admin'
+          ? [
+            supabase.from('staff_members').select('*'),
+            supabase.from('recurring_blocks').select('*'),
+            supabase.from('promo_codes').select('*'),
+            supabase.from('customers').select('*'),
+            supabase.from('waitlist').select('*')
+          ]
+          : [];
+
         const [
           { data: bookingsData },
           { data: roomsData },
           { data: servicesData },
-          { data: staffData },
           { data: blocksData },
-          { data: recurringBlocksData },
           { data: specialHoursData },
           { data: operatingHoursData },
           { data: settingsData },
+          { data: extrasData },
+          { data: staffData },
+          { data: recurringBlocksData },
           { data: promoCodesData },
           { data: customersData },
-          { data: waitlistData },
-          { data: extrasData }
-        ] = await Promise.all([
-          supabase.from('bookings').select('*'),
-          supabase.from('rooms').select('*'),
-          supabase.from('services').select('*'),
-          supabase.from('staff_members').select('*'),
-          supabase.from('room_blocks').select('*'),
-          supabase.from('recurring_blocks').select('*'),
-          supabase.from('special_hours').select('*'),
-          supabase.from('operating_hours').select('*').order('day', { ascending: true }),
-          supabase.from('venue_settings').select('*').single(),
-          supabase.from('promo_codes').select('*'),
-          supabase.from('customers').select('*'),
-          supabase.from('waitlist').select('*'),
-          supabase.from('extras').select('*').order('sort_order', { ascending: true })
-        ]);
+          { data: waitlistData }
+        ] = await Promise.all([...baseQueries, ...adminQueries]);
 
         if (bookingsData) setBookings(bookingsData.map(b => ({
           ...b,
@@ -185,29 +202,33 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           end_at: b.end_at,
           status: b.status as BookingStatus,
           guests: b.guests,
+          customer_name: b.customer_name ?? '',
+          customer_surname: b.customer_surname ?? '',
+          customer_email: b.customer_email ?? '',
+          customer_phone: b.customer_phone ?? '',
+          notes: b.notes,
+          base_total: b.base_total ?? 0,
+          extras_hours: b.extras_hours ?? 0,
+          extras_price: b.extras_price ?? 0,
+          discount_amount: b.discount_amount ?? 0,
+          promo_code: b.promo_code,
+          promo_discount_amount: b.promo_discount_amount ?? 0,
+          total_price: b.total_price ?? 0,
+          created_at: b.created_at ?? new Date().toISOString(),
+          source: b.source,
           magicToken: b.magic_token,
           extras: b.extras_snapshot,
-          extras_total: b.extras_total
+          extras_total: b.extras_total,
+          deposit_amount: b.deposit_amount ?? 0,
+          deposit_paid: b.deposit_paid ?? false,
+          deposit_forfeited: b.deposit_forfeited ?? false
         })));
         if (roomsData) setRooms(roomsData as Room[]);
         if (servicesData) setServices(servicesData as Service[]);
-        if (staffData) setStaff(staffData.map(s => ({
-          ...s,
-          servicesOffered: s.services_offered,
-          bufferBefore: s.buffer_before,
-          bufferAfter: s.buffer_after
-        })));
         if (blocksData) setBlocks(blocksData.map(b => ({
           ...b,
           roomId: b.room_id,
           createdAt: new Date(b.created_at).getTime()
-        })));
-        if (recurringBlocksData) setRecurringBlocks(recurringBlocksData.map(rb => ({
-          ...rb,
-          dayOfWeek: rb.day_of_week,
-          roomId: rb.room_id,
-          startTime: rb.start_time,
-          endTime: rb.end_time
         })));
         if (specialHoursData) setSpecialHours(specialHoursData.map(sh => ({
           ...sh,
@@ -229,6 +250,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           minDaysBeforeBooking: settingsData.min_days_before_booking,
           minHoursBeforeBooking: settingsData.min_hours_before_booking
         });
+        if (extrasData) setExtras(extrasData.map(e => ({
+          ...e,
+          pricingMode: e.pricing_mode as 'flat' | 'per_person',
+          sortOrder: e.sort_order
+        })));
+        if (staffData) setStaff(staffData.map(s => ({
+          ...s,
+          servicesOffered: s.services_offered,
+          bufferBefore: s.buffer_before,
+          bufferAfter: s.buffer_after
+        })));
+        if (recurringBlocksData) setRecurringBlocks(recurringBlocksData.map(rb => ({
+          ...rb,
+          dayOfWeek: rb.day_of_week,
+          roomId: rb.room_id,
+          startTime: rb.start_time,
+          endTime: rb.end_time
+        })));
         if (promoCodesData) setPromoCodes(promoCodesData.map(pc => ({
           ...pc,
           percentOff: pc.percent_off,
@@ -251,11 +290,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           preferredDate: w.preferred_date,
           preferredTime: w.preferred_time
         })));
-        if (extrasData) setExtras(extrasData.map(e => ({
-          ...e,
-          pricingMode: e.pricing_mode as 'flat' | 'per_person',
-          sortOrder: e.sort_order
-        })));
 
       } catch (err) {
         console.error("Error fetching data from Supabase:", err);
@@ -264,7 +298,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
     };
     fetchData();
-  }, []);
+  }, [mode]);
 
   const getOperatingWindow = useCallback((date: string) => {
     const special = specialHours.find(s => s.date === date);
@@ -475,7 +509,38 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateBooking = useCallback(async (id: string, patch: Partial<Booking>) => {
-    const { error } = await supabase.from('bookings').update({ status: patch.status, notes: patch.notes, deposit_paid: patch.deposit_paid, deposit_forfeited: patch.deposit_forfeited }).eq('id', id);
+    const payload: Record<string, unknown> = {};
+    const assign = (key: string, value: unknown) => {
+      if (value !== undefined) payload[key] = value;
+    };
+
+    assign('status', patch.status);
+    assign('notes', patch.notes);
+    assign('deposit_paid', patch.deposit_paid);
+    assign('deposit_forfeited', patch.deposit_forfeited);
+    assign('customer_name', patch.customer_name);
+    assign('customer_surname', patch.customer_surname);
+    assign('customer_email', patch.customer_email);
+    assign('customer_phone', patch.customer_phone);
+    assign('start_at', patch.start_at);
+    assign('end_at', patch.end_at);
+    assign('guests', patch.guests);
+    assign('room_id', patch.room_id);
+    assign('room_name', patch.room_name);
+    if ('staff_id' in patch) payload.staff_id = patch.staff_id ?? null;
+    if ('service_id' in patch) payload.service_id = patch.service_id ?? null;
+    assign('base_total', patch.base_total);
+    assign('extras_hours', patch.extras_hours);
+    assign('extras_price', patch.extras_price);
+    assign('discount_amount', patch.discount_amount);
+    assign('promo_code', patch.promo_code);
+    assign('promo_discount_amount', patch.promo_discount_amount);
+    assign('total_price', patch.total_price);
+    assign('deposit_amount', patch.deposit_amount);
+    assign('extras_total', patch.extras_total);
+    assign('extras_snapshot', patch.extras);
+
+    const { error } = await supabase.from('bookings').update(payload).eq('id', id);
     if (!error) setBookings(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
   }, []);
 

@@ -1,7 +1,7 @@
 import Stripe from 'stripe';
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
-import { supabase } from '@/lib/supabase';
 import { BookingStatus } from '@/types';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '', {
@@ -9,6 +9,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '', {
 });
 
 const updateBookingFromMetadata = async (
+  supabase: ReturnType<typeof createClient>,
   metadata: Stripe.Metadata | null | undefined,
   update: { status?: BookingStatus; deposit_paid?: boolean; deposit_forfeited?: boolean }
 ) => {
@@ -56,6 +57,8 @@ export async function POST(request: Request) {
   const payload = await request.text();
   const signature = request.headers.get('stripe-signature');
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!signature) {
     return NextResponse.json({ error: 'Missing Stripe signature.' }, { status: 400 });
@@ -65,6 +68,13 @@ export async function POST(request: Request) {
     console.error('STRIPE_WEBHOOK_SECRET is not set.');
     return NextResponse.json({ error: 'Webhook secret not configured.' }, { status: 500 });
   }
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error('Supabase service credentials are not configured.');
+    return NextResponse.json({ error: 'Supabase credentials not configured.' }, { status: 500 });
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   let event: Stripe.Event;
 
@@ -78,7 +88,7 @@ export async function POST(request: Request) {
   switch (event.type) {
     case 'checkout.session.completed': {
       const session = event.data.object as Stripe.Checkout.Session;
-      await updateBookingFromMetadata(session.metadata, {
+      await updateBookingFromMetadata(supabase, session.metadata, {
         status: BookingStatus.CONFIRMED,
         deposit_paid: true,
         deposit_forfeited: false
