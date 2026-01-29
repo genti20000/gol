@@ -626,18 +626,60 @@ function MonthCalendar({ store, onSelectDay }: { store: any, onSelectDay: (d: st
 
 function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitChange, onValidationFailure }: any) {
   const [rowHeight, setRowHeight] = useState(60);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
 
   const window = store.getOperatingWindow(date);
   if (!window) return <div className="p-10 text-center text-zinc-600 uppercase font-bold tracking-widest">Venue Closed</div>;
 
+  const isPastDay = new Date(date).getTime() < new Date().setHours(0, 0, 0, 0);
   const startHour = parseInt(window.open.split(':')[0]);
   let endHour = parseInt(window.close.split(':')[0]);
   if (endHour <= startHour) endHour += 24;
+  const startMinutes = startHour * 60;
+  const endMinutes = endHour * 60;
 
   const hours: number[] = [];
   for (let h = startHour; h < endHour; h++) {
     hours.push(h);
   }
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>, roomId: string) => {
+    if (isPastDay) return;
+    event.preventDefault();
+    const bookingId = event.dataTransfer.getData('text/plain');
+    if (!bookingId) return;
+    const booking = store.bookings.find((b: Booking) => b.id === bookingId);
+    if (!booking) return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const y = event.clientY - rect.top;
+    const hourOffset = y / rowHeight;
+    const rawMinutes = Math.round((startMinutes + hourOffset * 60) / SLOT_MINUTES) * SLOT_MINUTES;
+    const durationMinutes = Math.max(0, Math.round((new Date(booking.end_at).getTime() - new Date(booking.start_at).getTime()) / 60000));
+    const maxStartMinutes = endMinutes - durationMinutes;
+    const clampedMinutes = Math.min(Math.max(rawMinutes, startMinutes), maxStartMinutes);
+    const baseTs = new Date(`${date}T00:00:00`).getTime();
+    const startAt = new Date(baseTs + clampedMinutes * 60000).toISOString();
+    const endAt = new Date(new Date(startAt).getTime() + durationMinutes * 60000).toISOString();
+
+    if (booking.room_id === roomId && new Date(booking.start_at).getTime() === new Date(startAt).getTime()) {
+      return;
+    }
+
+    const check = store.validateInterval(roomId, startAt, endAt, booking.id, booking.staff_id);
+    if (!check.ok) {
+      onValidationFailure(check.reason);
+      return;
+    }
+
+    const roomName = store.rooms.find((r: Room) => r.id === roomId)?.name || booking.room_name;
+    onCommitChange(booking, {
+      start_at: startAt,
+      end_at: endAt,
+      room_id: roomId,
+      room_name: roomName
+    });
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -699,6 +741,12 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                     const timeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
                     onTapToCreate({ date, roomId: r.id, time: timeStr });
                   }}
+                  onDragOver={(event) => {
+                    if (isPastDay) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'move';
+                  }}
+                  onDrop={(event) => handleDrop(event, r.id)}
                 ></div>
 
                 {store.getBusyIntervals(date, r.id).map((item: any) => {
@@ -710,7 +758,20 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                     <div
                       key={item.id}
                       onClick={(e) => { e.stopPropagation(); if (item.type === 'booking') onSelectBooking(item.id); }}
-                      className={`absolute left-0.5 right-0.5 rounded-lg border flex flex-col justify-center items-center px-0.5 cursor-pointer transition-all hover:scale-[1.02] active:scale-95 shadow-lg overflow-hidden z-10 ${item.type === 'booking' ? (item.status === 'CONFIRMED' ? 'bg-amber-500 text-black border-amber-400' : 'bg-zinc-800 text-zinc-400 border-zinc-700') : 'bg-red-500/20 text-red-500 border-red-500/20 cursor-default'
+                      draggable={item.type === 'booking' && !isPastDay}
+                      onDragStart={(event) => {
+                        if (item.type !== 'booking' || isPastDay) return;
+                        event.dataTransfer.effectAllowed = 'move';
+                        event.dataTransfer.setData('text/plain', item.id);
+                        setDraggingId(item.id);
+                      }}
+                      onDragEnd={() => setDraggingId(null)}
+                      className={`absolute left-0.5 right-0.5 rounded-lg border flex flex-col justify-center items-center px-0.5 transition-all hover:scale-[1.02] active:scale-95 shadow-lg overflow-hidden z-10 ${item.type === 'booking'
+                        ? (item.status === 'CONFIRMED'
+                          ? 'bg-amber-500 text-black border-amber-400'
+                          : 'bg-zinc-800 text-zinc-400 border-zinc-700')
+                        : 'bg-red-500/20 text-red-500 border-red-500/20 cursor-default'
+                        } ${item.type === 'booking' ? (isPastDay ? 'cursor-pointer' : 'cursor-grab') : ''} ${draggingId === item.id ? 'opacity-70 cursor-grabbing' : ''}`
                         }`}
                       style={{
                         top: startOffsetHrs * rowHeight,
