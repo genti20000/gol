@@ -2,6 +2,38 @@
 
 ## Issues Fixed ✅
 
+### Issue #6: Lead Time Controls Not Enforced + Saved Indicator Consistency
+**Status:** ✅ FIXED  
+**Severity:** High  
+**Before:** Min Days/Hours settings existed but were not applied to public availability results.  
+**After:** Lead time rules now filter available start times in `store.getValidStartTimes`, enforcing both minimum days and hours.
+
+---
+
+### Issue #7: Extras Configuration Not Persisting
+**Status:** ✅ FIXED  
+**Severity:** High  
+**Before:** Extras updates used camelCase fields that didn’t map to Supabase columns (e.g., `pricingMode`).  
+**After:** Extras add/update now map to `pricing_mode`/`sort_order` correctly and persist changes.
+
+---
+
+### Issue #8: Add Session Modal Missing Surname + Existing Customer Selection
+**Status:** ✅ FIXED  
+**Severity:** Medium  
+**Before:** Admin booking modal only captured a single name field; no quick select from CRM.  
+**After:** Added First Name + Surname fields and an Existing Guest dropdown to prefill details.
+
+---
+
+### Issue #9: Calendar View Missing Guest Count
+**Status:** ✅ FIXED  
+**Severity:** Low  
+**Before:** Timeline blocks showed only customer name.  
+**After:** Timeline blocks now show full name + guest count range.
+
+---
+
 ### Issue #3: Customers Not Auto-Synced to CRM After Booking
 **Status:** ✅ FIXED  
 **Severity:** Medium  

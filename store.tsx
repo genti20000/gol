@@ -332,8 +332,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const endMin = closeH * 60 + closeM;
     const [y, mm, dd] = date.split('-').map(Number);
     const baseTs = new Date(y, mm - 1, dd, 0, 0, 0).getTime();
+    const now = Date.now();
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const minDays = Math.max(0, settings.minDaysBeforeBooking || 0);
+    const minHours = Math.max(0, settings.minHoursBeforeBooking || 0);
+    const earliestByDays = todayStart.getTime() + minDays * 86400000;
+    const earliestByHours = now + minHours * 3600000;
+    const earliestAllowed = Math.max(earliestByDays, earliestByHours);
     for (let m = startMin; m <= endMin - durationMinutes; m += SLOT_MINUTES) {
       const slotStart = new Date(baseTs + m * 60000);
+      if (slotStart.getTime() < earliestAllowed) continue;
       const startAt = slotStart.toISOString();
       const endAt = new Date(slotStart.getTime() + durationMinutes * 60000).toISOString();
       if (rooms.some(r => validateInterval(r.id, startAt, endAt, undefined, staffId, true).ok)) {
@@ -341,7 +350,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
     }
     return times;
-  }, [rooms, getOperatingWindow, validateInterval]);
+  }, [rooms, getOperatingWindow, validateInterval, settings.minDaysBeforeBooking, settings.minHoursBeforeBooking]);
 
   const findFirstAvailableRoomAndStaff = useCallback((startAt: string, endAt: string, staffId?: string, serviceId?: string) => {
     for (const r of rooms) {
@@ -523,7 +532,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const dayB = bookings.filter(b => b.room_id === roomId && b.status !== BookingStatus.CANCELLED && b.start_at.startsWith(date));
     const dayBl = blocks.filter(b => b.roomId === roomId && b.start_at.startsWith(date));
     return [
-      ...dayB.map(b => ({ id: b.id, type: 'booking' as const, start: new Date(b.start_at).getTime(), end: new Date(b.end_at).getTime(), customer_name: b.customer_name, status: b.status })),
+      ...dayB.map(b => ({
+        id: b.id,
+        type: 'booking' as const,
+        start: new Date(b.start_at).getTime(),
+        end: new Date(b.end_at).getTime(),
+        customer_name: b.customer_name,
+        customer_surname: b.customer_surname,
+        guests: b.guests,
+        status: b.status
+      })),
       ...dayBl.map(b => ({ id: b.id, type: 'block' as const, start: new Date(b.start_at).getTime(), end: new Date(b.end_at).getTime(), reason: b.reason }))
     ];
   }, [bookings, blocks]);
@@ -634,7 +652,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const addExtra = useCallback(async (extra: Partial<Extra>) => {
     const id = `ext-${Date.now()}`;
-    const { data, error } = await supabase.from('extras').insert([{ ...extra, id, sort_order: 999 }]).select().single();
+    const { data, error } = await supabase.from('extras').insert([{
+      id,
+      name: extra.name,
+      description: extra.description,
+      price: extra.price,
+      enabled: extra.enabled,
+      pricing_mode: extra.pricingMode,
+      sort_order: 999
+    }]).select().single();
     if (!error && data) {
       setExtras(prev => [...prev, {
         ...data,
@@ -644,7 +670,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
   const updateExtra = useCallback(async (id: string, patch: Partial<Extra>) => {
-    await supabase.from('extras').update(patch).eq('id', id);
+    const dbPatch: any = {};
+    if (patch.name !== undefined) dbPatch.name = patch.name;
+    if (patch.description !== undefined) dbPatch.description = patch.description;
+    if (patch.price !== undefined) dbPatch.price = patch.price;
+    if (patch.enabled !== undefined) dbPatch.enabled = patch.enabled;
+    if (patch.pricingMode !== undefined) dbPatch.pricing_mode = patch.pricingMode;
+    if (patch.sortOrder !== undefined) dbPatch.sort_order = patch.sortOrder;
+    await supabase.from('extras').update(dbPatch).eq('id', id);
     setExtras(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
   }, []);
   const deleteExtra = useCallback(async (id: string) => {
