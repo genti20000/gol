@@ -1104,6 +1104,7 @@ function ReportsTab({ store }: { store: any }) {
 function BookingModal({ store, onClose, initialDate, booking, prefill }: { store: any, onClose: () => void, initialDate: string, booking?: Booking, prefill?: any }) {
   const [formData, setFormData] = useState({
     name: booking?.customer_name || '',
+    surname: booking?.customer_surname || '',
     email: booking?.customer_email || '',
     phone: booking?.customer_phone || '',
     date: booking ? new Date(booking.start_at).toISOString().split('T')[0] : (prefill?.date || initialDate),
@@ -1133,6 +1134,7 @@ function BookingModal({ store, onClose, initialDate, booking, prefill }: { store
 
     const basePatch = {
       customer_name: formData.name,
+      customer_surname: formData.surname,
       customer_email: formData.email,
       customer_phone: formData.phone,
       start_at: startAt,
@@ -1180,9 +1182,13 @@ function BookingModal({ store, onClose, initialDate, booking, prefill }: { store
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="sm:col-span-2 space-y-1.5">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Client Name</label>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">First Name</label>
             <input type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Surname</label>
+            <input type="text" value={formData.surname} onChange={e => setFormData({ ...formData, surname: e.target.value })} required className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Email</label>
