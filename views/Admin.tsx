@@ -771,8 +771,7 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                           ? 'bg-amber-500 text-black border-amber-400'
                           : 'bg-zinc-800 text-zinc-400 border-zinc-700')
                         : 'bg-red-500/20 text-red-500 border-red-500/20 cursor-default'
-                        } ${item.type === 'booking' ? (isPastDay ? 'cursor-pointer' : 'cursor-grab') : ''} ${draggingId === item.id ? 'opacity-70 cursor-grabbing' : ''}`
-                        }`}
+                        } ${item.type === 'booking' ? (isPastDay ? 'cursor-pointer' : 'cursor-grab') : ''} ${draggingId === item.id ? 'opacity-70 cursor-grabbing' : ''}`}
                       style={{
                         top: startOffsetHrs * rowHeight,
                         height: durationHrs * rowHeight
