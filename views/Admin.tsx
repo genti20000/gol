@@ -24,6 +24,19 @@ import { ROOMS, LOGO_URL, PRICING_TIERS, EXTRAS, SLOT_MINUTES, BUFFER_MINUTES, g
 type Tab = 'bookings' | 'customers' | 'blocks' | 'settings' | 'reports';
 type ViewMode = 'day' | 'week' | 'month';
 
+const FOOD_EXTRA_MATCHERS = [/pizza/i, /platter/i, /food/i, /meal/i, /buffet/i, /catering/i, /snack/i, /dessert/i];
+const DRINK_EXTRA_MATCHERS = [/drink/i, /prosecco/i, /beer/i, /wine/i, /cocktail/i, /champagne/i, /soda/i, /soft drink/i, /juice/i, /mocktail/i, /spirits/i];
+
+const hasMatchingExtra = (booking: Booking, matchers: RegExp[]) =>
+  (booking.extras || []).some(extra => matchers.some(matcher => matcher.test(extra.nameSnapshot)));
+
+const getBookingIndicators = (booking: Booking) => {
+  const hasSpecialRequests = Boolean(booking.notes && booking.notes.trim().length > 0);
+  const hasFood = hasMatchingExtra(booking, FOOD_EXTRA_MATCHERS);
+  const hasDrink = hasMatchingExtra(booking, DRINK_EXTRA_MATCHERS);
+  return { hasSpecialRequests, hasFood, hasDrink };
+};
+
 export default function Admin() {
   const store = useStore();
   const [activeTab, setActiveTab] = useState<Tab>('bookings');
@@ -451,7 +464,7 @@ function WeekView({ store, selectedDate, onSelectDay, onTapEmpty }: { store: any
     const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday start
     const monday = new Date(d.setDate(diff));
 
-    const arr: { ds: string, day: number, dayName: string, confirmed: number, pending: number, blocks: number, isClosed: boolean, isPast: boolean }[] = [];
+    const arr: { ds: string, day: number, dayName: string, confirmed: number, pending: number, blocks: number, isClosed: boolean, isPast: boolean, bookings: Booking[] }[] = [];
     for (let i = 0; i < 7; i++) {
       const current = new Date(monday);
       current.setDate(monday.getDate() + i);
@@ -462,7 +475,19 @@ function WeekView({ store, selectedDate, onSelectDay, onTapEmpty }: { store: any
       const pending = dayBookings.filter((b: any) => b.status === BookingStatus.PENDING).length;
       const isClosed = !store.getOperatingWindow(ds);
       const isPast = current.getTime() < new Date().setHours(0, 0, 0, 0);
-      arr.push({ ds, day: current.getDate(), dayName: ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][current.getDay()], confirmed, pending, blocks: dayBlocks.length, isClosed, isPast });
+      arr.push({
+        ds,
+        day: current.getDate(),
+        dayName: ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][current.getDay()],
+        confirmed,
+        pending,
+        blocks: dayBlocks.length,
+        isClosed,
+        isPast,
+        bookings: dayBookings
+          .filter((b: Booking) => b.status !== BookingStatus.CANCELLED)
+          .sort((a: Booking, b: Booking) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
+      });
     }
     return arr;
   }, [selectedDate, store.bookings, store.blocks, store.specialHours]);
@@ -487,6 +512,28 @@ function WeekView({ store, selectedDate, onSelectDay, onTapEmpty }: { store: any
               >
                 Add
               </button>
+            )}
+            {d.bookings.length > 0 && (
+              <div className="space-y-1 text-[8px] font-bold uppercase text-zinc-300">
+                {d.bookings.slice(0, 3).map((b: Booking) => {
+                  const indicators = getBookingIndicators(b);
+                  return (
+                    <div key={b.id} className="flex items-center justify-between gap-2">
+                      <span className="truncate">{b.customer_name} • {b.guests}G</span>
+                      <span className="flex items-center gap-1 text-[9px] text-zinc-400">
+                        {indicators.hasSpecialRequests && <i className="fa-solid fa-note-sticky" title="Special requests"></i>}
+                        {indicators.hasFood && <i className="fa-solid fa-pizza-slice" title="Food extra"></i>}
+                        {indicators.hasDrink && <i className="fa-solid fa-martini-glass-citrus" title="Drink extra"></i>}
+                      </span>
+                    </div>
+                  );
+                })}
+                {d.bookings.length > 3 && (
+                  <div className="text-[7px] text-zinc-500 font-bold uppercase tracking-widest">
+                    +{d.bookings.length - 3} more
+                  </div>
+                )}
+              </div>
             )}
             {d.confirmed > 0 && <div className="bg-green-500/10 text-green-500 border border-green-500/20 px-2 py-1 rounded text-[8px] font-bold flex justify-between"><span>CONF</span> <span>{d.confirmed}</span></div>}
             {d.pending > 0 && <div className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-1 rounded text-[8px] font-bold flex justify-between"><span>PEND</span> <span>{d.pending}</span></div>}
@@ -556,7 +603,7 @@ function MonthCalendar({ store, onSelectDay }: { store: any, onSelectDay: (d: st
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-    const days: ({ ds: string; day: number; confirmed: number; pending: number; cancelled: number; isClosed: boolean } | null)[] = [];
+    const days: ({ ds: string; day: number; confirmed: number; pending: number; cancelled: number; isClosed: boolean; bookings: Booking[] } | null)[] = [];
     for (let i = 0; i < firstDay; i++) days.push(null);
     for (let i = 1; i <= daysInMonth; i++) {
       const d = new Date(year, month, i);
@@ -567,7 +614,17 @@ function MonthCalendar({ store, onSelectDay }: { store: any, onSelectDay: (d: st
       const cancelled = dayBookings.filter((b: Booking) => b.status === BookingStatus.CANCELLED).length;
       const isClosed = !store.getOperatingWindow(ds);
 
-      days.push({ ds, day: i, confirmed, pending, cancelled, isClosed });
+      days.push({
+        ds,
+        day: i,
+        confirmed,
+        pending,
+        cancelled,
+        isClosed,
+        bookings: dayBookings
+          .filter((b: Booking) => b.status !== BookingStatus.CANCELLED)
+          .sort((a: Booking, b: Booking) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
+      });
     }
     return days;
   }, [currentMonth, store.bookings]);
@@ -603,6 +660,28 @@ function MonthCalendar({ store, onSelectDay }: { store: any, onSelectDay: (d: st
             >
               <span className={`text-[10px] font-bold ${d.isClosed ? 'opacity-20' : ''}`}>{d.day}</span>
               <div className="space-y-1">
+                {d.bookings.length > 0 && (
+                  <div className="space-y-1 text-[7px] font-bold uppercase text-zinc-300">
+                    {d.bookings.slice(0, 2).map((b: Booking) => {
+                      const indicators = getBookingIndicators(b);
+                      return (
+                        <div key={b.id} className="flex items-center justify-between gap-1">
+                          <span className="truncate">{b.customer_name} • {b.guests}G</span>
+                          <span className="flex items-center gap-1 text-[8px] text-zinc-400">
+                            {indicators.hasSpecialRequests && <i className="fa-solid fa-note-sticky" title="Special requests"></i>}
+                            {indicators.hasFood && <i className="fa-solid fa-pizza-slice" title="Food extra"></i>}
+                            {indicators.hasDrink && <i className="fa-solid fa-martini-glass-citrus" title="Drink extra"></i>}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {d.bookings.length > 2 && (
+                      <div className="text-[6px] text-zinc-500 font-bold uppercase tracking-widest">
+                        +{d.bookings.length - 2} more
+                      </div>
+                    )}
+                  </div>
+                )}
                 {d.confirmed > 0 && (
                   <div className="bg-green-500/10 text-green-500 border border-green-500/20 px-1.5 py-0.5 rounded text-[7px] font-bold uppercase tracking-tight flex justify-between items-center">
                     <span className="hidden md:inline">CONF</span>
@@ -753,6 +832,7 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                   const dayStartTs = new Date(`${date}T${window.open}`).getTime();
                   const startOffsetHrs = (item.start - dayStartTs) / 3600000;
                   const durationHrs = (item.end - item.start) / 3600000;
+                  const indicators = item.type === 'booking' ? getBookingIndicators(item as Booking) : null;
 
                   return (
                     <div
@@ -780,6 +860,13 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                       <span className="text-[7px] font-bold uppercase text-center line-clamp-2 leading-none">
                         {item.type === 'booking' ? `${item.customer_name} • ${item.guests} GUESTS` : (item.reason || 'Blocked')}
                       </span>
+                      {item.type === 'booking' && indicators && (
+                        <div className="mt-1 flex items-center gap-1 text-[9px]">
+                          {indicators.hasSpecialRequests && <i className="fa-solid fa-note-sticky" title="Special requests"></i>}
+                          {indicators.hasFood && <i className="fa-solid fa-pizza-slice" title="Food extra"></i>}
+                          {indicators.hasDrink && <i className="fa-solid fa-martini-glass-citrus" title="Drink extra"></i>}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
