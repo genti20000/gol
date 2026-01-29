@@ -1,6 +1,6 @@
 import Stripe from 'stripe';
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import { BookingStatus } from '@/types';
 
@@ -8,10 +8,28 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '', {
   apiVersion: '2024-04-10'
 });
 
+type BookingUpdate = {
+  status?: BookingStatus;
+  deposit_paid?: boolean;
+  deposit_forfeited?: boolean;
+};
+
+type Database = {
+  public: {
+    Tables: {
+      bookings: {
+        Row: Record<string, unknown>;
+        Insert: Record<string, unknown>;
+        Update: BookingUpdate;
+      };
+    };
+  };
+};
+
 const updateBookingFromMetadata = async (
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient<Database>,
   metadata: Stripe.Metadata | null | undefined,
-  update: { status?: BookingStatus; deposit_paid?: boolean; deposit_forfeited?: boolean }
+  update: BookingUpdate
 ) => {
   if (!metadata) {
     console.warn('Stripe webhook missing metadata for booking reconciliation.');
@@ -74,7 +92,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Supabase credentials not configured.' }, { status: 500 });
   }
 
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const supabase = createClient<Database>(supabaseUrl, supabaseServiceKey);
 
   let event: Stripe.Event;
 
