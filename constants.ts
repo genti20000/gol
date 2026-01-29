@@ -4,7 +4,7 @@ export const LOGO_URL = "https://files.londonkaraoke.club/uploads/1768098773_lkc
 export const WHATSAPP_URL = "https://wa.me/447761383514";
 export const WHATSAPP_PREFILL_ENABLED = true;
 
-export const SLOT_MINUTES = 15;
+export const SLOT_MINUTES = 30;
 export const BUFFER_MINUTES = 15;
 export const BASE_DURATION_HOURS = 2;
 
