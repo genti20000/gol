@@ -332,8 +332,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const endMin = closeH * 60 + closeM;
     const [y, mm, dd] = date.split('-').map(Number);
     const baseTs = new Date(y, mm - 1, dd, 0, 0, 0).getTime();
+    const leadMs = (settings.minDaysBeforeBooking * 24 + settings.minHoursBeforeBooking) * 3600000;
+    const minStartTs = Date.now() + leadMs;
     for (let m = startMin; m <= endMin - durationMinutes; m += SLOT_MINUTES) {
       const slotStart = new Date(baseTs + m * 60000);
+      if (slotStart.getTime() < minStartTs) continue;
       const startAt = slotStart.toISOString();
       const endAt = new Date(slotStart.getTime() + durationMinutes * 60000).toISOString();
       if (rooms.some(r => validateInterval(r.id, startAt, endAt, undefined, staffId, true).ok)) {
@@ -341,7 +344,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
     }
     return times;
-  }, [rooms, getOperatingWindow, validateInterval]);
+  }, [rooms, getOperatingWindow, settings.minDaysBeforeBooking, settings.minHoursBeforeBooking, validateInterval]);
 
   const findFirstAvailableRoomAndStaff = useCallback((startAt: string, endAt: string, staffId?: string, serviceId?: string) => {
     for (const r of rooms) {
@@ -523,7 +526,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const dayB = bookings.filter(b => b.room_id === roomId && b.status !== BookingStatus.CANCELLED && b.start_at.startsWith(date));
     const dayBl = blocks.filter(b => b.roomId === roomId && b.start_at.startsWith(date));
     return [
-      ...dayB.map(b => ({ id: b.id, type: 'booking' as const, start: new Date(b.start_at).getTime(), end: new Date(b.end_at).getTime(), customer_name: b.customer_name, status: b.status })),
+      ...dayB.map(b => ({ id: b.id, type: 'booking' as const, start: new Date(b.start_at).getTime(), end: new Date(b.end_at).getTime(), customer_name: b.customer_name, guests: b.guests, status: b.status })),
       ...dayBl.map(b => ({ id: b.id, type: 'block' as const, start: new Date(b.start_at).getTime(), end: new Date(b.end_at).getTime(), reason: b.reason }))
     ];
   }, [bookings, blocks]);

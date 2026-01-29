@@ -582,7 +582,7 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                       }}
                     >
                       <span className="text-[7px] font-bold uppercase text-center line-clamp-2 leading-none">
-                        {item.type === 'booking' ? item.customer_name : (item.reason || 'Blocked')}
+                        {item.type === 'booking' ? `${item.customer_name} • ${item.guests} GUESTS` : (item.reason || 'Blocked')}
                       </span>
                     </div>
                   );
