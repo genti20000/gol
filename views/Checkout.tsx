@@ -1,16 +1,21 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
+import Script from 'next/script';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { BookingStatus, RateType, Extra } from '@/types';
 import { LOGO_URL, BASE_DURATION_HOURS, getGuestLabel } from '@/constants';
+
+const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
 
 export default function Checkout() {
   const { route, navigate, back } = useRouterShim();
   const store = useStore();
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [stripeClient, setStripeClient] = useState<any>(null);
   const [formData, setFormData] = useState({ name: '', surname: '', email: '', phone: '', notes: '' });
   const [extrasSelection, setExtrasSelection] = useState<Record<string, number>>({});
   const [currentStep, setCurrentStep] = useState<'extras' | 'details'>('details');
@@ -40,58 +45,108 @@ export default function Checkout() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setPaymentError(null);
     setIsProcessing(true);
 
-    const startAt = new Date(`${date}T${time}`).toISOString();
-    const endAt = new Date(new Date(startAt).getTime() + totalDuration * 3600000).toISOString();
+    try {
+      if (!stripePublishableKey) {
+        setPaymentError('Payments are currently unavailable. Please try again later.');
+        return;
+      }
 
-    const assignment = store.findFirstAvailableRoomAndStaff(startAt, endAt, queryStaffId, queryServiceId);
-    if (!assignment) {
-      alert("This slot has been taken. Please choose another time.");
-      navigate('/');
-      return;
-    }
+      if (!stripeClient) {
+        setPaymentError('Payment services are still loading. Please try again.');
+        return;
+      }
 
-    // Simulate Payment
-    await new Promise(resolve => setTimeout(resolve, 2000));
+      const startAt = new Date(`${date}T${time}`).toISOString();
+      const endAt = new Date(new Date(startAt).getTime() + totalDuration * 3600000).toISOString();
 
-    const bookingExtras = store.buildBookingExtrasSnapshot(extrasSelection, guests);
+      const assignment = store.findFirstAvailableRoomAndStaff(startAt, endAt, queryStaffId, queryServiceId);
+      if (!assignment) {
+        alert("This slot has been taken. Please choose another time.");
+        navigate('/');
+        return;
+      }
 
-    const booking = {
-      room_id: assignment.room_id,
-      room_name: store.rooms.find(r => r.id === assignment.room_id)!.name,
-      staff_id: assignment.staff_id,
-      service_id: queryServiceId,
-      start_at: startAt,
-      end_at: endAt,
-      status: BookingStatus.CONFIRMED,
-      guests,
-      customer_name: formData.name,
-      customer_surname: formData.surname,
-      customer_email: formData.email,
-      customer_phone: formData.phone,
-      notes: formData.notes,
-      base_total: pricing.baseTotal,
-      extras_hours: extraHours,
-      extras_price: pricing.extrasPrice,
-      discount_amount: pricing.discountAmount,
-      promo_code: promo || undefined,
-      promo_discount_amount: pricing.promoDiscountAmount,
-      total_price: pricing.totalPrice + extrasTotal,
-      created_at: new Date().toISOString(),
-      source: 'public' as const,
-      extras: bookingExtras,
-      extras_total: extrasTotal,
-      deposit_amount: 0,
-      deposit_paid: false
-    };
+      const intentResponse = await fetch('/api/stripe/create-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: pricing.totalPrice + extrasTotal,
+          currency: 'gbp',
+          metadata: {
+            date,
+            time,
+            guests,
+            promo
+          }
+        })
+      });
 
-    const finalBooking = await store.addBooking(booking);
-    setIsProcessing(false);
-    if (finalBooking) {
-      navigate(`/confirmation?id=${finalBooking.id}`);
-    } else {
-      alert("Something went wrong while creating your booking.");
+      if (!intentResponse.ok) {
+        setPaymentError('Unable to start the payment. Please try again.');
+        return;
+      }
+
+      const { clientSecret } = await intentResponse.json();
+      if (!clientSecret) {
+        setPaymentError('Unable to start the payment. Please try again.');
+        return;
+      }
+
+      const paymentResult = await stripeClient.confirmCardPayment(clientSecret);
+      if (paymentResult.error) {
+        setPaymentError(paymentResult.error.message || 'Payment failed. Please try again.');
+        return;
+      }
+
+      if (paymentResult.paymentIntent?.status !== 'succeeded') {
+        setPaymentError('Payment was not completed. Please try again.');
+        return;
+      }
+
+      const bookingExtras = store.buildBookingExtrasSnapshot(extrasSelection, guests);
+
+      const booking = {
+        room_id: assignment.room_id,
+        room_name: store.rooms.find(r => r.id === assignment.room_id)!.name,
+        staff_id: assignment.staff_id,
+        service_id: queryServiceId,
+        start_at: startAt,
+        end_at: endAt,
+        status: BookingStatus.CONFIRMED,
+        guests,
+        customer_name: formData.name,
+        customer_surname: formData.surname,
+        customer_email: formData.email,
+        customer_phone: formData.phone,
+        notes: formData.notes,
+        base_total: pricing.baseTotal,
+        extras_hours: extraHours,
+        extras_price: pricing.extrasPrice,
+        discount_amount: pricing.discountAmount,
+        promo_code: promo || undefined,
+        promo_discount_amount: pricing.promoDiscountAmount,
+        total_price: pricing.totalPrice + extrasTotal,
+        created_at: new Date().toISOString(),
+        source: 'public' as const,
+        extras: bookingExtras,
+        extras_total: extrasTotal,
+        deposit_amount: 0,
+        deposit_paid: false
+      };
+
+      const finalBooking = await store.addBooking(booking);
+      if (finalBooking) {
+        navigate(`/confirmation?id=${finalBooking.id}`);
+      } else {
+        setPaymentError('Something went wrong while creating your booking.');
+      }
+    } catch (error) {
+      setPaymentError('Something went wrong while processing the payment.');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -107,6 +162,16 @@ export default function Checkout() {
   };
 
   return (
+    <>
+      <Script
+        src="https://js.stripe.com/v3/"
+        strategy="afterInteractive"
+        onLoad={() => {
+          if (!stripePublishableKey) return;
+          const stripeInstance = (window as any).Stripe?.(stripePublishableKey);
+          setStripeClient(stripeInstance ?? null);
+        }}
+      />
     <div className="w-full px-4 py-8 md:py-12 md:max-w-6xl md:mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12">
       <div className="order-2 lg:order-1 space-y-8 md:space-y-12">
         {enabledExtras.length > 0 && currentStep === 'extras' ? (
@@ -192,6 +257,12 @@ export default function Checkout() {
                 <textarea rows={3} value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner resize-none min-h-[100px]" />
               </div>
             </div>
+
+            {paymentError && (
+              <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-red-200">
+                {paymentError}
+              </div>
+            )}
 
             <div className="flex gap-4">
               {enabledExtras.length > 0 && (
@@ -284,5 +355,6 @@ export default function Checkout() {
         </div>
       </div>
     </div>
+    </>
   );
 }
