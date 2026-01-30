@@ -49,7 +49,7 @@ export interface Extra {
   id: string;
   name: string;
   description?: string;
-  infoText?: string;
+  infoText?: string | null;
   price: number;
   pricingMode: 'flat' | 'per_person';
   enabled: boolean;
@@ -59,6 +59,7 @@ export interface Extra {
 export interface BookingExtraSelection {
   extraId: string;
   nameSnapshot: string;
+  infoTextSnapshot?: string | null;
   priceSnapshot: number;
   pricingModeSnapshot: 'flat' | 'per_person';
   quantity: number;

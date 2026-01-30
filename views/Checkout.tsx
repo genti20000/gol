@@ -5,6 +5,7 @@ import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { BookingStatus, RateType, Extra } from '@/types';
 import { BASE_DURATION_HOURS, EXTRAS, PRICING_TIERS, getGuestLabel } from '@/constants';
+import { shouldShowExtraInfoIcon } from '@/lib/extras';
 
 type StripeEmbeddedCheckout = {
   mount: (element: HTMLElement) => void;
@@ -35,6 +36,7 @@ export default function Checkout() {
   const [currentStep, setCurrentStep] = useState<'extras' | 'details' | 'payment'>('details');
   const [showExtrasInfo, setShowExtrasInfo] = useState(false);
   const [activeExtraInfoId, setActiveExtraInfoId] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
   const embeddedCheckoutRef = useRef<HTMLDivElement | null>(null);
   const extrasInfoRef = useRef<HTMLDivElement | null>(null);
   const extrasInfoButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -142,6 +144,17 @@ export default function Checkout() {
   }, [enabledExtras.length]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const mediaQuery = window.matchMedia('(max-width: 767px)');
+    const update = () => setIsMobile(mediaQuery.matches);
+    update();
+    mediaQuery.addEventListener?.('change', update);
+    return () => mediaQuery.removeEventListener?.('change', update);
+  }, []);
+
+  useEffect(() => {
     if (!embeddedClientSecret || !embeddedCheckoutRef.current) {
       return;
     }
@@ -188,7 +201,7 @@ export default function Checkout() {
   }, [showExtrasInfo]);
 
   useEffect(() => {
-    if (!activeExtraInfoId) {
+    if (!activeExtraInfoId || isMobile) {
       return;
     }
 
@@ -202,7 +215,27 @@ export default function Checkout() {
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [activeExtraInfoId, isMobile]);
+
+  useEffect(() => {
+    if (!activeExtraInfoId) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setActiveExtraInfoId(null);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
   }, [activeExtraInfoId]);
+
+  const activeExtraInfo = useMemo(
+    () => enabledExtras.find(extra => extra.id === activeExtraInfoId) ?? null,
+    [enabledExtras, activeExtraInfoId]
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -380,45 +413,52 @@ export default function Checkout() {
                 <div key={extra.id} className={`p-6 rounded-[1.5rem] border transition-all flex items-center justify-between gap-6 ${extrasSelection[extra.id] ? 'bg-amber-500/5 border-amber-500/40' : 'glass-panel border-zinc-800'}`}>
                   <div className="flex-1">
                     <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm font-bold uppercase tracking-tight text-white">{extra.name}</p>
-                      {extra.description && (
-                        <div className="relative">
-                          <button
-                            ref={activeExtraInfoId === extra.id ? extraInfoButtonRef : undefined}
-                            type="button"
-                            onClick={() => setActiveExtraInfoId((prev) => (prev === extra.id ? null : extra.id))}
-                            aria-label={`More info about ${extra.name}`}
-                            aria-expanded={activeExtraInfoId === extra.id}
-                            className="w-7 h-7 rounded-full border border-zinc-800 bg-zinc-950/70 text-zinc-400 hover:text-white hover:border-zinc-700 transition-colors flex items-center justify-center"
-                          >
-                            <i className="fa-solid fa-circle-info text-[11px]"></i>
-                          </button>
-                          {activeExtraInfoId === extra.id && (
-                            <div
-                              ref={extraInfoRef}
-                              className="absolute right-0 mt-3 w-56 rounded-2xl border border-zinc-800 bg-zinc-950/95 p-3 text-[10px] text-zinc-300 shadow-2xl shadow-black/40 backdrop-blur"
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold uppercase tracking-tight text-white">{extra.name}</p>
+                        {shouldShowExtraInfoIcon(extra.infoText) && (
+                          <div className="relative">
+                            <button
+                              ref={activeExtraInfoId === extra.id ? extraInfoButtonRef : undefined}
+                              type="button"
+                              onClick={() => setActiveExtraInfoId((prev) => (prev === extra.id ? null : extra.id))}
+                              aria-label={`More info about ${extra.name}`}
+                              aria-expanded={activeExtraInfoId === extra.id}
+                              aria-haspopup={isMobile ? 'dialog' : 'true'}
+                              className="w-7 h-7 rounded-full border border-zinc-800 bg-zinc-950/70 text-zinc-400 hover:text-white hover:border-zinc-700 transition-colors flex items-center justify-center"
                             >
-                              <div className="flex items-start justify-between gap-3">
-                                <p className="font-semibold uppercase tracking-widest text-[9px] text-white">Extra Details</p>
-                                <button
-                                  type="button"
-                                  onClick={() => setActiveExtraInfoId(null)}
-                                  className="text-zinc-500 hover:text-white transition-colors"
-                                  aria-label={`Close ${extra.name} details`}
-                                >
-                                  <i className="fa-solid fa-xmark text-[10px]"></i>
-                                </button>
+                              <i className="fa-solid fa-circle-info text-[11px]"></i>
+                            </button>
+                            {!isMobile && activeExtraInfoId === extra.id && (
+                              <div
+                                ref={extraInfoRef}
+                                role="dialog"
+                                aria-label={`${extra.name} info`}
+                                className="absolute right-0 mt-3 w-56 rounded-2xl border border-zinc-800 bg-zinc-950/95 p-3 text-[10px] text-zinc-300 shadow-2xl shadow-black/40 backdrop-blur"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <p className="font-semibold uppercase tracking-widest text-[9px] text-white">Extra Details</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveExtraInfoId(null)}
+                                    className="text-zinc-500 hover:text-white transition-colors"
+                                    aria-label={`Close ${extra.name} details`}
+                                  >
+                                    <i className="fa-solid fa-xmark text-[10px]"></i>
+                                  </button>
+                                </div>
+                                <p className="mt-2 text-zinc-400 leading-relaxed whitespace-pre-wrap">{extra.infoText}</p>
                               </div>
-                              <p className="mt-2 text-zinc-400 leading-relaxed">{extra.description}</p>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mt-1">
                       £{extra.price} {extra.pricingMode === 'per_person' ? 'per guest' : 'flat rate'}
                     </p>
-                    {extra.description && <p className="text-[10px] text-zinc-600 mt-2 line-clamp-1">{extra.description}</p>}
+                    {shouldShowExtraInfoIcon(extra.infoText) && (
+                      <p className="text-[10px] text-zinc-600 mt-2 line-clamp-1">{extra.infoText}</p>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-4 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800">
@@ -439,6 +479,34 @@ export default function Checkout() {
                 </div>
               ))}
             </div>
+
+            {isMobile && activeExtraInfo && (
+              <div className="fixed inset-0 z-[200] flex items-end justify-center">
+                <div
+                  className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+                  onClick={() => setActiveExtraInfoId(null)}
+                ></div>
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={`${activeExtraInfo.name} info`}
+                  className="relative w-full max-w-md rounded-t-[2rem] border border-zinc-800 bg-zinc-950/95 p-6 shadow-2xl shadow-black/40"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-sm font-bold uppercase tracking-tight text-white">{activeExtraInfo.name}</p>
+                    <button
+                      type="button"
+                      onClick={() => setActiveExtraInfoId(null)}
+                      className="text-zinc-500 hover:text-white transition-colors"
+                      aria-label={`Close ${activeExtraInfo.name} info`}
+                    >
+                      <i className="fa-solid fa-xmark text-[12px]"></i>
+                    </button>
+                  </div>
+                  <p className="mt-3 text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap">{activeExtraInfo.infoText}</p>
+                </div>
+              </div>
+            )}
 
             <div className="flex gap-4">
               <button

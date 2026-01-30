@@ -1463,6 +1463,21 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                       }}
                       className="w-full bg-transparent border-none text-white font-bold uppercase text-sm outline-none focus:text-amber-500"
                     />
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2 text-[9px] font-bold uppercase tracking-widest text-zinc-500">
+                        <span>Info (shows when customer clicks ⓘ)</span>
+                        <span>{(e.infoText ?? '').length}/500</span>
+                      </div>
+                      <textarea
+                        rows={3}
+                        maxLength={500}
+                        value={e.infoText ?? ''}
+                        onChange={async val => {
+                          await handleMutation(store.updateExtra(e.id, { infoText: val.target.value }), 'Failed to update extra info.');
+                        }}
+                        className="w-full rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-[11px] text-white outline-none focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/40"
+                      />
+                    </div>
                     <div className="flex gap-4">
                       <button
                         onClick={async () => {

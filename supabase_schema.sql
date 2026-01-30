@@ -184,6 +184,7 @@ CREATE TABLE extras (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT,
+  info_text TEXT,
   price NUMERIC NOT NULL,
   pricing_mode TEXT NOT NULL,
   enabled BOOLEAN DEFAULT true,
