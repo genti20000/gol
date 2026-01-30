@@ -437,12 +437,16 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     const normalizedStaffId = typeof booking.staff_id === 'string' && booking.staff_id.trim().length > 0
       ? booking.staff_id
       : null;
-    const magicToken = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
+    const cryptoSource = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
+    const magicToken = cryptoSource?.randomUUID
+      ? cryptoSource.randomUUID()
       : (() => {
-        const bytes = new Uint8Array(16);
-        crypto.getRandomValues(bytes);
-        return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+        if (cryptoSource?.getRandomValues) {
+          const bytes = new Uint8Array(16);
+          cryptoSource.getRandomValues(bytes);
+          return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+        }
+        return `${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
       })();
     const { data, error } = await supabase.from('bookings').insert([{
       room_id: booking.room_id,
