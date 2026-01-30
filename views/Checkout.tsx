@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { BookingStatus, RateType, Extra } from '@/types';
-import { getGuestLabel } from '@/constants';
+import { BASE_DURATION_HOURS, EXTRAS, PRICING_TIERS, getGuestLabel } from '@/constants';
 
 type StripeEmbeddedCheckout = {
   mount: (element: HTMLElement) => void;
@@ -33,22 +33,41 @@ export default function Checkout() {
   const [formData, setFormData] = useState({ name: '', surname: '', email: '', phone: '', notes: '' });
   const [extrasSelection, setExtrasSelection] = useState<Record<string, number>>({});
   const [currentStep, setCurrentStep] = useState<'extras' | 'details' | 'payment'>('details');
+  const [showExtrasInfo, setShowExtrasInfo] = useState(false);
+  const [activeExtraInfoId, setActiveExtraInfoId] = useState<string | null>(null);
   const embeddedCheckoutRef = useRef<HTMLDivElement | null>(null);
+  const extrasInfoRef = useRef<HTMLDivElement | null>(null);
+  const extrasInfoButtonRef = useRef<HTMLButtonElement | null>(null);
+  const extraInfoRef = useRef<HTMLDivElement | null>(null);
+  const extraInfoButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const date = route.params.get('date') || '';
   const time = route.params.get('time') || '';
-  const guests = parseInt(route.params.get('guests') || '8');
-  const extraHours = parseInt(route.params.get('extraHours') || '0');
+  const parsedGuests = Number(route.params.get('guests') || '8');
+  const parsedExtraHours = Number(route.params.get('extraHours') || '0');
   const promo = route.params.get('promo') || '';
   const queryServiceId = route.params.get('serviceId') || undefined;
   const queryStaffId = route.params.get('staffId') || undefined;
 
-  const totalDuration = 2 + extraHours;
+  const guestMin = Math.min(...PRICING_TIERS.map(tier => tier.min));
+  const guestMax = Math.max(...PRICING_TIERS.map(tier => tier.max));
+  const extraHourOptions = EXTRAS.map(extra => extra.hours);
+  const extraMin = Math.min(...extraHourOptions);
+  const extraMax = Math.max(...extraHourOptions);
+
+  const clampValue = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+  const guests = Number.isFinite(parsedGuests) ? clampValue(parsedGuests, guestMin, guestMax) : guestMin;
+  const extraHours = Number.isFinite(parsedExtraHours) ? clampValue(parsedExtraHours, extraMin, extraMax) : extraMin;
+
+  const totalDuration = BASE_DURATION_HOURS + extraHours;
   const isValidDateTime = useMemo(() => {
     if (!date || !time) return false;
     const parsed = new Date(`${date}T${time}`);
     return Number.isFinite(parsed.getTime());
   }, [date, time]);
+  const isValidGuests = Number.isFinite(parsedGuests) && parsedGuests === guests;
+  const isValidExtraHours = Number.isFinite(parsedExtraHours) && extraHourOptions.includes(parsedExtraHours);
+  const hasValidBookingDetails = isValidDateTime && isValidGuests && isValidExtraHours;
 
   const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promo), [date, guests, extraHours, promo, store]);
   const enabledExtras = useMemo(() => store.getEnabledExtras(), [store]);
@@ -93,6 +112,26 @@ export default function Checkout() {
     });
   }, []);
 
+  if (store.loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center uppercase font-bold tracking-widest text-zinc-600 animate-pulse text-sm">
+          Loading...
+        </div>
+      </div>
+    );
+  }
+
+  if (store.loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="text-center uppercase font-bold tracking-widest text-red-400 text-sm">
+          Failed to load booking details. Please refresh and try again.
+        </div>
+      </div>
+    );
+  }
+
   // Show extras step first when available, otherwise go straight to details
   useEffect(() => {
     if (enabledExtras.length > 0) {
@@ -131,14 +170,48 @@ export default function Checkout() {
     };
   }, [embeddedClientSecret, stripePromise]);
 
+  useEffect(() => {
+    if (!showExtrasInfo) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (extrasInfoRef.current?.contains(target) || extrasInfoButtonRef.current?.contains(target)) {
+        return;
+      }
+      setShowExtrasInfo(false);
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showExtrasInfo]);
+
+  useEffect(() => {
+    if (!activeExtraInfoId) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (extraInfoRef.current?.contains(target) || extraInfoButtonRef.current?.contains(target)) {
+        return;
+      }
+      setActiveExtraInfoId(null);
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [activeExtraInfoId]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPaymentError(null);
     setIsProcessing(true);
 
     try {
-      if (!isValidDateTime) {
-        setPaymentError('Please select a valid date and time before continuing.');
+      if (!hasValidBookingDetails) {
+        setPaymentError('Please select valid booking details before continuing.');
         return;
       }
       const startAt = new Date(`${date}T${time}`).toISOString();
@@ -232,7 +305,7 @@ export default function Checkout() {
     });
   };
 
-  if (!isValidDateTime) {
+  if (!hasValidBookingDetails) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="glass-panel p-8 md:p-10 rounded-[2rem] border-zinc-800 max-w-md w-full text-center space-y-6">
@@ -261,7 +334,44 @@ export default function Checkout() {
         {enabledExtras.length > 0 && currentStep === 'extras' ? (
           <div className="space-y-8 animate-in fade-in duration-500">
             <div className="space-y-2">
-              <h2 className="text-2xl md:text-3xl font-bold uppercase tracking-tighter">Enhance Your <span className="text-amber-500">Session</span></h2>
+              <div className="flex items-start justify-between gap-4">
+                <h2 className="text-2xl md:text-3xl font-bold uppercase tracking-tighter">Enhance Your <span className="text-amber-500">Session</span></h2>
+                <div className="relative">
+                  <button
+                    ref={extrasInfoButtonRef}
+                    type="button"
+                    onClick={() => setShowExtrasInfo((prev) => !prev)}
+                    aria-label="More info about food and drink offers"
+                    aria-expanded={showExtrasInfo}
+                    className="w-8 h-8 rounded-full border border-zinc-800 bg-zinc-950/70 text-zinc-400 hover:text-white hover:border-zinc-700 transition-colors flex items-center justify-center"
+                  >
+                    <i className="fa-solid fa-circle-info text-[13px]"></i>
+                  </button>
+                  {showExtrasInfo && (
+                    <div
+                      ref={extrasInfoRef}
+                      className="absolute right-0 mt-3 w-64 rounded-2xl border border-zinc-800 bg-zinc-950/95 p-4 text-[10px] text-zinc-300 shadow-2xl shadow-black/40 backdrop-blur"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="font-semibold uppercase tracking-widest text-[9px] text-white">Food & Drink Offers</p>
+                        <button
+                          type="button"
+                          onClick={() => setShowExtrasInfo(false)}
+                          className="text-zinc-500 hover:text-white transition-colors"
+                          aria-label="Close food and drink info"
+                        >
+                          <i className="fa-solid fa-xmark text-[10px]"></i>
+                        </button>
+                      </div>
+                      <p className="mt-2 text-zinc-400 leading-relaxed">
+                        Choose any package to upgrade your experience. Pricing is shown per guest or flat rate, and
+                        quantities can be adjusted to match your group size. Add-ons are optional and can be changed
+                        before checkout.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
               <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-widest">Select optional food & drink packages</p>
             </div>
 
@@ -269,7 +379,42 @@ export default function Checkout() {
               {enabledExtras.map((extra: Extra) => (
                 <div key={extra.id} className={`p-6 rounded-[1.5rem] border transition-all flex items-center justify-between gap-6 ${extrasSelection[extra.id] ? 'bg-amber-500/5 border-amber-500/40' : 'glass-panel border-zinc-800'}`}>
                   <div className="flex-1">
-                    <p className="text-sm font-bold uppercase tracking-tight text-white">{extra.name}</p>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-bold uppercase tracking-tight text-white">{extra.name}</p>
+                      {extra.description && (
+                        <div className="relative">
+                          <button
+                            ref={activeExtraInfoId === extra.id ? extraInfoButtonRef : undefined}
+                            type="button"
+                            onClick={() => setActiveExtraInfoId((prev) => (prev === extra.id ? null : extra.id))}
+                            aria-label={`More info about ${extra.name}`}
+                            aria-expanded={activeExtraInfoId === extra.id}
+                            className="w-7 h-7 rounded-full border border-zinc-800 bg-zinc-950/70 text-zinc-400 hover:text-white hover:border-zinc-700 transition-colors flex items-center justify-center"
+                          >
+                            <i className="fa-solid fa-circle-info text-[11px]"></i>
+                          </button>
+                          {activeExtraInfoId === extra.id && (
+                            <div
+                              ref={extraInfoRef}
+                              className="absolute right-0 mt-3 w-56 rounded-2xl border border-zinc-800 bg-zinc-950/95 p-3 text-[10px] text-zinc-300 shadow-2xl shadow-black/40 backdrop-blur"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <p className="font-semibold uppercase tracking-widest text-[9px] text-white">Extra Details</p>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveExtraInfoId(null)}
+                                  className="text-zinc-500 hover:text-white transition-colors"
+                                  aria-label={`Close ${extra.name} details`}
+                                >
+                                  <i className="fa-solid fa-xmark text-[10px]"></i>
+                                </button>
+                              </div>
+                              <p className="mt-2 text-zinc-400 leading-relaxed">{extra.description}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mt-1">
                       £{extra.price} {extra.pricingMode === 'per_person' ? 'per guest' : 'flat rate'}
                     </p>

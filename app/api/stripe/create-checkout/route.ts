@@ -2,6 +2,8 @@ import Stripe from "stripe";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+import { BookingStatus } from "@/types";
+
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -34,7 +36,7 @@ export async function POST(req: Request) {
     // Fetch booking amount from DB (do NOT trust client)
     const { data: booking, error } = await supabase
       .from("bookings")
-      .select("total_price,status")
+      .select("total_price,status,deposit_paid")
       .eq("id", bookingId)
       .single();
 
@@ -47,30 +49,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Booking total is unavailable." }, { status: 400 });
     }
 
-    const { data: settings, error: settingsError } = await supabase
-      .from("venue_settings")
-      .select("deposit_enabled,deposit_amount")
-      .single();
-
-    if (settingsError || !settings) {
-      console.error("Failed to load venue settings for checkout session.", settingsError);
-      return NextResponse.json({ error: "Unable to load venue settings." }, { status: 500 });
+    if (booking.status === BookingStatus.CANCELLED) {
+      return NextResponse.json({ error: "Booking has been cancelled." }, { status: 400 });
     }
 
-    const total = booking.total_price;
-    const dueNow = settings.deposit_enabled
-      ? Math.min(Math.max(settings.deposit_amount ?? 0, 0), total)
-      : total;
-    const unitAmount = Math.round(dueNow * 100);
+    if (booking.status === BookingStatus.CONFIRMED || booking.deposit_paid === true) {
+      return NextResponse.json(
+        { error: "Booking is already paid or confirmed." },
+        { status: 400 },
+      );
+    }
 
-    console.log("Stripe checkout request", {
-      bookingId,
-      dueNow,
-      unitAmount,
-      bookingStatus: booking.status
-    });
-
-    if (!Number.isFinite(unitAmount) || unitAmount < 0) {
+    const unitAmount = Math.round(booking.total_price * 100);
+    if (!Number.isFinite(unitAmount) || unitAmount <= 0) {
       return NextResponse.json({ error: "Booking total is invalid." }, { status: 400 });
     }
 

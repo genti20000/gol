@@ -11,6 +11,7 @@ export default function ManageBooking() {
    const token = route.path.split('/').pop() || '';
    const store = useStore();
    const [isProcessing, setIsProcessing] = useState(false);
+   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
    const booking = useMemo(() => store.getBookingByMagicToken(token || ''), [token, store]);
 
@@ -22,11 +23,36 @@ export default function ManageBooking() {
       if (!confirm("Are you sure you want to cancel your session? This action is irreversible.")) return;
 
       setIsProcessing(true);
-      await store.updateBooking(booking.id, { status: BookingStatus.CANCELLED });
+      setErrorMessage(null);
+      const result = await store.updateBooking(booking.id, { status: BookingStatus.CANCELLED });
       setIsProcessing(false);
+      if (!result.ok) {
+         setErrorMessage(result.error ?? "We couldn't cancel your booking. Please try again.");
+         return;
+      }
       alert("Your booking has been cancelled.");
       navigate('/');
    };
+
+   if (store.loading) {
+      return (
+         <div className="min-h-screen flex items-center justify-center">
+            <div className="text-center uppercase font-bold tracking-widest text-zinc-600 animate-pulse text-sm">
+               Loading...
+            </div>
+         </div>
+      );
+   }
+
+   if (store.loadError) {
+      return (
+         <div className="min-h-screen flex items-center justify-center px-4">
+            <div className="text-center uppercase font-bold tracking-widest text-red-400 text-sm">
+               Failed to load booking details. Please refresh and try again.
+            </div>
+         </div>
+      );
+   }
 
    if (!booking) {
       return (
@@ -49,6 +75,11 @@ export default function ManageBooking() {
          </div>
 
          <div className="glass-panel p-8 sm:p-10 rounded-[2.5rem] border-zinc-800 space-y-8 shadow-2xl">
+            {errorMessage && (
+               <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-red-200 text-center">
+                  {errorMessage}
+               </div>
+            )}
             {/* ... Details remain unchanged ... */}
 
             {!isCancelled && (
