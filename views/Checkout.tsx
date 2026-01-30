@@ -72,6 +72,14 @@ export default function Checkout() {
   const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promo), [date, guests, extraHours, promo, store]);
   const enabledExtras = useMemo(() => store.getEnabledExtras(), [store]);
   const extrasTotal = useMemo(() => store.computeExtrasTotal(extrasSelection, guests), [extrasSelection, guests, store]);
+  const estimatedTotal = useMemo(() => pricing.totalPrice + extrasTotal, [pricing.totalPrice, extrasTotal]);
+  const estimatedDueNow = useMemo(() => {
+    if (!store.settings.deposit_enabled) {
+      return estimatedTotal;
+    }
+    const deposit = store.settings.deposit_amount;
+    return Math.min(Math.max(deposit, 0), estimatedTotal);
+  }, [store.settings.deposit_enabled, store.settings.deposit_amount, estimatedTotal]);
   const stripePromise = useMemo(() => {
     const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
     if (!publishableKey) {
@@ -243,7 +251,7 @@ export default function Checkout() {
         source: 'public' as const,
         extras: bookingExtras,
         extras_total: extrasTotal,
-        deposit_amount: 0,
+        deposit_amount: store.settings.deposit_enabled ? store.settings.deposit_amount : 0,
         deposit_paid: false
       };
 
@@ -265,7 +273,13 @@ export default function Checkout() {
         return;
       }
 
-      const { clientSecret } = await checkoutResponse.json();
+      const payload = await checkoutResponse.json();
+      if (payload?.skipPayment && payload?.redirectUrl) {
+        navigate(payload.redirectUrl);
+        return;
+      }
+
+      const { clientSecret } = payload;
       if (!clientSecret) {
         setPaymentError('Unable to start the payment. Please try again.');
         return;
@@ -493,7 +507,7 @@ export default function Checkout() {
               disabled={isProcessing || !formData.name || !formData.surname || !formData.email}
               className={`${enabledExtras.length > 0 ? 'flex-[2]' : 'w-full'} gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-50 text-[10px] min-h-[44px] cursor-pointer`}
             >
-              {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : `Confirm & Pay £${pricing.totalPrice + extrasTotal}`}
+              {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : estimatedDueNow <= 0 ? 'Confirm booking' : `Pay £${estimatedDueNow} now`}
             </button>
           </div>
         </div>
@@ -561,12 +575,12 @@ export default function Checkout() {
           <div className="border-t border-zinc-800 pt-6 space-y-4">
             <div className="flex justify-between items-end">
               <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">Total Price</span>
-              <span className="text-4xl font-bold text-white tracking-tighter">£{pricing.totalPrice + extrasTotal}</span>
+              <span className="text-4xl font-bold text-white tracking-tighter">£{estimatedTotal}</span>
             </div>
             {store.settings.deposit_enabled && (
               <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl flex justify-between items-center">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Deposit Due Now</span>
-                <span className="text-xl font-bold text-amber-500 tracking-tighter">£{store.settings.deposit_amount}</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-amber-500">{estimatedDueNow > 0 ? 'Deposit Due Now' : 'Deposit Due'}</span>
+                <span className="text-xl font-bold text-amber-500 tracking-tighter">£{estimatedDueNow}</span>
               </div>
             )}
           </div>

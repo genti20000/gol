@@ -93,6 +93,7 @@ CREATE TABLE bookings (
   deposit_amount NUMERIC NOT NULL DEFAULT 0,
   deposit_paid BOOLEAN DEFAULT false,
   deposit_forfeited BOOLEAN DEFAULT false,
+  amount_paid NUMERIC DEFAULT 0,
   extras_total NUMERIC DEFAULT 0,
   extras_snapshot JSONB DEFAULT '[]',
   created_at TIMESTAMPTZ DEFAULT now()

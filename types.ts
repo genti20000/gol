@@ -7,6 +7,7 @@ export enum RateType {
 export enum BookingStatus {
   PENDING = 'PENDING',
   CONFIRMED = 'CONFIRMED',
+  FAILED = 'FAILED',
   CANCELLED = 'CANCELLED',
   NO_SHOW = 'NO_SHOW'
 }
@@ -93,6 +94,7 @@ export interface Booking {
   deposit_amount: number;
   deposit_paid: boolean;
   deposit_forfeited?: boolean;
+  amount_paid?: number;
   // Extras
   extras?: BookingExtraSelection[];
   extras_total?: number;

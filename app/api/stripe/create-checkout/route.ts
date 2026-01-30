@@ -65,6 +65,30 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Booking total is invalid." }, { status: 400 });
     }
 
+    if (unitAmount <= 0) {
+      const { error: updateError } = await supabase
+        .from("bookings")
+        .update({
+          status: "CONFIRMED",
+          deposit_paid: true,
+          deposit_forfeited: false,
+          amount_paid: dueNow
+        })
+        .eq("id", bookingId);
+
+      if (updateError) {
+        console.error("Failed to confirm booking with zero due now.", updateError);
+        return NextResponse.json({ error: "Unable to confirm booking." }, { status: 500 });
+      }
+
+      console.log("Booking confirmed without payment.", { bookingId, dueNow });
+      return NextResponse.json({
+        skipPayment: true,
+        redirectUrl: `/booking/confirmed?id=${bookingId}`,
+        dueNow
+      });
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       ui_mode: "embedded",
@@ -84,10 +108,15 @@ export async function POST(req: Request) {
       metadata: {
         bookingId,
       },
+      payment_intent_data: {
+        metadata: {
+          bookingId
+        }
+      },
       allow_promotion_codes: true,
     });
 
-    return NextResponse.json({ clientSecret: session.client_secret });
+    return NextResponse.json({ clientSecret: session.client_secret, dueNow });
   } catch (error) {
     console.error("Failed to create Stripe Checkout session.", error);
     return NextResponse.json({ error: "Unable to start checkout." }, { status: 500 });
