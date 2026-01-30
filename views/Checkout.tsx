@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { BookingStatus, RateType, Extra } from '@/types';
-import { LOGO_URL, BASE_DURATION_HOURS, getGuestLabel } from '@/constants';
+import { BASE_DURATION_HOURS, EXTRAS, PRICING_TIERS, getGuestLabel } from '@/constants';
 
 type StripeEmbeddedCheckout = {
   mount: (element: HTMLElement) => void;
@@ -37,18 +37,31 @@ export default function Checkout() {
 
   const date = route.params.get('date') || '';
   const time = route.params.get('time') || '';
-  const guests = parseInt(route.params.get('guests') || '8');
-  const extraHours = parseInt(route.params.get('extraHours') || '0');
+  const parsedGuests = Number(route.params.get('guests') || '8');
+  const parsedExtraHours = Number(route.params.get('extraHours') || '0');
   const promo = route.params.get('promo') || '';
   const queryServiceId = route.params.get('serviceId') || undefined;
   const queryStaffId = route.params.get('staffId') || undefined;
 
-  const totalDuration = 2 + extraHours;
+  const guestMin = Math.min(...PRICING_TIERS.map(tier => tier.min));
+  const guestMax = Math.max(...PRICING_TIERS.map(tier => tier.max));
+  const extraHourOptions = EXTRAS.map(extra => extra.hours);
+  const extraMin = Math.min(...extraHourOptions);
+  const extraMax = Math.max(...extraHourOptions);
+
+  const clampValue = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+  const guests = Number.isFinite(parsedGuests) ? clampValue(parsedGuests, guestMin, guestMax) : guestMin;
+  const extraHours = Number.isFinite(parsedExtraHours) ? clampValue(parsedExtraHours, extraMin, extraMax) : extraMin;
+
+  const totalDuration = BASE_DURATION_HOURS + extraHours;
   const isValidDateTime = useMemo(() => {
     if (!date || !time) return false;
     const parsed = new Date(`${date}T${time}`);
     return Number.isFinite(parsed.getTime());
   }, [date, time]);
+  const isValidGuests = Number.isFinite(parsedGuests) && parsedGuests === guests;
+  const isValidExtraHours = Number.isFinite(parsedExtraHours) && extraHourOptions.includes(parsedExtraHours);
+  const hasValidBookingDetails = isValidDateTime && isValidGuests && isValidExtraHours;
 
   const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promo), [date, guests, extraHours, promo, store]);
   const enabledExtras = useMemo(() => store.getEnabledExtras(), [store]);
@@ -129,8 +142,8 @@ export default function Checkout() {
     setIsProcessing(true);
 
     try {
-      if (!isValidDateTime) {
-        setPaymentError('Please select a valid date and time before continuing.');
+      if (!hasValidBookingDetails) {
+        setPaymentError('Please select valid booking details before continuing.');
         return;
       }
       const startAt = new Date(`${date}T${time}`).toISOString();
@@ -218,7 +231,7 @@ export default function Checkout() {
     });
   };
 
-  if (!isValidDateTime) {
+  if (!hasValidBookingDetails) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="glass-panel p-8 md:p-10 rounded-[2rem] border-zinc-800 max-w-md w-full text-center space-y-6">
