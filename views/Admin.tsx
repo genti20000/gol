@@ -211,6 +211,14 @@ export default function Admin() {
     );
   }
 
+  if (store.loadError) {
+    return (
+      <div className="p-20 text-center font-bold uppercase tracking-widest text-red-400 text-xs">
+        Failed to load admin data. Please refresh and try again.
+      </div>
+    );
+  }
+
   if (store.loading) return <div className="p-20 text-center font-bold animate-pulse text-zinc-500 uppercase tracking-widest text-xs">Initialising Admin Console...</div>;
 
   return (

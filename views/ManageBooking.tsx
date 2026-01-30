@@ -28,6 +28,26 @@ export default function ManageBooking() {
       navigate('/');
    };
 
+   if (store.loading) {
+      return (
+         <div className="min-h-screen flex items-center justify-center">
+            <div className="text-center uppercase font-bold tracking-widest text-zinc-600 animate-pulse text-sm">
+               Loading...
+            </div>
+         </div>
+      );
+   }
+
+   if (store.loadError) {
+      return (
+         <div className="min-h-screen flex items-center justify-center px-4">
+            <div className="text-center uppercase font-bold tracking-widest text-red-400 text-sm">
+               Failed to load booking details. Please refresh and try again.
+            </div>
+         </div>
+      );
+   }
+
    if (!booking) {
       return (
          <div className="p-20 text-center animate-in fade-in duration-500">

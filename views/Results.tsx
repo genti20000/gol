@@ -80,6 +80,26 @@ export default function Results() {
     window.open(store.buildWhatsAppUrl(message), '_blank');
   };
 
+  if (store.loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center uppercase font-bold tracking-widest text-zinc-600 animate-pulse text-sm">
+          Loading...
+        </div>
+      </div>
+    );
+  }
+
+  if (store.loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="text-center uppercase font-bold tracking-widest text-red-400 text-sm">
+          Failed to load availability. Please refresh and try again.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full px-4 py-8 md:py-12 md:max-w-4xl md:mx-auto animate-in fade-in duration-700">
       <div className="mb-6">
