@@ -12,6 +12,7 @@ type BookingUpdate = {
   status?: BookingStatus;
   deposit_paid?: boolean;
   deposit_forfeited?: boolean;
+  amount_paid?: number;
 };
 
 type Database = {
@@ -45,6 +46,7 @@ const updateBookingFromMetadata = async (
   const bookingRef = metadata.bookingRef || metadata.booking_ref;
 
   if (bookingId) {
+    console.log('Stripe webhook booking update', { bookingId, update });
     const { error } = await supabase
       .from('bookings')
       .update(update)
@@ -59,6 +61,7 @@ const updateBookingFromMetadata = async (
   }
 
   if (bookingRef) {
+    console.log('Stripe webhook booking update', { bookingRef, update });
     const { error } = await supabase
       .from('bookings')
       .update(update)
@@ -108,14 +111,35 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid Stripe signature.' }, { status: 400 });
   }
 
+  console.log('Stripe webhook event received', { type: event.type });
+
   switch (event.type) {
     case 'checkout.session.completed': {
       const session = event.data.object as Stripe.Checkout.Session;
-      await updateBookingFromMetadata(supabase, session.metadata, {
+      const amountPaid = typeof session.amount_total === 'number' ? session.amount_total / 100 : undefined;
+      const update: BookingUpdate = {
         status: BookingStatus.CONFIRMED,
         deposit_paid: true,
         deposit_forfeited: false
-      });
+      };
+      if (typeof amountPaid === 'number') {
+        update.amount_paid = amountPaid;
+      }
+      await updateBookingFromMetadata(supabase, session.metadata, update);
+      break;
+    }
+    case 'payment_intent.succeeded': {
+      const intent = event.data.object as Stripe.PaymentIntent;
+      const amountPaid = typeof intent.amount_received === 'number' ? intent.amount_received / 100 : undefined;
+      const update: BookingUpdate = {
+        status: BookingStatus.CONFIRMED,
+        deposit_paid: true,
+        deposit_forfeited: false
+      };
+      if (typeof amountPaid === 'number') {
+        update.amount_paid = amountPaid;
+      }
+      await updateBookingFromMetadata(supabase, intent.metadata, update);
       break;
     }
     default:

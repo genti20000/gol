@@ -93,6 +93,7 @@ export default function Page() {
     if (p === '/booking/processing') return <Processing />;
     if (p === '/booking/confirmed') return <Confirmation />;
     if (p === '/booking/cancelled') return <Cancelled />;
+    if (p === '/booking/failed') return <Cancelled />;
     if (p === '/admin' || p.startsWith('/admin')) return <Admin />;
     if (p.startsWith('/m/')) return <ManageBooking />;
     return <Home />;
