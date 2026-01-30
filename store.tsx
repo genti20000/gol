@@ -437,7 +437,13 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     const normalizedStaffId = typeof booking.staff_id === 'string' && booking.staff_id.trim().length > 0
       ? booking.staff_id
       : null;
-    const magicToken = Math.random().toString(36).substring(2, 15);
+    const magicToken = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : (() => {
+        const bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      })();
     const { data, error } = await supabase.from('bookings').insert([{
       room_id: booking.room_id,
       room_name: booking.room_name,
