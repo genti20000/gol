@@ -18,6 +18,7 @@ import {
   Extra,
   DayOperatingHours
 } from './types';
+import { normalizeExtraInfoText } from './lib/extras';
 import {
   ROOMS,
   PRICING_TIERS,
@@ -56,9 +57,9 @@ const DEFAULT_SERVICES: Service[] = [
 ];
 
 const DEFAULT_EXTRAS: Extra[] = [
-  { id: 'ext-1', name: 'Pizza Party Platter', price: 45, pricingMode: 'flat', enabled: true, sortOrder: 1, infoText: '' },
-  { id: 'ext-2', name: 'Bottle of Prosecco', price: 35, pricingMode: 'flat', enabled: true, sortOrder: 2, infoText: '' },
-  { id: 'ext-3', name: 'Unlimited Soft Drinks', price: 5, pricingMode: 'per_person', enabled: true, sortOrder: 3, infoText: '' },
+  { id: 'ext-1', name: 'Pizza Party Platter', price: 45, pricingMode: 'flat', enabled: true, sortOrder: 1, infoText: null },
+  { id: 'ext-2', name: 'Bottle of Prosecco', price: 35, pricingMode: 'flat', enabled: true, sortOrder: 2, infoText: null },
+  { id: 'ext-3', name: 'Unlimited Soft Drinks', price: 5, pricingMode: 'per_person', enabled: true, sortOrder: 3, infoText: null },
 ];
 
 interface StoreContextValue {
@@ -297,7 +298,7 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
         });
         if (extrasData) setExtras(extrasData.map(e => ({
           ...e,
-          infoText: e.info_text ?? '',
+          infoText: e.info_text ?? null,
           pricingMode: e.pricing_mode as 'flat' | 'per_person',
           sortOrder: e.sort_order
         })));
@@ -624,7 +625,15 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     return Object.entries(selection).map(([id, qty]) => {
       const extra = extras.find(e => e.id === id)!;
       const unit = extra.pricingMode === 'per_person' ? extra.price * guests : extra.price;
-      return { extraId: id, nameSnapshot: extra.name, priceSnapshot: extra.price, pricingModeSnapshot: extra.pricingMode, quantity: qty, lineTotal: unit * qty };
+      return {
+        extraId: id,
+        nameSnapshot: extra.name,
+        infoTextSnapshot: extra.infoText ?? null,
+        priceSnapshot: extra.price,
+        pricingModeSnapshot: extra.pricingMode,
+        quantity: qty,
+        lineTotal: unit * qty
+      };
     });
   }, [extras]);
 
@@ -816,9 +825,12 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
   }, []);
 
   const addExtra = useCallback(async (extra: Partial<Extra>): Promise<MutationResult> => {
+    const infoNormalization = normalizeExtraInfoText(extra.infoText);
+    if (infoNormalization.error) return { ok: false, error: infoNormalization.error };
     const id = `ext-${Date.now()}`;
     const payload = toExtraDbPayload({
       ...extra,
+      infoText: infoNormalization.value,
       id,
       enabled: extra.enabled ?? true,
       sortOrder: extra.sortOrder ?? 999
@@ -828,16 +840,23 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     if (!data) return { ok: false, error: 'No data returned from extra insert.' };
     setExtras(prev => [...prev, {
       ...data,
+      infoText: data.info_text ?? null,
       pricingMode: data.pricing_mode as 'flat' | 'per_person',
       sortOrder: data.sort_order
     }]);
     return { ok: true };
   }, [toExtraDbPayload]);
   const updateExtra = useCallback(async (id: string, patch: Partial<Extra>): Promise<MutationResult> => {
-    const dbPatch = toExtraDbPayload(patch);
+    let normalizedPatch = patch;
+    if (Object.prototype.hasOwnProperty.call(patch, 'infoText')) {
+      const infoNormalization = normalizeExtraInfoText(patch.infoText);
+      if (infoNormalization.error) return { ok: false, error: infoNormalization.error };
+      normalizedPatch = { ...patch, infoText: infoNormalization.value };
+    }
+    const dbPatch = toExtraDbPayload(normalizedPatch);
     const { error } = await supabase.from('extras').update(dbPatch).eq('id', id);
     if (error) return { ok: false, error: error.message };
-    setExtras(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
+    setExtras(prev => prev.map(e => e.id === id ? { ...e, ...normalizedPatch } : e));
     return { ok: true };
   }, [toExtraDbPayload]);
   const deleteExtra = useCallback(async (id: string): Promise<MutationResult> => {
