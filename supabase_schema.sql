@@ -94,6 +94,8 @@ CREATE TABLE bookings (
   deposit_paid BOOLEAN DEFAULT false,
   deposit_forfeited BOOLEAN DEFAULT false,
   amount_paid NUMERIC DEFAULT 0,
+  stripe_session_id TEXT,
+  stripe_payment_intent_id TEXT,
   extras_total NUMERIC DEFAULT 0,
   extras_snapshot JSONB DEFAULT '[]',
   created_at TIMESTAMPTZ DEFAULT now()

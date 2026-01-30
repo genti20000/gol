@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 import { BookingStatus } from "@/types";
+import { computeAmountDueNow, normalizeAmount } from "@/lib/paymentLogic";
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
     // Fetch booking amount from DB (do NOT trust client)
     const { data: booking, error } = await supabase
       .from("bookings")
-      .select("total_price,status,deposit_paid")
+      .select("total_price,status,deposit_paid,stripe_session_id")
       .eq("id", bookingId)
       .single();
 
@@ -45,9 +46,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unable to load booking." }, { status: 500 });
     }
 
-    if (!booking || typeof booking.total_price !== "number") {
+    if (!booking) {
       return NextResponse.json({ error: "Booking total is unavailable." }, { status: 400 });
     }
+
+    const totalPrice = normalizeAmount(booking.total_price);
 
     if (booking.status === BookingStatus.CANCELLED) {
       return NextResponse.json({ error: "Booking has been cancelled." }, { status: 400 });
@@ -60,7 +63,19 @@ export async function POST(req: Request) {
       );
     }
 
-    const dueNow = booking.total_price;
+    const { data: settings, error: settingsError } = await supabase
+      .from("venue_settings")
+      .select("deposit_enabled,deposit_amount")
+      .single();
+
+    if (settingsError) {
+      console.error("Failed to load venue settings for checkout session.", settingsError);
+      return NextResponse.json({ error: "Unable to load payment settings." }, { status: 500 });
+    }
+
+    const depositEnabled = Boolean(settings?.deposit_enabled);
+    const depositAmount = normalizeAmount(settings?.deposit_amount);
+    const dueNow = computeAmountDueNow({ totalPrice, depositEnabled, depositAmount });
     const unitAmount = Math.round(dueNow * 100);
     if (!Number.isFinite(unitAmount) || unitAmount < 0) {
       return NextResponse.json({ error: "Booking total is invalid." }, { status: 400 });
@@ -73,7 +88,8 @@ export async function POST(req: Request) {
           status: "CONFIRMED",
           deposit_paid: true,
           deposit_forfeited: false,
-          amount_paid: dueNow
+          amount_paid: dueNow,
+          deposit_amount: 0
         })
         .eq("id", bookingId);
 
@@ -90,34 +106,68 @@ export async function POST(req: Request) {
       });
     }
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      ui_mode: "embedded",
-      redirect_on_completion: "never",
-      line_items: [
-        {
-          price_data: {
-            currency: "gbp",
-            unit_amount: unitAmount,
-            product_data: {
-              name: "London Karaoke Club Booking",
-            },
-          },
-          quantity: 1,
-        },
-      ],
-      metadata: {
-        bookingId,
-      },
-      payment_intent_data: {
-        metadata: {
-          bookingId
-        }
-      },
-      allow_promotion_codes: true,
-    });
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL;
+    if (!siteUrl) {
+      return NextResponse.json({ error: "Site URL is not configured." }, { status: 500 });
+    }
 
-    return NextResponse.json({ clientSecret: session.client_secret, dueNow });
+    if (booking.stripe_session_id) {
+      const existingSession = await stripe.checkout.sessions.retrieve(booking.stripe_session_id);
+      if (existingSession.url) {
+        return NextResponse.json({ redirectUrl: existingSession.url, dueNow });
+      }
+    }
+
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: "payment",
+        line_items: [
+          {
+            price_data: {
+              currency: "gbp",
+              unit_amount: unitAmount,
+              product_data: {
+                name: "London Karaoke Club Booking",
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        metadata: {
+          bookingId,
+        },
+        payment_intent_data: {
+          metadata: {
+            bookingId
+          }
+        },
+        success_url: `${siteUrl}/booking/confirmed?id=${bookingId}&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${siteUrl}/booking/failed?id=${bookingId}`,
+        allow_promotion_codes: true,
+      },
+      { idempotencyKey: bookingId }
+    );
+
+    if (!session.url) {
+      return NextResponse.json({ error: "Unable to start checkout." }, { status: 500 });
+    }
+
+    const { error: stripeUpdateError } = await supabase
+      .from("bookings")
+      .update({
+        stripe_session_id: session.id,
+        stripe_payment_intent_id: typeof session.payment_intent === "string" ? session.payment_intent : undefined,
+        deposit_amount: dueNow,
+        status: BookingStatus.PENDING,
+        deposit_paid: false
+      })
+      .eq("id", bookingId);
+
+    if (stripeUpdateError) {
+      console.error("Failed to store Stripe session for booking.", stripeUpdateError);
+    }
+
+    return NextResponse.json({ redirectUrl: session.url, dueNow });
   } catch (error) {
     console.error("Failed to create Stripe Checkout session.", error);
     return NextResponse.json({ error: "Unable to start checkout." }, { status: 500 });

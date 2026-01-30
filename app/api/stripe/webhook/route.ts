@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import { BookingStatus } from '@/types';
+import { buildStripeBookingUpdate } from '@/lib/stripeBookingLogic';
+import { computeAmountDueNow, normalizeAmount } from '@/lib/paymentLogic';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '', {
   apiVersion: '2024-04-10'
@@ -13,6 +15,8 @@ type BookingUpdate = {
   deposit_paid?: boolean;
   deposit_forfeited?: boolean;
   amount_paid?: number;
+  stripe_session_id?: string;
+  stripe_payment_intent_id?: string;
 };
 
 type Database = {
@@ -35,7 +39,8 @@ type Database = {
 const updateBookingFromMetadata = async (
   supabase: SupabaseClient<Database>,
   metadata: Stripe.Metadata | null | undefined,
-  update: BookingUpdate
+  update: BookingUpdate,
+  amountTotal?: number
 ) => {
   if (!metadata) {
     console.warn('Stripe webhook missing metadata for booking reconciliation.');
@@ -46,6 +51,49 @@ const updateBookingFromMetadata = async (
   const bookingRef = metadata.bookingRef || metadata.booking_ref;
 
   if (bookingId) {
+    const { data: booking, error: bookingError } = await supabase
+      .from('bookings')
+      .select('id,status,deposit_paid,total_price,stripe_session_id,stripe_payment_intent_id')
+      .eq('id', bookingId)
+      .single();
+
+    if (bookingError || !booking) {
+      console.error('Failed to load booking for Stripe webhook.', bookingError);
+      return { ok: false };
+    }
+
+    const { data: settings, error: settingsError } = await supabase
+      .from('venue_settings')
+      .select('deposit_enabled,deposit_amount')
+      .single();
+
+    if (settingsError) {
+      console.error('Failed to load venue settings for Stripe webhook.', settingsError);
+      return { ok: false };
+    }
+
+    const dueNow = computeAmountDueNow({
+      totalPrice: normalizeAmount(booking.total_price),
+      depositEnabled: Boolean(settings?.deposit_enabled),
+      depositAmount: normalizeAmount(settings?.deposit_amount)
+    });
+
+    if (typeof amountTotal === 'number' && Math.round(dueNow * 100) !== Math.round(amountTotal * 100)) {
+      console.error('Stripe webhook amount mismatch.', { bookingId, dueNow, amountTotal });
+      return { ok: false };
+    }
+
+    if (
+      booking.status === BookingStatus.CONFIRMED &&
+      booking.deposit_paid === true &&
+      (update.stripe_session_id ? booking.stripe_session_id === update.stripe_session_id : true) &&
+      (update.stripe_payment_intent_id
+        ? booking.stripe_payment_intent_id === update.stripe_payment_intent_id
+        : true)
+    ) {
+      return { ok: true };
+    }
+
     console.log('Stripe webhook booking update', { bookingId, update });
     const { error } = await supabase
       .from('bookings')
@@ -62,6 +110,49 @@ const updateBookingFromMetadata = async (
 
   if (bookingRef) {
     console.log('Stripe webhook booking update', { bookingRef, update });
+    const { data: booking, error: bookingError } = await supabase
+      .from('bookings')
+      .select('id,status,deposit_paid,total_price,stripe_session_id,stripe_payment_intent_id')
+      .eq('booking_ref', bookingRef)
+      .single();
+
+    if (bookingError || !booking) {
+      console.error('Failed to load booking for Stripe webhook.', bookingError);
+      return { ok: false };
+    }
+
+    const { data: settings, error: settingsError } = await supabase
+      .from('venue_settings')
+      .select('deposit_enabled,deposit_amount')
+      .single();
+
+    if (settingsError) {
+      console.error('Failed to load venue settings for Stripe webhook.', settingsError);
+      return { ok: false };
+    }
+
+    const dueNow = computeAmountDueNow({
+      totalPrice: normalizeAmount(booking.total_price),
+      depositEnabled: Boolean(settings?.deposit_enabled),
+      depositAmount: normalizeAmount(settings?.deposit_amount)
+    });
+
+    if (typeof amountTotal === 'number' && Math.round(dueNow * 100) !== Math.round(amountTotal * 100)) {
+      console.error('Stripe webhook amount mismatch.', { bookingRef, dueNow, amountTotal });
+      return { ok: false };
+    }
+
+    if (
+      booking.status === BookingStatus.CONFIRMED &&
+      booking.deposit_paid === true &&
+      (update.stripe_session_id ? booking.stripe_session_id === update.stripe_session_id : true) &&
+      (update.stripe_payment_intent_id
+        ? booking.stripe_payment_intent_id === update.stripe_payment_intent_id
+        : true)
+    ) {
+      return { ok: true };
+    }
+
     const { error } = await supabase
       .from('bookings')
       .update(update)
@@ -117,29 +208,22 @@ export async function POST(request: Request) {
     case 'checkout.session.completed': {
       const session = event.data.object as Stripe.Checkout.Session;
       const amountPaid = typeof session.amount_total === 'number' ? session.amount_total / 100 : undefined;
-      const update: BookingUpdate = {
-        status: BookingStatus.CONFIRMED,
-        deposit_paid: true,
-        deposit_forfeited: false
-      };
-      if (typeof amountPaid === 'number') {
-        update.amount_paid = amountPaid;
-      }
-      await updateBookingFromMetadata(supabase, session.metadata, update);
+      const update = buildStripeBookingUpdate({
+        amountPaid,
+        stripeSessionId: session.id,
+        stripePaymentIntentId: typeof session.payment_intent === 'string' ? session.payment_intent : undefined
+      });
+      await updateBookingFromMetadata(supabase, session.metadata, update, amountPaid);
       break;
     }
     case 'payment_intent.succeeded': {
       const intent = event.data.object as Stripe.PaymentIntent;
       const amountPaid = typeof intent.amount_received === 'number' ? intent.amount_received / 100 : undefined;
-      const update: BookingUpdate = {
-        status: BookingStatus.CONFIRMED,
-        deposit_paid: true,
-        deposit_forfeited: false
-      };
-      if (typeof amountPaid === 'number') {
-        update.amount_paid = amountPaid;
-      }
-      await updateBookingFromMetadata(supabase, intent.metadata, update);
+      const update = buildStripeBookingUpdate({
+        amountPaid,
+        stripePaymentIntentId: intent.id
+      });
+      await updateBookingFromMetadata(supabase, intent.metadata, update, amountPaid);
       break;
     }
     default:

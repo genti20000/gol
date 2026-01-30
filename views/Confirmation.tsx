@@ -62,6 +62,11 @@ const Confirmation: React.FC = () => {
         <p className="text-zinc-500 text-xs uppercase tracking-widest max-w-md mx-auto">
           A confirmation email has been sent to <span className="text-white">{booking.customer_email}</span>
         </p>
+        {booking.deposit_amount <= 0 && (
+          <p className="text-[10px] uppercase tracking-widest text-amber-400">
+            No payment required today.
+          </p>
+        )}
       </div>
     </div>
   );

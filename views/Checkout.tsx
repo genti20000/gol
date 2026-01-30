@@ -3,26 +3,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
-import { BookingStatus, RateType, Extra } from '@/types';
+import { BookingStatus, Extra } from '@/types';
 import { BASE_DURATION_HOURS, EXTRAS, PRICING_TIERS, getGuestLabel } from '@/constants';
 import { shouldShowExtraInfoIcon } from '@/lib/extras';
-
-type StripeEmbeddedCheckout = {
-  mount: (element: HTMLElement) => void;
-  destroy: () => void;
-};
-
-type StripeJs = {
-  initEmbeddedCheckout: (options: { clientSecret: string }) => Promise<StripeEmbeddedCheckout>;
-};
-
-type StripeFactory = (publishableKey: string) => StripeJs;
-
-declare global {
-  interface Window {
-    Stripe?: StripeFactory;
-  }
-}
+import { computeAmountDueNow } from '@/lib/paymentLogic';
 
 export default function Checkout() {
   const { route, navigate, back } = useRouterShim();
@@ -30,14 +14,13 @@ export default function Checkout() {
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
-  const [embeddedClientSecret, setEmbeddedClientSecret] = useState<string | null>(null);
+  const [paymentRedirectUrl, setPaymentRedirectUrl] = useState<string | null>(null);
   const [formData, setFormData] = useState({ name: '', surname: '', email: '', phone: '', notes: '' });
   const [extrasSelection, setExtrasSelection] = useState<Record<string, number>>({});
   const [currentStep, setCurrentStep] = useState<'extras' | 'details' | 'payment'>('details');
   const [showExtrasInfo, setShowExtrasInfo] = useState(false);
   const [activeExtraInfoId, setActiveExtraInfoId] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
-  const embeddedCheckoutRef = useRef<HTMLDivElement | null>(null);
   const extrasInfoRef = useRef<HTMLDivElement | null>(null);
   const extrasInfoButtonRef = useRef<HTMLButtonElement | null>(null);
   const extraInfoRef = useRef<HTMLDivElement | null>(null);
@@ -75,44 +58,15 @@ export default function Checkout() {
   const enabledExtras = useMemo(() => store.getEnabledExtras(), [store]);
   const extrasTotal = useMemo(() => store.computeExtrasTotal(extrasSelection, guests), [extrasSelection, guests, store]);
   const estimatedTotal = useMemo(() => pricing.totalPrice + extrasTotal, [pricing.totalPrice, extrasTotal]);
-  const estimatedDueNow = useMemo(() => {
-    if (!store.settings.deposit_enabled) {
-      return estimatedTotal;
-    }
-    const deposit = store.settings.deposit_amount;
-    return Math.min(Math.max(deposit, 0), estimatedTotal);
-  }, [store.settings.deposit_enabled, store.settings.deposit_amount, estimatedTotal]);
-  const stripePromise = useMemo(() => {
-    const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
-    if (!publishableKey) {
-      return null;
-    }
-
-    return new Promise<StripeJs | null>((resolve) => {
-      if (typeof window === 'undefined') {
-        resolve(null);
-        return;
-      }
-
-      if (window.Stripe) {
-        resolve(window.Stripe(publishableKey));
-        return;
-      }
-
-      const script = document.createElement('script');
-      script.src = 'https://js.stripe.com/v3/';
-      script.async = true;
-      script.onload = () => {
-        if (window.Stripe) {
-          resolve(window.Stripe(publishableKey));
-        } else {
-          resolve(null);
-        }
-      };
-      script.onerror = () => resolve(null);
-      document.head.appendChild(script);
-    });
-  }, []);
+  const estimatedDueNow = useMemo(
+    () =>
+      computeAmountDueNow({
+        totalPrice: estimatedTotal,
+        depositEnabled: store.settings.deposit_enabled,
+        depositAmount: store.settings.deposit_amount
+      }),
+    [store.settings.deposit_enabled, store.settings.deposit_amount, estimatedTotal]
+  );
 
   if (store.loading) {
     return (
@@ -155,33 +109,16 @@ export default function Checkout() {
   }, []);
 
   useEffect(() => {
-    if (!embeddedClientSecret || !embeddedCheckoutRef.current) {
+    if (!paymentRedirectUrl || typeof window === 'undefined') {
       return;
     }
 
-    let embeddedCheckout: StripeEmbeddedCheckout | null = null;
-    let isMounted = true;
+    const timer = window.setTimeout(() => {
+      window.location.assign(paymentRedirectUrl);
+    }, 250);
 
-    const mountEmbeddedCheckout = async () => {
-      if (!stripePromise) {
-        setPaymentError('Stripe is not configured for embedded checkout.');
-        return;
-      }
-      const stripe = await stripePromise;
-      if (!stripe || !isMounted || !embeddedCheckoutRef.current) {
-        return;
-      }
-      embeddedCheckout = await stripe.initEmbeddedCheckout({ clientSecret: embeddedClientSecret });
-      embeddedCheckout.mount(embeddedCheckoutRef.current);
-    };
-
-    mountEmbeddedCheckout();
-
-    return () => {
-      isMounted = false;
-      embeddedCheckout?.destroy();
-    };
-  }, [embeddedClientSecret, stripePromise]);
+    return () => window.clearTimeout(timer);
+  }, [paymentRedirectUrl]);
 
   useEffect(() => {
     if (!showExtrasInfo) {
@@ -259,6 +196,7 @@ export default function Checkout() {
 
       const bookingExtras = store.buildBookingExtrasSnapshot(extrasSelection, guests);
 
+      const requiresPayment = estimatedDueNow > 0 && store.settings.deposit_enabled;
       const booking = {
         room_id: assignment.room_id,
         room_name: store.rooms.find(r => r.id === assignment.room_id)!.name,
@@ -266,7 +204,7 @@ export default function Checkout() {
         service_id: queryServiceId,
         start_at: startAt,
         end_at: endAt,
-        status: BookingStatus.PENDING,
+        status: requiresPayment ? BookingStatus.PENDING : BookingStatus.CONFIRMED,
         guests,
         customer_name: formData.name,
         customer_surname: formData.surname,
@@ -284,13 +222,20 @@ export default function Checkout() {
         source: 'public' as const,
         extras: bookingExtras,
         extras_total: extrasTotal,
-        deposit_amount: store.settings.deposit_enabled ? store.settings.deposit_amount : 0,
-        deposit_paid: false
+        deposit_amount: requiresPayment ? estimatedDueNow : 0,
+        deposit_paid: !requiresPayment,
+        deposit_forfeited: false,
+        amount_paid: requiresPayment ? 0 : 0
       };
 
       const finalBooking = await store.addBooking(booking);
       if (!finalBooking) {
         setPaymentError('Something went wrong while creating your booking.');
+        return;
+      }
+
+      if (!requiresPayment) {
+        navigate(`/booking/confirmed?id=${finalBooking.id}`);
         return;
       }
 
@@ -312,13 +257,12 @@ export default function Checkout() {
         return;
       }
 
-      const { clientSecret } = payload;
-      if (!clientSecret) {
+      if (!payload?.redirectUrl) {
         setPaymentError('Unable to start the payment. Please try again.');
         return;
       }
 
-      setEmbeddedClientSecret(clientSecret);
+      setPaymentRedirectUrl(payload.redirectUrl);
       setCurrentStep('payment');
     } catch (error) {
       setPaymentError('Something went wrong while processing the payment.');
@@ -585,8 +529,18 @@ export default function Checkout() {
             <h2 className="text-2xl md:text-3xl font-bold uppercase tracking-tighter">Complete <span className="text-amber-500">Payment</span></h2>
             <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-widest">Secure checkout powered by Stripe</p>
           </div>
-          <div className="glass-panel p-4 md:p-6 rounded-[1.5rem] md:rounded-[2rem]">
-            <div ref={embeddedCheckoutRef} className="min-h-[420px]" />
+          <div className="glass-panel p-6 md:p-8 rounded-[1.5rem] md:rounded-[2rem] space-y-4 text-center">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+              Redirecting you to our secure Stripe checkout...
+            </p>
+            {paymentRedirectUrl && (
+              <button
+                onClick={() => window.location.assign(paymentRedirectUrl)}
+                className="w-full gold-gradient py-3 rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] text-black shadow-xl shadow-amber-500/10 active:scale-95"
+              >
+                Continue to Payment
+              </button>
+            )}
           </div>
         </div>
       )}
