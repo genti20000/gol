@@ -33,7 +33,10 @@ export default function Checkout() {
   const [formData, setFormData] = useState({ name: '', surname: '', email: '', phone: '', notes: '' });
   const [extrasSelection, setExtrasSelection] = useState<Record<string, number>>({});
   const [currentStep, setCurrentStep] = useState<'extras' | 'details' | 'payment'>('details');
+  const [showExtrasInfo, setShowExtrasInfo] = useState(false);
   const embeddedCheckoutRef = useRef<HTMLDivElement | null>(null);
+  const extrasInfoRef = useRef<HTMLDivElement | null>(null);
+  const extrasInfoButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const date = route.params.get('date') || '';
   const time = route.params.get('time') || '';
@@ -122,6 +125,23 @@ export default function Checkout() {
       embeddedCheckout?.destroy();
     };
   }, [embeddedClientSecret, stripePromise]);
+
+  useEffect(() => {
+    if (!showExtrasInfo) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (extrasInfoRef.current?.contains(target) || extrasInfoButtonRef.current?.contains(target)) {
+        return;
+      }
+      setShowExtrasInfo(false);
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showExtrasInfo]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -247,7 +267,44 @@ export default function Checkout() {
         {enabledExtras.length > 0 && currentStep === 'extras' ? (
           <div className="space-y-8 animate-in fade-in duration-500">
             <div className="space-y-2">
-              <h2 className="text-2xl md:text-3xl font-bold uppercase tracking-tighter">Enhance Your <span className="text-amber-500">Session</span></h2>
+              <div className="flex items-start justify-between gap-4">
+                <h2 className="text-2xl md:text-3xl font-bold uppercase tracking-tighter">Enhance Your <span className="text-amber-500">Session</span></h2>
+                <div className="relative">
+                  <button
+                    ref={extrasInfoButtonRef}
+                    type="button"
+                    onClick={() => setShowExtrasInfo((prev) => !prev)}
+                    aria-label="More info about food and drink offers"
+                    aria-expanded={showExtrasInfo}
+                    className="w-8 h-8 rounded-full border border-zinc-800 bg-zinc-950/70 text-zinc-400 hover:text-white hover:border-zinc-700 transition-colors flex items-center justify-center"
+                  >
+                    <i className="fa-solid fa-circle-info text-[13px]"></i>
+                  </button>
+                  {showExtrasInfo && (
+                    <div
+                      ref={extrasInfoRef}
+                      className="absolute right-0 mt-3 w-64 rounded-2xl border border-zinc-800 bg-zinc-950/95 p-4 text-[10px] text-zinc-300 shadow-2xl shadow-black/40 backdrop-blur"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="font-semibold uppercase tracking-widest text-[9px] text-white">Food & Drink Offers</p>
+                        <button
+                          type="button"
+                          onClick={() => setShowExtrasInfo(false)}
+                          className="text-zinc-500 hover:text-white transition-colors"
+                          aria-label="Close food and drink info"
+                        >
+                          <i className="fa-solid fa-xmark text-[10px]"></i>
+                        </button>
+                      </div>
+                      <p className="mt-2 text-zinc-400 leading-relaxed">
+                        Choose any package to upgrade your experience. Pricing is shown per guest or flat rate, and
+                        quantities can be adjusted to match your group size. Add-ons are optional and can be changed
+                        before checkout.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
               <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-widest">Select optional food & drink packages</p>
             </div>
 
