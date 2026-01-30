@@ -60,8 +60,9 @@ export async function POST(req: Request) {
       );
     }
 
-    const unitAmount = Math.round(booking.total_price * 100);
-    if (!Number.isFinite(unitAmount) || unitAmount <= 0) {
+    const dueNow = booking.total_price;
+    const unitAmount = Math.round(dueNow * 100);
+    if (!Number.isFinite(unitAmount) || unitAmount < 0) {
       return NextResponse.json({ error: "Booking total is invalid." }, { status: 400 });
     }
 
