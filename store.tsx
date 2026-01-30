@@ -30,6 +30,8 @@ import {
 } from './constants';
 import { supabase } from './lib/supabase';
 
+export type MutationResult = { ok: boolean; error?: string };
+
 const DEFAULT_SETTINGS: VenueSettings = {
   cancelCutoffHours: 24,
   rescheduleCutoffHours: 48,
@@ -80,46 +82,46 @@ interface StoreContextValue {
   getValidStartTimes: (date: string, durationMinutes: number, staffId?: string, serviceId?: string) => string[];
   findFirstAvailableRoomAndStaff: (startAt: string, endAt: string, staffId?: string, serviceId?: string) => any;
   addBooking: (booking: Partial<Booking>) => Promise<Booking | null>;
-  updateBooking: (id: string, patch: Partial<Booking>) => Promise<void>;
+  updateBooking: (id: string, patch: Partial<Booking>) => Promise<MutationResult>;
   getBookingByMagicToken: (token: string) => Booking | undefined;
   canRescheduleOrCancel: (booking: Booking, type: 'reschedule' | 'cancel') => boolean;
   getEnabledExtras: () => Extra[];
   computeExtrasTotal: (selection: Record<string, number>, guests: number) => number;
   buildBookingExtrasSnapshot: (selection: Record<string, number>, guests: number) => any;
-  addWaitlistEntry: (entry: Partial<WaitlistEntry>) => Promise<{ ok: boolean; reason?: string }>;
+  addWaitlistEntry: (entry: Partial<WaitlistEntry>) => Promise<MutationResult>;
   getWaitlistForDate: (date: string) => WaitlistEntry[];
-  setWaitlistStatus: (id: string, status: WaitlistEntry['status']) => Promise<void>;
-  deleteWaitlistEntry: (id: string) => Promise<void>;
+  setWaitlistStatus: (id: string, status: WaitlistEntry['status']) => Promise<MutationResult>;
+  deleteWaitlistEntry: (id: string) => Promise<MutationResult>;
   buildWaitlistMessage: (data: any) => string;
   buildWhatsAppUrl: (message: string) => string;
   getBusyIntervals: (date: string, roomId: string) => any[];
   getBookingsForDate: (date: string) => Booking[];
   getBlocksForDate: (date: string) => RoomBlock[];
-  addBlock: (block: Partial<RoomBlock>) => Promise<void>;
-  deleteBlock: (id: string) => Promise<void>;
-  toggleRecurringBlock: (id: string, enabled: boolean) => Promise<void>;
-  deleteRecurringBlock: (id: string) => Promise<void>;
-  updateSettings: (patch: Partial<VenueSettings>) => Promise<void>;
-  addPromoCode: (promo: Partial<PromoCode>) => Promise<void>;
-  updatePromoCode: (id: string, patch: Partial<PromoCode>) => Promise<void>;
-  deletePromoCode: (id: string) => Promise<void>;
+  addBlock: (block: Partial<RoomBlock>) => Promise<MutationResult>;
+  deleteBlock: (id: string) => Promise<MutationResult>;
+  toggleRecurringBlock: (id: string, enabled: boolean) => Promise<MutationResult>;
+  deleteRecurringBlock: (id: string) => Promise<MutationResult>;
+  updateSettings: (patch: Partial<VenueSettings>) => Promise<MutationResult>;
+  addPromoCode: (promo: Partial<PromoCode>) => Promise<MutationResult>;
+  updatePromoCode: (id: string, patch: Partial<PromoCode>) => Promise<MutationResult>;
+  deletePromoCode: (id: string) => Promise<MutationResult>;
   getCalendarSyncConfig: () => CalendarSyncConfig;
   setCalendarSyncConfig: (config: Partial<CalendarSyncConfig>) => void;
   regenerateCalendarToken: () => void;
   validateInterval: (roomId: string, start: string, end: string, excludeBookingId?: string, staffId?: string, skipWindowCheck?: boolean) => { ok: boolean; reason?: string };
   addCustomer: (customer: Partial<Customer>) => Promise<Customer | null>;
-  updateCustomer: (id: string, patch: Partial<Customer>) => Promise<void>;
-  deleteCustomer: (id: string) => Promise<void>;
-  updateOperatingHours: (day: number, patch: Partial<DayOperatingHours>) => Promise<void>;
-  addService: (service: Partial<Service>) => Promise<void>;
-  updateService: (id: string, patch: Partial<Service>) => Promise<void>;
-  deleteService: (id: string) => Promise<void>;
-  addExtra: (extra: Partial<Extra>) => Promise<void>;
-  updateExtra: (id: string, patch: Partial<Extra>) => Promise<void>;
-  deleteExtra: (id: string) => Promise<void>;
-  updateStaff: (id: string, patch: Partial<StaffMember>) => Promise<void>;
-  addStaff: (member: Partial<StaffMember>) => Promise<void>;
-  deleteStaff: (id: string) => Promise<void>;
+  updateCustomer: (id: string, patch: Partial<Customer>) => Promise<MutationResult>;
+  deleteCustomer: (id: string) => Promise<MutationResult>;
+  updateOperatingHours: (day: number, patch: Partial<DayOperatingHours>) => Promise<MutationResult>;
+  addService: (service: Partial<Service>) => Promise<MutationResult>;
+  updateService: (id: string, patch: Partial<Service>) => Promise<MutationResult>;
+  deleteService: (id: string) => Promise<MutationResult>;
+  addExtra: (extra: Partial<Extra>) => Promise<MutationResult>;
+  updateExtra: (id: string, patch: Partial<Extra>) => Promise<MutationResult>;
+  deleteExtra: (id: string) => Promise<MutationResult>;
+  updateStaff: (id: string, patch: Partial<StaffMember>) => Promise<MutationResult>;
+  addStaff: (member: Partial<StaffMember>) => Promise<MutationResult>;
+  deleteStaff: (id: string) => Promise<MutationResult>;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -508,7 +510,7 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     return newBooking;
   }, []);
 
-  const updateBooking = useCallback(async (id: string, patch: Partial<Booking>) => {
+  const updateBooking = useCallback(async (id: string, patch: Partial<Booking>): Promise<MutationResult> => {
     const payload: Record<string, unknown> = {};
     const assign = (key: string, value: unknown) => {
       if (value !== undefined) payload[key] = value;
@@ -541,7 +543,9 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     assign('extras_snapshot', patch.extras);
 
     const { error } = await supabase.from('bookings').update(payload).eq('id', id);
-    if (!error) setBookings(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
+    if (error) return { ok: false, error: error.message };
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
+    return { ok: true };
   }, []);
 
   const getBookingByMagicToken = useCallback((token: string) => bookings.find(b => b.magicToken === token), [bookings]);
@@ -569,22 +573,27 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     });
   }, [extras]);
 
-  const addWaitlistEntry = useCallback(async (entry: Partial<WaitlistEntry>) => {
+  const addWaitlistEntry = useCallback(async (entry: Partial<WaitlistEntry>): Promise<MutationResult> => {
     const { data, error } = await supabase.from('waitlist').insert([{ name: entry.name, surname: entry.surname, phone: entry.phone, preferred_date: entry.preferredDate, preferred_time: entry.preferredTime, guests: entry.guests, status: 'active' }]).select().single();
-    if (error) return { ok: false, reason: error.message };
+    if (error) return { ok: false, error: error.message };
+    if (!data) return { ok: false, error: 'No data returned from waitlist insert.' };
     const newEntry = { ...data, preferredDate: data.preferred_date, preferredTime: data.preferred_time } as WaitlistEntry;
     setWaitlist(prev => [...prev, newEntry]);
     return { ok: true };
   }, []);
 
   const getWaitlistForDate = useCallback((date: string) => waitlist.filter(w => w.preferredDate === date), [waitlist]);
-  const setWaitlistStatus = useCallback(async (id: string, status: WaitlistEntry['status']) => {
+  const setWaitlistStatus = useCallback(async (id: string, status: WaitlistEntry['status']): Promise<MutationResult> => {
     const { error } = await supabase.from('waitlist').update({ status }).eq('id', id);
-    if (!error) setWaitlist(prev => prev.map(w => w.id === id ? { ...w, status } : w));
+    if (error) return { ok: false, error: error.message };
+    setWaitlist(prev => prev.map(w => w.id === id ? { ...w, status } : w));
+    return { ok: true };
   }, []);
-  const deleteWaitlistEntry = useCallback(async (id: string) => {
+  const deleteWaitlistEntry = useCallback(async (id: string): Promise<MutationResult> => {
     const { error } = await supabase.from('waitlist').delete().eq('id', id);
-    if (!error) setWaitlist(prev => prev.filter(w => w.id !== id));
+    if (error) return { ok: false, error: error.message };
+    setWaitlist(prev => prev.filter(w => w.id !== id));
+    return { ok: true };
   }, []);
 
   const buildWaitlistMessage = useCallback((data: any) => `Hi, waitlist for ${data.preferredDate} at ${data.preferredTime || 'any time'} for ${data.guests} guests.`, []);
@@ -612,24 +621,33 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
   const getBookingsForDate = useCallback((date: string) => bookings.filter(b => b.start_at.startsWith(date)), [bookings]);
   const getBlocksForDate = useCallback((date: string) => blocks.filter(b => b.start_at.startsWith(date)), [blocks]);
 
-  const addBlock = useCallback(async (block: Partial<RoomBlock>) => {
+  const addBlock = useCallback(async (block: Partial<RoomBlock>): Promise<MutationResult> => {
     const { data, error } = await supabase.from('room_blocks').insert([{ room_id: block.roomId, start_at: block.start_at, end_at: block.end_at, reason: block.reason }]).select().single();
-    if (!error) setBlocks(prev => [...prev, { ...data, roomId: data.room_id, createdAt: Date.now() } as RoomBlock]);
+    if (error) return { ok: false, error: error.message };
+    if (!data) return { ok: false, error: 'No data returned from block insert.' };
+    setBlocks(prev => [...prev, { ...data, roomId: data.room_id, createdAt: Date.now() } as RoomBlock]);
+    return { ok: true };
   }, []);
-  const deleteBlock = useCallback(async (id: string) => {
+  const deleteBlock = useCallback(async (id: string): Promise<MutationResult> => {
     const { error } = await supabase.from('room_blocks').delete().eq('id', id);
-    if (!error) setBlocks(prev => prev.filter(b => b.id !== id));
+    if (error) return { ok: false, error: error.message };
+    setBlocks(prev => prev.filter(b => b.id !== id));
+    return { ok: true };
   }, []);
-  const toggleRecurringBlock = useCallback(async (id: string, enabled: boolean) => {
+  const toggleRecurringBlock = useCallback(async (id: string, enabled: boolean): Promise<MutationResult> => {
     const { error } = await supabase.from('recurring_blocks').update({ enabled }).eq('id', id);
-    if (!error) setRecurringBlocks(prev => prev.map(b => b.id === id ? { ...b, enabled } : b));
+    if (error) return { ok: false, error: error.message };
+    setRecurringBlocks(prev => prev.map(b => b.id === id ? { ...b, enabled } : b));
+    return { ok: true };
   }, []);
-  const deleteRecurringBlock = useCallback(async (id: string) => {
+  const deleteRecurringBlock = useCallback(async (id: string): Promise<MutationResult> => {
     const { error } = await supabase.from('recurring_blocks').delete().eq('id', id);
-    if (!error) setRecurringBlocks(prev => prev.filter(b => b.id !== id));
+    if (error) return { ok: false, error: error.message };
+    setRecurringBlocks(prev => prev.filter(b => b.id !== id));
+    return { ok: true };
   }, []);
 
-  const updateSettings = useCallback(async (patch: Partial<VenueSettings>) => {
+  const updateSettings = useCallback(async (patch: Partial<VenueSettings>): Promise<MutationResult> => {
     const { error } = await supabase.from('venue_settings').update({
       cancel_cutoff_hours: patch.cancelCutoffHours,
       reschedule_cutoff_hours: patch.rescheduleCutoffHours,
@@ -639,10 +657,12 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
       min_days_before_booking: patch.minDaysBeforeBooking,
       min_hours_before_booking: patch.minHoursBeforeBooking
     }).eq('id', 1);
-    if (!error) setSettings(prev => ({ ...prev, ...patch }));
+    if (error) return { ok: false, error: error.message };
+    setSettings(prev => ({ ...prev, ...patch }));
+    return { ok: true };
   }, []);
 
-  const addPromoCode = useCallback(async (promo: Partial<PromoCode>) => {
+  const addPromoCode = useCallback(async (promo: Partial<PromoCode>): Promise<MutationResult> => {
     const { data, error } = await supabase.from('promo_codes').insert([{
       code: promo.code,
       enabled: promo.enabled,
@@ -654,25 +674,30 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
       max_uses: promo.maxUses,
       uses: 0
     }]).select().single();
-    if (!error && data) {
-      setPromoCodes(prev => [...prev, {
-        ...data,
-        percentOff: data.percent_off,
-        fixedOff: data.fixed_off,
-        startDate: data.start_date,
-        endDate: data.end_date,
-        minGuests: data.min_guests,
-        maxUses: data.max_uses
-      }]);
-    }
+    if (error) return { ok: false, error: error.message };
+    if (!data) return { ok: false, error: 'No data returned from promo insert.' };
+    setPromoCodes(prev => [...prev, {
+      ...data,
+      percentOff: data.percent_off,
+      fixedOff: data.fixed_off,
+      startDate: data.start_date,
+      endDate: data.end_date,
+      minGuests: data.min_guests,
+      maxUses: data.max_uses
+    }]);
+    return { ok: true };
   }, []);
-  const updatePromoCode = useCallback(async (id: string, patch: Partial<PromoCode>) => {
-    await supabase.from('promo_codes').update(patch).eq('id', id);
+  const updatePromoCode = useCallback(async (id: string, patch: Partial<PromoCode>): Promise<MutationResult> => {
+    const { error } = await supabase.from('promo_codes').update(patch).eq('id', id);
+    if (error) return { ok: false, error: error.message };
     setPromoCodes(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
+    return { ok: true };
   }, []);
-  const deletePromoCode = useCallback(async (id: string) => {
-    await supabase.from('promo_codes').delete().eq('id', id);
+  const deletePromoCode = useCallback(async (id: string): Promise<MutationResult> => {
+    const { error } = await supabase.from('promo_codes').delete().eq('id', id);
+    if (error) return { ok: false, error: error.message };
     setPromoCodes(prev => prev.filter(p => p.id !== id));
+    return { ok: true };
   }, []);
 
   const getCalendarSyncConfig = useCallback(() => calSync, [calSync]);
@@ -686,31 +711,44 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     setCustomers(prev => [...prev, c]);
     return c;
   }, []);
-  const updateCustomer = useCallback(async (id: string, patch: Partial<Customer>) => {
-    await supabase.from('customers').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+  const updateCustomer = useCallback(async (id: string, patch: Partial<Customer>): Promise<MutationResult> => {
+    const { error } = await supabase.from('customers').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) return { ok: false, error: error.message };
     setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...patch, updatedAt: Date.now() } : c));
+    return { ok: true };
   }, []);
-  const deleteCustomer = useCallback(async (id: string) => {
-    await supabase.from('customers').delete().eq('id', id);
+  const deleteCustomer = useCallback(async (id: string): Promise<MutationResult> => {
+    const { error } = await supabase.from('customers').delete().eq('id', id);
+    if (error) return { ok: false, error: error.message };
     setCustomers(prev => prev.filter(c => c.id !== id));
+    return { ok: true };
   }, []);
 
-  const updateOperatingHours = useCallback(async (day: number, patch: Partial<DayOperatingHours>) => {
-    await supabase.from('operating_hours').update({ open_time: patch.open, close_time: patch.close, enabled: patch.enabled }).eq('day', day);
+  const updateOperatingHours = useCallback(async (day: number, patch: Partial<DayOperatingHours>): Promise<MutationResult> => {
+    const { error } = await supabase.from('operating_hours').update({ open_time: patch.open, close_time: patch.close, enabled: patch.enabled }).eq('day', day);
+    if (error) return { ok: false, error: error.message };
     setOperatingHours(prev => prev.map(oh => oh.day === day ? { ...oh, ...patch } : oh));
+    return { ok: true };
   }, []);
 
-  const addService = useCallback(async (service: Partial<Service>) => {
+  const addService = useCallback(async (service: Partial<Service>): Promise<MutationResult> => {
     const { data, error } = await supabase.from('services').insert([service]).select().single();
-    if (!error) setServices(prev => [...prev, data]);
+    if (error) return { ok: false, error: error.message };
+    if (!data) return { ok: false, error: 'No data returned from service insert.' };
+    setServices(prev => [...prev, data]);
+    return { ok: true };
   }, []);
-  const updateService = useCallback(async (id: string, patch: Partial<Service>) => {
-    await supabase.from('services').update(patch).eq('id', id);
+  const updateService = useCallback(async (id: string, patch: Partial<Service>): Promise<MutationResult> => {
+    const { error } = await supabase.from('services').update(patch).eq('id', id);
+    if (error) return { ok: false, error: error.message };
     setServices(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
+    return { ok: true };
   }, []);
-  const deleteService = useCallback(async (id: string) => {
-    await supabase.from('services').delete().eq('id', id);
+  const deleteService = useCallback(async (id: string): Promise<MutationResult> => {
+    const { error } = await supabase.from('services').delete().eq('id', id);
+    if (error) return { ok: false, error: error.message };
     setServices(prev => prev.filter(s => s.id !== id));
+    return { ok: true };
   }, []);
 
   const toExtraDbPayload = useCallback((extra: Partial<Extra>) => {
@@ -721,7 +759,7 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     return payload;
   }, []);
 
-  const addExtra = useCallback(async (extra: Partial<Extra>) => {
+  const addExtra = useCallback(async (extra: Partial<Extra>): Promise<MutationResult> => {
     const id = `ext-${Date.now()}`;
     const payload = toExtraDbPayload({
       ...extra,
@@ -730,35 +768,47 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
       sortOrder: extra.sortOrder ?? 999
     });
     const { data, error } = await supabase.from('extras').insert([payload]).select().single();
-    if (!error && data) {
-      setExtras(prev => [...prev, {
-        ...data,
-        pricingMode: data.pricing_mode as 'flat' | 'per_person',
-        sortOrder: data.sort_order
-      }]);
-    }
+    if (error) return { ok: false, error: error.message };
+    if (!data) return { ok: false, error: 'No data returned from extra insert.' };
+    setExtras(prev => [...prev, {
+      ...data,
+      pricingMode: data.pricing_mode as 'flat' | 'per_person',
+      sortOrder: data.sort_order
+    }]);
+    return { ok: true };
   }, [toExtraDbPayload]);
-  const updateExtra = useCallback(async (id: string, patch: Partial<Extra>) => {
+  const updateExtra = useCallback(async (id: string, patch: Partial<Extra>): Promise<MutationResult> => {
     const dbPatch = toExtraDbPayload(patch);
-    await supabase.from('extras').update(dbPatch).eq('id', id);
+    const { error } = await supabase.from('extras').update(dbPatch).eq('id', id);
+    if (error) return { ok: false, error: error.message };
     setExtras(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
+    return { ok: true };
   }, [toExtraDbPayload]);
-  const deleteExtra = useCallback(async (id: string) => {
-    await supabase.from('extras').delete().eq('id', id);
+  const deleteExtra = useCallback(async (id: string): Promise<MutationResult> => {
+    const { error } = await supabase.from('extras').delete().eq('id', id);
+    if (error) return { ok: false, error: error.message };
     setExtras(prev => prev.filter(e => e.id !== id));
+    return { ok: true };
   }, []);
 
-  const updateStaff = useCallback(async (id: string, patch: Partial<StaffMember>) => {
-    await supabase.from('staff_members').update(patch).eq('id', id);
+  const updateStaff = useCallback(async (id: string, patch: Partial<StaffMember>): Promise<MutationResult> => {
+    const { error } = await supabase.from('staff_members').update(patch).eq('id', id);
+    if (error) return { ok: false, error: error.message };
     setStaff(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
+    return { ok: true };
   }, []);
-  const addStaff = useCallback(async (member: Partial<StaffMember>) => {
+  const addStaff = useCallback(async (member: Partial<StaffMember>): Promise<MutationResult> => {
     const { data, error } = await supabase.from('staff_members').insert([member]).select().single();
-    if (!error) setStaff(prev => [...prev, data]);
+    if (error) return { ok: false, error: error.message };
+    if (!data) return { ok: false, error: 'No data returned from staff insert.' };
+    setStaff(prev => [...prev, data]);
+    return { ok: true };
   }, []);
-  const deleteStaff = useCallback(async (id: string) => {
-    await supabase.from('staff_members').delete().eq('id', id);
+  const deleteStaff = useCallback(async (id: string): Promise<MutationResult> => {
+    const { error } = await supabase.from('staff_members').delete().eq('id', id);
+    if (error) return { ok: false, error: error.message };
     setStaff(prev => prev.filter(s => s.id !== id));
+    return { ok: true };
   }, []);
 
   const value = useMemo(() => ({
