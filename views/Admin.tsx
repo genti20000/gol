@@ -55,11 +55,13 @@ export default function Admin() {
     []
   );
 
+  const allowlistConfigured = useMemo(() => allowedEmails.length > 0, [allowedEmails.length]);
+
   const isAllowed = useMemo(() => {
     if (!session?.user?.email) return false;
-    if (allowedEmails.length === 0) return true;
+    if (!allowlistConfigured) return false;
     return allowedEmails.includes(session.user.email.toLowerCase());
-  }, [allowedEmails, session?.user?.email]);
+  }, [allowedEmails, allowlistConfigured, session?.user?.email]);
 
   useEffect(() => {
     let isMounted = true;
@@ -197,8 +199,14 @@ export default function Admin() {
             <i className="fa-solid fa-ban text-2xl text-red-400"></i>
           </div>
           <div className="space-y-2">
-            <h1 className="text-xl font-bold uppercase tracking-tighter">Access Denied</h1>
-            <p className="text-[10px] uppercase tracking-widest text-zinc-500">Your account is not authorised to access the admin console.</p>
+            <h1 className="text-xl font-bold uppercase tracking-tighter">
+              {allowlistConfigured ? 'Access Denied' : 'Admin allowlist not configured'}
+            </h1>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">
+              {allowlistConfigured
+                ? 'Your account is not authorised to access the admin console.'
+                : 'Set NEXT_PUBLIC_ADMIN_EMAILS to enable admin access.'}
+            </p>
           </div>
           <button
             onClick={handleSignOut}
