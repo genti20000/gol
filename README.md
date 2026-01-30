@@ -36,6 +36,7 @@ This repo already contains Stripe routes you can plug into:
 1. **Set required environment variables** (locally in `.env.local` and in Vercel):
    - `STRIPE_SECRET_KEY`
    - `STRIPE_WEBHOOK_SECRET` (required for webhook verification)
+   - `NEXT_PUBLIC_SITE_URL` (or `SITE_URL`) for Stripe success/cancel redirects
 2. **Create Checkout Sessions server-side** via `POST /api/stripe/create-checkout` (already implemented in `app/api/stripe/create-checkout/route.ts`). Ensure you pass booking metadata so webhooks can reconcile bookings.
 3. **Redirect to Stripe Checkout** from the client after booking creation. The current `views/Checkout.tsx` uses the hosted `url` returned from `/api/stripe/create-checkout`.
 4. **Handle webhooks** at `/api/stripe/webhook` (already implemented). Stripe will send `checkout.session.completed`; the handler updates booking status from metadata.
