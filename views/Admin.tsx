@@ -3,7 +3,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { useStore } from '../store';
+import { useStore, type MutationResult } from '../store';
 import { supabase } from '../lib/supabase';
 import {
   Booking,
@@ -37,6 +37,15 @@ const getBookingIndicators = (booking: Booking) => {
   return { hasSpecialRequests, hasFood, hasDrink };
 };
 
+const handleMutation = async (action: Promise<MutationResult>, fallbackMessage: string) => {
+  const result = await action;
+  if (!result.ok) {
+    alert(result.error ?? fallbackMessage);
+    return false;
+  }
+  return true;
+};
+
 export default function Admin() {
   const store = useStore();
   const [activeTab, setActiveTab] = useState<Tab>('bookings');
@@ -55,11 +64,13 @@ export default function Admin() {
     []
   );
 
+  const allowlistConfigured = useMemo(() => allowedEmails.length > 0, [allowedEmails.length]);
+
   const isAllowed = useMemo(() => {
     if (!session?.user?.email) return false;
-    if (allowedEmails.length === 0) return true;
+    if (!allowlistConfigured) return false;
     return allowedEmails.includes(session.user.email.toLowerCase());
-  }, [allowedEmails, session?.user?.email]);
+  }, [allowedEmails, allowlistConfigured, session?.user?.email]);
 
   useEffect(() => {
     let isMounted = true;
@@ -197,8 +208,14 @@ export default function Admin() {
             <i className="fa-solid fa-ban text-2xl text-red-400"></i>
           </div>
           <div className="space-y-2">
-            <h1 className="text-xl font-bold uppercase tracking-tighter">Access Denied</h1>
-            <p className="text-[10px] uppercase tracking-widest text-zinc-500">Your account is not authorised to access the admin console.</p>
+            <h1 className="text-xl font-bold uppercase tracking-tighter">
+              {allowlistConfigured ? 'Access Denied' : 'Admin allowlist not configured'}
+            </h1>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">
+              {allowlistConfigured
+                ? 'Your account is not authorised to access the admin console.'
+                : 'Set NEXT_PUBLIC_ADMIN_EMAILS to enable admin access.'}
+            </p>
           </div>
           <button
             onClick={handleSignOut}
@@ -207,6 +224,14 @@ export default function Admin() {
             Sign Out
           </button>
         </div>
+      </div>
+    );
+  }
+
+  if (store.loadError) {
+    return (
+      <div className="p-20 text-center font-bold uppercase tracking-widest text-red-400 text-xs">
+        Failed to load admin data. Please refresh and try again.
       </div>
     );
   }
@@ -308,8 +333,8 @@ function BookingsTab({ store, selectedDate, setSelectedDate }: { store: any, sel
     const roomChanged = patch.room_id && patch.room_id !== booking.room_id;
 
     const commit = async () => {
-      await store.updateBooking(booking.id, patch);
-      setConfirmModal(null);
+      const ok = await handleMutation(store.updateBooking(booking.id, patch), 'Failed to update booking.');
+      if (ok) setConfirmModal(null);
     };
 
     if (!skipConfirm && booking.status === BookingStatus.CONFIRMED && (timeChanged || roomChanged)) {
@@ -446,9 +471,31 @@ function WaitlistListing({ store, date }: { store: any, date: string }) {
               {w.guests} Guests {w.preferredTime ? `• ${w.preferredTime}` : ''}
             </div>
             <div className="flex gap-4">
-              <button onClick={async () => await store.setWaitlistStatus(w.id, w.status === 'active' ? 'contacted' : 'closed')} className="text-zinc-500 hover:text-white transition-colors p-2" title="Update Status"><i className="fa-solid fa-check"></i></button>
+              <button
+                onClick={async () => {
+                  await handleMutation(
+                    store.setWaitlistStatus(w.id, w.status === 'active' ? 'contacted' : 'closed'),
+                    'Failed to update waitlist status.'
+                  );
+                }}
+                className="text-zinc-500 hover:text-white transition-colors p-2"
+                title="Update Status"
+              >
+                <i className="fa-solid fa-check"></i>
+              </button>
               <a href={store.buildWhatsAppUrl(store.buildWaitlistMessage(w))} target="_blank" className="text-green-500 hover:text-green-400 transition-colors p-2" title="WhatsApp Concierge"><i className="fa-brands fa-whatsapp"></i></a>
-              <button onClick={async () => await store.deleteWaitlistEntry(w.id)} className="text-zinc-700 hover:text-red-500 transition-colors p-2" title="Delete"><i className="fa-solid fa-trash"></i></button>
+              <button
+                onClick={async () => {
+                  await handleMutation(
+                    store.deleteWaitlistEntry(w.id),
+                    'Failed to delete waitlist entry.'
+                  );
+                }}
+                className="text-zinc-700 hover:text-red-500 transition-colors p-2"
+                title="Delete"
+              >
+                <i className="fa-solid fa-trash"></i>
+              </button>
             </div>
           </div>
         </div>
@@ -901,7 +948,7 @@ function CustomersTab({ store }: { store: any }) {
 
   const handleDelete = async (id: string) => {
     if (confirm("Are you sure you want to delete this customer record?")) {
-      await store.deleteCustomer(id);
+      await handleMutation(store.deleteCustomer(id), 'Failed to delete customer.');
     }
   };
 
@@ -979,14 +1026,19 @@ function CustomerModal({ store, onClose, customer }: { store: any, onClose: () =
     notes: customer?.notes || ''
   });
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (customer) {
-      store.updateCustomer(customer.id, formData);
+      const ok = await handleMutation(store.updateCustomer(customer.id, formData), 'Failed to update customer.');
+      if (ok) onClose();
     } else {
-      store.addCustomer(formData);
+      const created = await store.addCustomer(formData);
+      if (!created) {
+        alert('Failed to add customer.');
+        return;
+      }
+      onClose();
     }
-    onClose();
   };
 
   return (
@@ -1037,8 +1089,8 @@ function BlocksTab({ store, selectedDate }: { store: any, selectedDate: string }
   const [newBlock, setNewBlock] = useState({ roomId: store.rooms[0]?.id, reason: '', start_at: `${selectedDate}T00:00`, end_at: `${selectedDate}T23:59` });
 
   const handleAddBlock = async () => {
-    await store.addBlock(newBlock);
-    setShowBlockModal(false);
+    const ok = await handleMutation(store.addBlock(newBlock), 'Failed to add block.');
+    if (ok) setShowBlockModal(false);
   };
 
   return (
@@ -1055,7 +1107,14 @@ function BlocksTab({ store, selectedDate }: { store: any, selectedDate: string }
                 <p className="text-xs font-bold text-white uppercase">{store.rooms.find((r: Room) => r.id === b.roomId)?.name}</p>
                 <p className="text-[9px] text-zinc-600 font-bold uppercase tracking-widest">{b.reason || 'No reason'}</p>
               </div>
-              <button onClick={async () => await store.deleteBlock(b.id)} className="text-zinc-800 hover:text-red-500 p-2"><i className="fa-solid fa-trash-can"></i></button>
+              <button
+                onClick={async () => {
+                  await handleMutation(store.deleteBlock(b.id), 'Failed to delete block.');
+                }}
+                className="text-zinc-800 hover:text-red-500 p-2"
+              >
+                <i className="fa-solid fa-trash-can"></i>
+              </button>
             </div>
           ))}
         </div>
@@ -1067,7 +1126,12 @@ function BlocksTab({ store, selectedDate }: { store: any, selectedDate: string }
           {store.recurringBlocks.map((rb: RecurringBlock) => (
             <div key={rb.id} className="p-5 bg-zinc-950 border border-zinc-900 rounded-2xl flex justify-between items-center group">
               <div className="flex items-center gap-4">
-                <button onClick={async () => await store.toggleRecurringBlock(rb.id, !rb.enabled)} className={`w-12 h-6 rounded-full relative transition-all ${rb.enabled ? 'bg-amber-500' : 'bg-zinc-800'}`}>
+                <button
+                  onClick={async () => {
+                    await handleMutation(store.toggleRecurringBlock(rb.id, !rb.enabled), 'Failed to update recurring block.');
+                  }}
+                  className={`w-12 h-6 rounded-full relative transition-all ${rb.enabled ? 'bg-amber-500' : 'bg-zinc-800'}`}
+                >
                   <i className={`fa-solid ${rb.enabled ? 'fa-check' : 'fa-power-off'} text-xs`}></i>
                 </button>
                 <div>
@@ -1075,7 +1139,14 @@ function BlocksTab({ store, selectedDate }: { store: any, selectedDate: string }
                   <p className="text-[9px] text-zinc-600 font-bold uppercase tracking-widest">{store.rooms.find((r: Room) => r.id === rb.roomId)?.name} {rb.reason ? `• ${rb.reason}` : ''}</p>
                 </div>
               </div>
-              <button onClick={async () => await store.deleteRecurringBlock(rb.id)} className="text-zinc-800 hover:text-red-500 p-2 opacity-0 group-hover:opacity-100 transition-opacity"><i className="fa-solid fa-trash-can"></i></button>
+              <button
+                onClick={async () => {
+                  await handleMutation(store.deleteRecurringBlock(rb.id), 'Failed to delete recurring block.');
+                }}
+                className="text-zinc-800 hover:text-red-500 p-2 opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <i className="fa-solid fa-trash-can"></i>
+              </button>
             </div>
           ))}
         </div>
@@ -1111,8 +1182,9 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
   const [activeSub, setActiveSub] = useState('venue');
   const [showSaved, setShowSaved] = useState(false);
 
-  const handleSettingChange = async (updateFn: () => Promise<void>) => {
-    await updateFn();
+  const handleSettingChange = async (updateFn: () => Promise<MutationResult>, errorMessage: string) => {
+    const ok = await handleMutation(updateFn(), errorMessage);
+    if (!ok) return;
     setShowSaved(true);
     setTimeout(() => setShowSaved(false), 2000);
   };
@@ -1139,25 +1211,43 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-2">
                 <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Cancellation Cutoff (Hours)</label>
-                <input type="number" value={store.settings.cancelCutoffHours} onChange={async e => { await store.updateSettings({ cancelCutoffHours: parseInt(e.target.value) }); setShowSaved(true); setTimeout(() => setShowSaved(false), 2000); }} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
+                <input
+                  type="number"
+                  value={store.settings.cancelCutoffHours}
+                  onChange={async e => handleSettingChange(() => store.updateSettings({ cancelCutoffHours: parseInt(e.target.value) }), 'Failed to update cancellation cutoff.')}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Reschedule Cutoff (Hours)</label>
-                <input type="number" value={store.settings.rescheduleCutoffHours} onChange={async e => { await store.updateSettings({ rescheduleCutoffHours: parseInt(e.target.value) }); setShowSaved(true); setTimeout(() => setShowSaved(false), 2000); }} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
+                <input
+                  type="number"
+                  value={store.settings.rescheduleCutoffHours}
+                  onChange={async e => handleSettingChange(() => store.updateSettings({ rescheduleCutoffHours: parseInt(e.target.value) }), 'Failed to update reschedule cutoff.')}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                />
               </div>
               <div className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex items-center justify-between">
                 <div>
                   <p className="text-sm font-bold text-white uppercase">Require Deposit</p>
                   <p className="text-[9px] text-zinc-600 uppercase font-bold tracking-widest mt-1">Guests must pay to confirm</p>
                 </div>
-                <button onClick={async () => { await store.updateSettings({ deposit_enabled: !store.settings.deposit_enabled }); setShowSaved(true); setTimeout(() => setShowSaved(false), 2000); }} className={`w-12 h-6 rounded-full relative transition-all ${store.settings.deposit_enabled ? 'bg-amber-500' : 'bg-zinc-800'}`}>
+                <button
+                  onClick={async () => handleSettingChange(() => store.updateSettings({ deposit_enabled: !store.settings.deposit_enabled }), 'Failed to update deposit setting.')}
+                  className={`w-12 h-6 rounded-full relative transition-all ${store.settings.deposit_enabled ? 'bg-amber-500' : 'bg-zinc-800'}`}
+                >
                   <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${store.settings.deposit_enabled ? 'left-7' : 'left-1'}`}></div>
                 </button>
               </div>
               {store.settings.deposit_enabled && (
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Deposit Amount (£)</label>
-                  <input type="number" value={store.settings.deposit_amount} onChange={async e => { await store.updateSettings({ deposit_amount: parseInt(e.target.value) }); setShowSaved(true); setTimeout(() => setShowSaved(false), 2000); }} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
+                  <input
+                    type="number"
+                    value={store.settings.deposit_amount}
+                    onChange={async e => handleSettingChange(() => store.updateSettings({ deposit_amount: parseInt(e.target.value) }), 'Failed to update deposit amount.')}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                  />
                 </div>
               )}
 
@@ -1167,11 +1257,23 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Min Days Lead Time</label>
-                    <input type="number" min="0" value={store.settings.minDaysBeforeBooking} onChange={async e => { await store.updateSettings({ minDaysBeforeBooking: Math.max(0, parseInt(e.target.value)) }); setShowSaved(true); setTimeout(() => setShowSaved(false), 2000); }} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
+                    <input
+                      type="number"
+                      min="0"
+                      value={store.settings.minDaysBeforeBooking}
+                      onChange={async e => handleSettingChange(() => store.updateSettings({ minDaysBeforeBooking: Math.max(0, parseInt(e.target.value)) }), 'Failed to update minimum days lead time.')}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                    />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Min Hours Lead Time</label>
-                    <input type="number" min="0" value={store.settings.minHoursBeforeBooking} onChange={async e => { await store.updateSettings({ minHoursBeforeBooking: Math.max(0, parseInt(e.target.value)) }); setShowSaved(true); setTimeout(() => setShowSaved(false), 2000); }} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white" />
+                    <input
+                      type="number"
+                      min="0"
+                      value={store.settings.minHoursBeforeBooking}
+                      onChange={async e => handleSettingChange(() => store.updateSettings({ minHoursBeforeBooking: Math.max(0, parseInt(e.target.value)) }), 'Failed to update minimum hours lead time.')}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                    />
                   </div>
                 </div>
               </div>
@@ -1186,15 +1288,36 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
               {store.operatingHours.map((oh: DayOperatingHours) => (
                 <div key={oh.day} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                   <div className="flex items-center gap-4">
-                    <button onClick={async () => await store.updateOperatingHours(oh.day, { enabled: !oh.enabled })} className={`w-12 h-6 rounded-full relative transition-all ${oh.enabled ? 'bg-amber-500' : 'bg-zinc-800'}`}>
+                    <button
+                      onClick={async () => {
+                        await handleMutation(store.updateOperatingHours(oh.day, { enabled: !oh.enabled }), 'Failed to update operating hours.');
+                      }}
+                      className={`w-12 h-6 rounded-full relative transition-all ${oh.enabled ? 'bg-amber-500' : 'bg-zinc-800'}`}
+                    >
                       <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${oh.enabled ? 'left-7' : 'left-1'}`}></div>
                     </button>
                     <span className="text-xs font-bold uppercase tracking-widest text-white w-24">{['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][oh.day]}</span>
                   </div>
                   <div className="flex items-center gap-4 w-full md:w-auto">
-                    <input type="time" disabled={!oh.enabled} value={oh.open} onChange={async e => await store.updateOperatingHours(oh.day, { open: e.target.value })} className="flex-1 md:flex-none bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-white font-mono text-sm disabled:opacity-20" />
+                    <input
+                      type="time"
+                      disabled={!oh.enabled}
+                      value={oh.open}
+                      onChange={async e => {
+                        await handleMutation(store.updateOperatingHours(oh.day, { open: e.target.value }), 'Failed to update opening time.');
+                      }}
+                      className="flex-1 md:flex-none bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-white font-mono text-sm disabled:opacity-20"
+                    />
                     <span className="text-zinc-700">to</span>
-                    <input type="time" disabled={!oh.enabled} value={oh.close} onChange={async e => await store.updateOperatingHours(oh.day, { close: e.target.value })} className="flex-1 md:flex-none bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-white font-mono text-sm disabled:opacity-20" />
+                    <input
+                      type="time"
+                      disabled={!oh.enabled}
+                      value={oh.close}
+                      onChange={async e => {
+                        await handleMutation(store.updateOperatingHours(oh.day, { close: e.target.value }), 'Failed to update closing time.');
+                      }}
+                      className="flex-1 md:flex-none bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-white font-mono text-sm disabled:opacity-20"
+                    />
                   </div>
                 </div>
               ))}
@@ -1206,21 +1329,50 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
           <div className="space-y-8 animate-in fade-in slide-in-from-right-2 duration-300">
             <div className="flex justify-between items-center">
               <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Booking Services</h3>
-              <button onClick={async () => await store.addService({ name: 'New Service', durationMinutes: 120, basePrice: 0 })} className="bg-zinc-900 border border-zinc-800 text-amber-500 px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest">Add Service</button>
+              <button
+                onClick={async () => {
+                  await handleMutation(store.addService({ name: 'New Service', durationMinutes: 120, basePrice: 0 }), 'Failed to add service.');
+                }}
+                className="bg-zinc-900 border border-zinc-800 text-amber-500 px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest"
+              >
+                Add Service
+              </button>
             </div>
             <div className="grid grid-cols-1 gap-4">
               {store.services.map((s: Service) => (
                 <div key={s.id} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                   <div className="space-y-1 flex-1 w-full">
-                    <input type="text" value={s.name} onChange={async e => await store.updateService(s.id, { name: e.target.value })} className="w-full bg-transparent border-none text-white font-bold uppercase text-sm outline-none focus:text-amber-500" />
+                    <input
+                      type="text"
+                      value={s.name}
+                      onChange={async e => {
+                        await handleMutation(store.updateService(s.id, { name: e.target.value }), 'Failed to update service name.');
+                      }}
+                      className="w-full bg-transparent border-none text-white font-bold uppercase text-sm outline-none focus:text-amber-500"
+                    />
                     <p className="text-[9px] text-zinc-600 font-bold uppercase tracking-widest">{s.durationMinutes} Minutes Experience</p>
                   </div>
                   <div className="flex items-center gap-4 w-full md:w-auto">
                     <div className="flex items-center gap-2 bg-zinc-900 px-4 py-2 rounded-xl border border-zinc-800">
                       <span className="text-[10px] text-zinc-500 uppercase font-bold">Mins:</span>
-                      <input type="number" step="15" value={s.durationMinutes} onChange={async e => await store.updateService(s.id, { durationMinutes: parseInt(e.target.value) })} className="bg-transparent border-none text-white font-mono text-xs w-16 outline-none" />
+                      <input
+                        type="number"
+                        step="15"
+                        value={s.durationMinutes}
+                        onChange={async e => {
+                          await handleMutation(store.updateService(s.id, { durationMinutes: parseInt(e.target.value) }), 'Failed to update service duration.');
+                        }}
+                        className="bg-transparent border-none text-white font-mono text-xs w-16 outline-none"
+                      />
                     </div>
-                    <button onClick={async () => await store.deleteService(s.id)} className="text-zinc-800 hover:text-red-500 p-2"><i className="fa-solid fa-trash-can"></i></button>
+                    <button
+                      onClick={async () => {
+                        await handleMutation(store.deleteService(s.id), 'Failed to delete service.');
+                      }}
+                      className="text-zinc-800 hover:text-red-500 p-2"
+                    >
+                      <i className="fa-solid fa-trash-can"></i>
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1232,37 +1384,74 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
           <div className="space-y-8 animate-in fade-in slide-in-from-right-2 duration-300">
             <div className="flex justify-between items-center">
               <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Service Extras</h3>
-              <button onClick={async () => await store.addExtra({ name: 'New Extra', price: 0, pricingMode: 'flat' })} className="bg-zinc-900 border border-zinc-800 text-amber-500 px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest">Add Extra</button>
+              <button
+                onClick={async () => {
+                  await handleMutation(store.addExtra({ name: 'New Extra', price: 0, pricingMode: 'flat' }), 'Failed to add extra.');
+                }}
+                className="bg-zinc-900 border border-zinc-800 text-amber-500 px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest"
+              >
+                Add Extra
+              </button>
             </div>
             <div className="grid grid-cols-1 gap-4">
               {store.extras.map((e: Extra) => (
                 <div key={e.id} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                   <div className="flex-1 space-y-2 w-full">
-                    <input type="text" value={e.name} onChange={async val => await store.updateExtra(e.id, { name: val.target.value })} className="w-full bg-transparent border-none text-white font-bold uppercase text-sm outline-none focus:text-amber-500" />
-                    <div className="space-y-2">
-                      <label className="text-[8px] font-bold uppercase tracking-widest text-zinc-600">Info Text</label>
-                      <textarea
-                        value={e.infoText || ''}
-                        onChange={async val => await store.updateExtra(e.id, { infoText: val.target.value })}
-                        rows={2}
-                        className="w-full bg-zinc-900/60 border border-zinc-800 rounded-xl px-3 py-2 text-[10px] text-white outline-none focus:ring-1 ring-amber-500"
-                        placeholder="Add optional details for the booking info popup."
-                      />
-                    </div>
+                    <input
+                      type="text"
+                      value={e.name}
+                      onChange={async val => {
+                        await handleMutation(store.updateExtra(e.id, { name: val.target.value }), 'Failed to update extra name.');
+                      }}
+                      className="w-full bg-transparent border-none text-white font-bold uppercase text-sm outline-none focus:text-amber-500"
+                    />
                     <div className="flex gap-4">
-                      <button onClick={async () => await store.updateExtra(e.id, { pricingMode: 'flat' })} className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded border ${e.pricingMode === 'flat' ? 'bg-amber-500 text-black border-amber-400' : 'bg-zinc-900 text-zinc-600 border-zinc-800'}`}>Flat Rate</button>
-                      <button onClick={async () => await store.updateExtra(e.id, { pricingMode: 'per_person' })} className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded border ${e.pricingMode === 'per_person' ? 'bg-amber-500 text-black border-amber-400' : 'bg-zinc-900 text-zinc-600 border-zinc-800'}`}>Per Person</button>
+                      <button
+                        onClick={async () => {
+                          await handleMutation(store.updateExtra(e.id, { pricingMode: 'flat' }), 'Failed to update extra pricing.');
+                        }}
+                        className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded border ${e.pricingMode === 'flat' ? 'bg-amber-500 text-black border-amber-400' : 'bg-zinc-900 text-zinc-600 border-zinc-800'}`}
+                      >
+                        Flat Rate
+                      </button>
+                      <button
+                        onClick={async () => {
+                          await handleMutation(store.updateExtra(e.id, { pricingMode: 'per_person' }), 'Failed to update extra pricing.');
+                        }}
+                        className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded border ${e.pricingMode === 'per_person' ? 'bg-amber-500 text-black border-amber-400' : 'bg-zinc-900 text-zinc-600 border-zinc-800'}`}
+                      >
+                        Per Person
+                      </button>
                     </div>
                   </div>
                   <div className="flex items-center gap-4 w-full md:w-auto">
                     <div className="flex items-center gap-2 bg-zinc-900 px-4 py-2 rounded-xl border border-zinc-800">
                       <span className="text-[10px] text-zinc-500 uppercase font-bold">£:</span>
-                      <input type="number" value={e.price} onChange={async val => await store.updateExtra(e.id, { price: parseInt(val.target.value) })} className="bg-transparent border-none text-white font-mono text-xs w-16 outline-none" />
+                      <input
+                        type="number"
+                        value={e.price}
+                        onChange={async val => {
+                          await handleMutation(store.updateExtra(e.id, { price: parseInt(val.target.value) }), 'Failed to update extra price.');
+                        }}
+                        className="bg-transparent border-none text-white font-mono text-xs w-16 outline-none"
+                      />
                     </div>
-                    <button onClick={async () => await store.updateExtra(e.id, { enabled: !e.enabled })} className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-all ${e.enabled ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-zinc-900 border-zinc-800 text-zinc-800'}`}>
+                    <button
+                      onClick={async () => {
+                        await handleMutation(store.updateExtra(e.id, { enabled: !e.enabled }), 'Failed to update extra visibility.');
+                      }}
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-all ${e.enabled ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-zinc-900 border-zinc-800 text-zinc-800'}`}
+                    >
                       <i className={`fa-solid ${e.enabled ? 'fa-eye' : 'fa-eye-slash'} text-[10px]`}></i>
                     </button>
-                    <button onClick={async () => await store.deleteExtra(e.id)} className="text-zinc-800 hover:text-red-500 p-2"><i className="fa-solid fa-trash-can"></i></button>
+                    <button
+                      onClick={async () => {
+                        await handleMutation(store.deleteExtra(e.id), 'Failed to delete extra.');
+                      }}
+                      className="text-zinc-800 hover:text-red-500 p-2"
+                    >
+                      <i className="fa-solid fa-trash-can"></i>
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1307,33 +1496,76 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
           <div className="space-y-8 animate-in fade-in slide-in-from-right-2 duration-300">
             <div className="flex justify-between items-center">
               <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Promo Codes</h3>
-              <button onClick={() => store.addPromoCode({ code: 'NEWCODE', enabled: true, startDate: new Date().toISOString().split('T')[0], endDate: '2025-12-31', percentOff: 10, uses: 0 })} className="bg-zinc-900 border border-zinc-800 text-amber-500 px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest">Create Promo</button>
+              <button
+                onClick={async () => {
+                  await handleMutation(
+                    store.addPromoCode({ code: 'NEWCODE', enabled: true, startDate: new Date().toISOString().split('T')[0], endDate: '2025-12-31', percentOff: 10, uses: 0 }),
+                    'Failed to create promo code.'
+                  );
+                }}
+                className="bg-zinc-900 border border-zinc-800 text-amber-500 px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest"
+              >
+                Create Promo
+              </button>
             </div>
             <div className="grid grid-cols-1 gap-4">
               {store.promoCodes.map((p: PromoCode) => (
                 <div key={p.id} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex justify-between items-center shadow-lg group">
                   <div>
                     <div className="flex items-center gap-3">
-                      <input type="text" value={p.code} onChange={e => store.updatePromoCode(p.id, { code: e.target.value.toUpperCase() })} className="bg-transparent border-none text-lg font-mono font-bold text-amber-500 uppercase outline-none focus:text-white" />
+                      <input
+                        type="text"
+                        value={p.code}
+                        onChange={async e => {
+                          await handleMutation(store.updatePromoCode(p.id, { code: e.target.value.toUpperCase() }), 'Failed to update promo code.');
+                        }}
+                        className="bg-transparent border-none text-lg font-mono font-bold text-amber-500 uppercase outline-none focus:text-white"
+                      />
                       <span className="text-[9px] text-zinc-700 font-bold uppercase tracking-widest">{p.uses} Uses</span>
                     </div>
                     <div className="flex items-center gap-4 mt-2">
                       <div className="flex items-center gap-2 bg-zinc-900 px-3 py-1 rounded-lg border border-zinc-800">
                         <span className="text-[9px] text-zinc-600 font-bold">%:</span>
-                        <input type="number" value={p.percentOff || 0} onChange={e => store.updatePromoCode(p.id, { percentOff: parseInt(e.target.value), fixedOff: undefined })} className="bg-transparent border-none text-white font-mono text-[10px] w-12 outline-none" />
+                        <input
+                          type="number"
+                          value={p.percentOff || 0}
+                          onChange={async e => {
+                            await handleMutation(store.updatePromoCode(p.id, { percentOff: parseInt(e.target.value), fixedOff: undefined }), 'Failed to update promo discount.');
+                          }}
+                          className="bg-transparent border-none text-white font-mono text-[10px] w-12 outline-none"
+                        />
                       </div>
                       <span className="text-zinc-800">or</span>
                       <div className="flex items-center gap-2 bg-zinc-900 px-3 py-1 rounded-lg border border-zinc-800">
                         <span className="text-[9px] text-zinc-600 font-bold">£:</span>
-                        <input type="number" value={p.fixedOff || 0} onChange={e => store.updatePromoCode(p.id, { fixedOff: parseInt(e.target.value), percentOff: undefined })} className="bg-transparent border-none text-white font-mono text-[10px] w-12 outline-none" />
+                        <input
+                          type="number"
+                          value={p.fixedOff || 0}
+                          onChange={async e => {
+                            await handleMutation(store.updatePromoCode(p.id, { fixedOff: parseInt(e.target.value), percentOff: undefined }), 'Failed to update promo discount.');
+                          }}
+                          className="bg-transparent border-none text-white font-mono text-[10px] w-12 outline-none"
+                        />
                       </div>
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-3">
-                    <button onClick={() => store.updatePromoCode(p.id, { enabled: !p.enabled })} className={`px-4 py-1.5 rounded-lg text-[8px] font-bold uppercase tracking-widest border transition-all ${p.enabled ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20'}`}>
+                    <button
+                      onClick={async () => {
+                        await handleMutation(store.updatePromoCode(p.id, { enabled: !p.enabled }), 'Failed to update promo status.');
+                      }}
+                      className={`px-4 py-1.5 rounded-lg text-[8px] font-bold uppercase tracking-widest border transition-all ${p.enabled ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20'}`}
+                    >
                       {p.enabled ? 'Live' : 'Paused'}
                     </button>
-                    <button onClick={() => store.deletePromoCode(p.id)} className="text-zinc-800 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"><i className="fa-solid fa-trash-can"></i></button>
+                    <button
+                      onClick={async () => {
+                        await handleMutation(store.deletePromoCode(p.id), 'Failed to delete promo code.');
+                      }}
+                      className="text-zinc-800 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                    >
+                      <i className="fa-solid fa-trash-can"></i>
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1417,7 +1649,7 @@ function BookingModal({ store, onClose, initialDate, booking, prefill }: { store
 
   const isPastDay = new Date(formData.date).getTime() < new Date().setHours(0, 0, 0, 0);
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isPastDay) return;
     const startAt = new Date(`${formData.date}T${formData.time}`).toISOString();
@@ -1451,19 +1683,21 @@ function BookingModal({ store, onClose, initialDate, booking, prefill }: { store
       deposit_amount: formData.deposit_amount
     };
 
-    const commit = async () => {
-      if (booking) {
-        await store.updateBooking(booking.id, basePatch);
-      } else {
-        await store.addBooking({
-          ...basePatch,
-          created_at: new Date().toISOString(),
-          source: 'admin'
-        });
+    if (booking) {
+      const ok = await handleMutation(store.updateBooking(booking.id, basePatch), 'Failed to update booking.');
+      if (ok) onClose();
+    } else {
+      const created = await store.addBooking({
+        ...basePatch,
+        created_at: new Date().toISOString(),
+        source: 'admin'
+      });
+      if (!created) {
+        alert('Failed to create booking.');
+        return;
       }
       onClose();
-    };
-    commit();
+    }
   };
 
   return (

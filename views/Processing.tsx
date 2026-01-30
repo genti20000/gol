@@ -42,13 +42,13 @@ export default function Processing() {
           return;
         }
 
-        if (nextStatus === BookingStatus.CANCELLED || nextStatus === BookingStatus.NO_SHOW) {
-          navigate(`/booking/cancelled?id=${bookingId}`);
+        if (nextStatus === BookingStatus.FAILED || nextStatus === BookingStatus.CANCELLED || nextStatus === BookingStatus.NO_SHOW) {
+          navigate(`/booking/failed?id=${bookingId}`);
           return;
         }
 
         if (tries % 5 === 0) {
-          setMessage('Still confirming… (Stripe can take a few seconds)');
+          setMessage('Still confirming… this usually takes a few seconds.');
         }
       } catch (error) {
         if (tries % 5 === 0) {

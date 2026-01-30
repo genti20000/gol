@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { BookingStatus, RateType, Extra } from '@/types';
-import { LOGO_URL, BASE_DURATION_HOURS, getGuestLabel } from '@/constants';
+import { BASE_DURATION_HOURS, EXTRAS, PRICING_TIERS, getGuestLabel } from '@/constants';
 
 type StripeEmbeddedCheckout = {
   mount: (element: HTMLElement) => void;
@@ -34,28 +34,52 @@ export default function Checkout() {
   const [extrasSelection, setExtrasSelection] = useState<Record<string, number>>({});
   const [currentStep, setCurrentStep] = useState<'extras' | 'details' | 'payment'>('details');
   const [showExtrasInfo, setShowExtrasInfo] = useState(false);
+  const [activeExtraInfoId, setActiveExtraInfoId] = useState<string | null>(null);
   const embeddedCheckoutRef = useRef<HTMLDivElement | null>(null);
   const extrasInfoRef = useRef<HTMLDivElement | null>(null);
   const extrasInfoButtonRef = useRef<HTMLButtonElement | null>(null);
+  const extraInfoRef = useRef<HTMLDivElement | null>(null);
+  const extraInfoButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const date = route.params.get('date') || '';
   const time = route.params.get('time') || '';
-  const guests = parseInt(route.params.get('guests') || '8');
-  const extraHours = parseInt(route.params.get('extraHours') || '0');
+  const parsedGuests = Number(route.params.get('guests') || '8');
+  const parsedExtraHours = Number(route.params.get('extraHours') || '0');
   const promo = route.params.get('promo') || '';
   const queryServiceId = route.params.get('serviceId') || undefined;
   const queryStaffId = route.params.get('staffId') || undefined;
 
-  const totalDuration = 2 + extraHours;
+  const guestMin = Math.min(...PRICING_TIERS.map(tier => tier.min));
+  const guestMax = Math.max(...PRICING_TIERS.map(tier => tier.max));
+  const extraHourOptions = EXTRAS.map(extra => extra.hours);
+  const extraMin = Math.min(...extraHourOptions);
+  const extraMax = Math.max(...extraHourOptions);
+
+  const clampValue = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+  const guests = Number.isFinite(parsedGuests) ? clampValue(parsedGuests, guestMin, guestMax) : guestMin;
+  const extraHours = Number.isFinite(parsedExtraHours) ? clampValue(parsedExtraHours, extraMin, extraMax) : extraMin;
+
+  const totalDuration = BASE_DURATION_HOURS + extraHours;
   const isValidDateTime = useMemo(() => {
     if (!date || !time) return false;
     const parsed = new Date(`${date}T${time}`);
     return Number.isFinite(parsed.getTime());
   }, [date, time]);
+  const isValidGuests = Number.isFinite(parsedGuests) && parsedGuests === guests;
+  const isValidExtraHours = Number.isFinite(parsedExtraHours) && extraHourOptions.includes(parsedExtraHours);
+  const hasValidBookingDetails = isValidDateTime && isValidGuests && isValidExtraHours;
 
   const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promo), [date, guests, extraHours, promo, store]);
   const enabledExtras = useMemo(() => store.getEnabledExtras(), [store]);
   const extrasTotal = useMemo(() => store.computeExtrasTotal(extrasSelection, guests), [extrasSelection, guests, store]);
+  const estimatedTotal = useMemo(() => pricing.totalPrice + extrasTotal, [pricing.totalPrice, extrasTotal]);
+  const estimatedDueNow = useMemo(() => {
+    if (!store.settings.deposit_enabled) {
+      return estimatedTotal;
+    }
+    const deposit = store.settings.deposit_amount;
+    return Math.min(Math.max(deposit, 0), estimatedTotal);
+  }, [store.settings.deposit_enabled, store.settings.deposit_amount, estimatedTotal]);
   const stripePromise = useMemo(() => {
     const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
     if (!publishableKey) {
@@ -87,6 +111,26 @@ export default function Checkout() {
       document.head.appendChild(script);
     });
   }, []);
+
+  if (store.loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center uppercase font-bold tracking-widest text-zinc-600 animate-pulse text-sm">
+          Loading...
+        </div>
+      </div>
+    );
+  }
+
+  if (store.loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="text-center uppercase font-bold tracking-widest text-red-400 text-sm">
+          Failed to load booking details. Please refresh and try again.
+        </div>
+      </div>
+    );
+  }
 
   // Show extras step first when available, otherwise go straight to details
   useEffect(() => {
@@ -143,14 +187,31 @@ export default function Checkout() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showExtrasInfo]);
 
+  useEffect(() => {
+    if (!activeExtraInfoId) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (extraInfoRef.current?.contains(target) || extraInfoButtonRef.current?.contains(target)) {
+        return;
+      }
+      setActiveExtraInfoId(null);
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [activeExtraInfoId]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPaymentError(null);
     setIsProcessing(true);
 
     try {
-      if (!isValidDateTime) {
-        setPaymentError('Please select a valid date and time before continuing.');
+      if (!hasValidBookingDetails) {
+        setPaymentError('Please select valid booking details before continuing.');
         return;
       }
       const startAt = new Date(`${date}T${time}`).toISOString();
@@ -190,7 +251,7 @@ export default function Checkout() {
         source: 'public' as const,
         extras: bookingExtras,
         extras_total: extrasTotal,
-        deposit_amount: 0,
+        deposit_amount: store.settings.deposit_enabled ? store.settings.deposit_amount : 0,
         deposit_paid: false
       };
 
@@ -212,7 +273,13 @@ export default function Checkout() {
         return;
       }
 
-      const { clientSecret } = await checkoutResponse.json();
+      const payload = await checkoutResponse.json();
+      if (payload?.skipPayment && payload?.redirectUrl) {
+        navigate(payload.redirectUrl);
+        return;
+      }
+
+      const { clientSecret } = payload;
       if (!clientSecret) {
         setPaymentError('Unable to start the payment. Please try again.');
         return;
@@ -238,7 +305,7 @@ export default function Checkout() {
     });
   };
 
-  if (!isValidDateTime) {
+  if (!hasValidBookingDetails) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="glass-panel p-8 md:p-10 rounded-[2rem] border-zinc-800 max-w-md w-full text-center space-y-6">
@@ -314,10 +381,10 @@ export default function Checkout() {
                   <div className="flex-1">
                     <div className="flex items-start justify-between gap-3">
                       <p className="text-sm font-bold uppercase tracking-tight text-white">{extra.name}</p>
-                      {extra.infoText && (
+                      {extra.description && (
                         <div className="relative">
                           <button
-                            ref={activeExtraInfoId === extra.id ? extrasInfoButtonRef : undefined}
+                            ref={activeExtraInfoId === extra.id ? extraInfoButtonRef : undefined}
                             type="button"
                             onClick={() => setActiveExtraInfoId((prev) => (prev === extra.id ? null : extra.id))}
                             aria-label={`More info about ${extra.name}`}
@@ -328,21 +395,21 @@ export default function Checkout() {
                           </button>
                           {activeExtraInfoId === extra.id && (
                             <div
-                              ref={extrasInfoRef}
-                              className="absolute right-0 mt-2 w-60 rounded-2xl border border-zinc-800 bg-zinc-950/95 p-4 text-[10px] text-zinc-300 shadow-2xl shadow-black/40 backdrop-blur"
+                              ref={extraInfoRef}
+                              className="absolute right-0 mt-3 w-56 rounded-2xl border border-zinc-800 bg-zinc-950/95 p-3 text-[10px] text-zinc-300 shadow-2xl shadow-black/40 backdrop-blur"
                             >
                               <div className="flex items-start justify-between gap-3">
-                                <p className="font-semibold uppercase tracking-widest text-[9px] text-white">{extra.name}</p>
+                                <p className="font-semibold uppercase tracking-widest text-[9px] text-white">Extra Details</p>
                                 <button
                                   type="button"
                                   onClick={() => setActiveExtraInfoId(null)}
                                   className="text-zinc-500 hover:text-white transition-colors"
-                                  aria-label={`Close ${extra.name} info`}
+                                  aria-label={`Close ${extra.name} details`}
                                 >
                                   <i className="fa-solid fa-xmark text-[10px]"></i>
                                 </button>
                               </div>
-                              <p className="mt-2 text-zinc-400 leading-relaxed">{extra.infoText}</p>
+                              <p className="mt-2 text-zinc-400 leading-relaxed">{extra.description}</p>
                             </div>
                           )}
                         </div>
@@ -440,7 +507,7 @@ export default function Checkout() {
               disabled={isProcessing || !formData.name || !formData.surname || !formData.email}
               className={`${enabledExtras.length > 0 ? 'flex-[2]' : 'w-full'} gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-50 text-[10px] min-h-[44px] cursor-pointer`}
             >
-              {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : `Confirm & Pay £${pricing.totalPrice + extrasTotal}`}
+              {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : estimatedDueNow <= 0 ? 'Confirm booking' : `Pay £${estimatedDueNow} now`}
             </button>
           </div>
         </div>
@@ -508,12 +575,12 @@ export default function Checkout() {
           <div className="border-t border-zinc-800 pt-6 space-y-4">
             <div className="flex justify-between items-end">
               <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">Total Price</span>
-              <span className="text-4xl font-bold text-white tracking-tighter">£{pricing.totalPrice + extrasTotal}</span>
+              <span className="text-4xl font-bold text-white tracking-tighter">£{estimatedTotal}</span>
             </div>
             {store.settings.deposit_enabled && (
               <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl flex justify-between items-center">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Deposit Due Now</span>
-                <span className="text-xl font-bold text-amber-500 tracking-tighter">£{store.settings.deposit_amount}</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-amber-500">{estimatedDueNow > 0 ? 'Deposit Due Now' : 'Deposit Due'}</span>
+                <span className="text-xl font-bold text-amber-500 tracking-tighter">£{estimatedDueNow}</span>
               </div>
             )}
           </div>

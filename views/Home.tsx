@@ -81,6 +81,26 @@ export default function Home() {
     });
   }, [date]);
 
+  if (store.loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center uppercase font-bold tracking-widest text-zinc-600 animate-pulse text-sm">
+          Loading...
+        </div>
+      </div>
+    );
+  }
+
+  if (store.loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="text-center uppercase font-bold tracking-widest text-red-400 text-sm">
+          Failed to load availability. Please refresh and try again.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative min-h-screen flex flex-col items-center justify-center bg-black py-10">
       <div className="relative z-10 w-full px-4 md:max-w-4xl md:mx-auto text-center space-y-8 md:space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-700">
