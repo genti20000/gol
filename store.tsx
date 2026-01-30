@@ -61,6 +61,7 @@ const DEFAULT_EXTRAS: Extra[] = [
 
 interface StoreContextValue {
   loading: boolean;
+  loadError: string | null;
   bookings: Booking[];
   rooms: Room[];
   services: Service[];
@@ -128,6 +129,7 @@ type StoreMode = 'public' | 'admin';
 
 export function StoreProvider({ children, mode = 'public' }: { children: React.ReactNode; mode?: StoreMode }) {
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [rooms, setRooms] = useState<Room[]>(ROOMS);
   const [services, setServices] = useState<Service[]>(DEFAULT_SERVICES);
@@ -147,6 +149,7 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     const fetchData = async () => {
       try {
         setLoading(true);
+        setLoadError(null);
 
         const bookingsQuery = mode === 'admin'
           ? supabase.from('bookings').select('*')
@@ -154,42 +157,82 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
             .from('bookings')
             .select('id,room_id,room_name,service_id,staff_id,start_at,end_at,status,guests');
 
-        const baseQueries = [
-          bookingsQuery,
-          supabase.from('rooms').select('*'),
-          supabase.from('services').select('*'),
-          supabase.from('room_blocks').select('*'),
-          supabase.from('special_hours').select('*'),
-          supabase.from('operating_hours').select('*').order('day', { ascending: true }),
-          supabase.from('venue_settings').select('*').single(),
-          supabase.from('extras').select('*').order('sort_order', { ascending: true })
-        ];
-
-        const adminQueries = mode === 'admin'
-          ? [
-            supabase.from('staff_members').select('*'),
-            supabase.from('recurring_blocks').select('*'),
-            supabase.from('promo_codes').select('*'),
-            supabase.from('customers').select('*'),
-            supabase.from('waitlist').select('*')
-          ]
-          : [];
+        const roomsQuery = supabase.from('rooms').select('*');
+        const servicesQuery = supabase.from('services').select('*');
+        const blocksQuery = supabase.from('room_blocks').select('*');
+        const specialHoursQuery = supabase.from('special_hours').select('*');
+        const operatingHoursQuery = supabase.from('operating_hours').select('*').order('day', { ascending: true });
+        const settingsQuery = supabase.from('venue_settings').select('*').single();
+        const extrasQuery = supabase.from('extras').select('*').order('sort_order', { ascending: true });
+        const staffQuery = mode === 'admin'
+          ? supabase.from('staff_members').select('*')
+          : Promise.resolve({ data: null, error: null });
+        const recurringBlocksQuery = mode === 'admin'
+          ? supabase.from('recurring_blocks').select('*')
+          : Promise.resolve({ data: null, error: null });
+        const promoCodesQuery = mode === 'admin'
+          ? supabase.from('promo_codes').select('*')
+          : Promise.resolve({ data: null, error: null });
+        const customersQuery = mode === 'admin'
+          ? supabase.from('customers').select('*')
+          : Promise.resolve({ data: null, error: null });
+        const waitlistQuery = mode === 'admin'
+          ? supabase.from('waitlist').select('*')
+          : Promise.resolve({ data: null, error: null });
 
         const [
-          { data: bookingsData },
-          { data: roomsData },
-          { data: servicesData },
-          { data: blocksData },
-          { data: specialHoursData },
-          { data: operatingHoursData },
-          { data: settingsData },
-          { data: extrasData },
-          { data: staffData },
-          { data: recurringBlocksData },
-          { data: promoCodesData },
-          { data: customersData },
-          { data: waitlistData }
-        ] = await Promise.all([...baseQueries, ...adminQueries]);
+          { data: bookingsData, error: bookingsError },
+          { data: roomsData, error: roomsError },
+          { data: servicesData, error: servicesError },
+          { data: blocksData, error: blocksError },
+          { data: specialHoursData, error: specialHoursError },
+          { data: operatingHoursData, error: operatingHoursError },
+          { data: settingsData, error: settingsError },
+          { data: extrasData, error: extrasError },
+          { data: staffData, error: staffError },
+          { data: recurringBlocksData, error: recurringBlocksError },
+          { data: promoCodesData, error: promoCodesError },
+          { data: customersData, error: customersError },
+          { data: waitlistData, error: waitlistError }
+        ] = await Promise.all([
+          bookingsQuery,
+          roomsQuery,
+          servicesQuery,
+          blocksQuery,
+          specialHoursQuery,
+          operatingHoursQuery,
+          settingsQuery,
+          extrasQuery,
+          staffQuery,
+          recurringBlocksQuery,
+          promoCodesQuery,
+          customersQuery,
+          waitlistQuery
+        ]);
+
+        const queryErrors = [
+          { name: 'bookings', error: bookingsError },
+          { name: 'rooms', error: roomsError },
+          { name: 'services', error: servicesError },
+          { name: 'room blocks', error: blocksError },
+          { name: 'special hours', error: specialHoursError },
+          { name: 'operating hours', error: operatingHoursError },
+          { name: 'venue settings', error: settingsError },
+          { name: 'extras', error: extrasError },
+          { name: 'staff members', error: staffError },
+          { name: 'recurring blocks', error: recurringBlocksError },
+          { name: 'promo codes', error: promoCodesError },
+          { name: 'customers', error: customersError },
+          { name: 'waitlist', error: waitlistError }
+        ].filter(({ error }) => error);
+
+        if (queryErrors.length > 0) {
+          queryErrors.forEach(({ name, error }) => {
+            console.error(`Error fetching ${name}:`, error);
+          });
+          setLoadError('Failed to load data. Please refresh and try again.');
+          return;
+        }
 
         if (bookingsData) setBookings(bookingsData.map(b => ({
           ...b,
@@ -293,6 +336,7 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
 
       } catch (err) {
         console.error("Error fetching data from Supabase:", err);
+        setLoadError('Failed to load data. Please refresh and try again.');
       } finally {
         setLoading(false);
       }
@@ -762,12 +806,12 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
   }, []);
 
   const value = useMemo(() => ({
-    loading, bookings, rooms, services, staff, blocks, recurringBlocks, specialHours, settings, promoCodes, customers, waitlist, extras, operatingHours, calSync,
+    loading, loadError, bookings, rooms, services, staff, blocks, recurringBlocks, specialHours, settings, promoCodes, customers, waitlist, extras, operatingHours, calSync,
     getOperatingWindow, calculatePricing, getValidStartTimes, findFirstAvailableRoomAndStaff, addBooking, updateBooking, getBookingByMagicToken, canRescheduleOrCancel,
     getEnabledExtras, computeExtrasTotal, buildBookingExtrasSnapshot, addWaitlistEntry, getWaitlistForDate, setWaitlistStatus, deleteWaitlistEntry, buildWaitlistMessage, buildWhatsAppUrl, getBusyIntervals, getBookingsForDate, getBlocksForDate,
     addBlock, deleteBlock, toggleRecurringBlock, deleteRecurringBlock, updateSettings, addPromoCode, updatePromoCode, deletePromoCode, getCalendarSyncConfig, setCalendarSyncConfig, regenerateCalendarToken, validateInterval, addCustomer, updateCustomer, deleteCustomer,
     updateOperatingHours, addService, updateService, deleteService, addExtra, updateExtra, deleteExtra, updateStaff, addStaff, deleteStaff
-  }), [loading, bookings, rooms, services, staff, blocks, recurringBlocks, specialHours, settings, promoCodes, customers, waitlist, extras, operatingHours, calSync, getOperatingWindow, calculatePricing, getValidStartTimes, findFirstAvailableRoomAndStaff, addBooking, updateBooking, getBookingByMagicToken, canRescheduleOrCancel, getEnabledExtras, computeExtrasTotal, buildBookingExtrasSnapshot, addWaitlistEntry, getWaitlistForDate, setWaitlistStatus, deleteWaitlistEntry, buildWaitlistMessage, buildWhatsAppUrl, getBusyIntervals, getBookingsForDate, getBlocksForDate, addBlock, deleteBlock, toggleRecurringBlock, deleteRecurringBlock, updateSettings, addPromoCode, updatePromoCode, deletePromoCode, getCalendarSyncConfig, setCalendarSyncConfig, regenerateCalendarToken, validateInterval, addCustomer, updateCustomer, deleteCustomer, updateOperatingHours, addService, updateService, deleteService, addExtra, updateExtra, deleteExtra, updateStaff, addStaff, deleteStaff]);
+  }), [loading, loadError, bookings, rooms, services, staff, blocks, recurringBlocks, specialHours, settings, promoCodes, customers, waitlist, extras, operatingHours, calSync, getOperatingWindow, calculatePricing, getValidStartTimes, findFirstAvailableRoomAndStaff, addBooking, updateBooking, getBookingByMagicToken, canRescheduleOrCancel, getEnabledExtras, computeExtrasTotal, buildBookingExtrasSnapshot, addWaitlistEntry, getWaitlistForDate, setWaitlistStatus, deleteWaitlistEntry, buildWaitlistMessage, buildWhatsAppUrl, getBusyIntervals, getBookingsForDate, getBlocksForDate, addBlock, deleteBlock, toggleRecurringBlock, deleteRecurringBlock, updateSettings, addPromoCode, updatePromoCode, deletePromoCode, getCalendarSyncConfig, setCalendarSyncConfig, regenerateCalendarToken, validateInterval, addCustomer, updateCustomer, deleteCustomer, updateOperatingHours, addService, updateService, deleteService, addExtra, updateExtra, deleteExtra, updateStaff, addStaff, deleteStaff]);
 
   return (
     <StoreContext.Provider value={value} >
