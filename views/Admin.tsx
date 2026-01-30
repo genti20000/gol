@@ -1239,6 +1239,16 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                 <div key={e.id} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                   <div className="flex-1 space-y-2 w-full">
                     <input type="text" value={e.name} onChange={async val => await store.updateExtra(e.id, { name: val.target.value })} className="w-full bg-transparent border-none text-white font-bold uppercase text-sm outline-none focus:text-amber-500" />
+                    <div className="space-y-2">
+                      <label className="text-[8px] font-bold uppercase tracking-widest text-zinc-600">Info Text</label>
+                      <textarea
+                        value={e.infoText || ''}
+                        onChange={async val => await store.updateExtra(e.id, { infoText: val.target.value })}
+                        rows={2}
+                        className="w-full bg-zinc-900/60 border border-zinc-800 rounded-xl px-3 py-2 text-[10px] text-white outline-none focus:ring-1 ring-amber-500"
+                        placeholder="Add optional details for the booking info popup."
+                      />
+                    </div>
                     <div className="flex gap-4">
                       <button onClick={async () => await store.updateExtra(e.id, { pricingMode: 'flat' })} className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded border ${e.pricingMode === 'flat' ? 'bg-amber-500 text-black border-amber-400' : 'bg-zinc-900 text-zinc-600 border-zinc-800'}`}>Flat Rate</button>
                       <button onClick={async () => await store.updateExtra(e.id, { pricingMode: 'per_person' })} className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded border ${e.pricingMode === 'per_person' ? 'bg-amber-500 text-black border-amber-400' : 'bg-zinc-900 text-zinc-600 border-zinc-800'}`}>Per Person</button>

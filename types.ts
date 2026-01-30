@@ -48,6 +48,7 @@ export interface Extra {
   id: string;
   name: string;
   description?: string;
+  infoText?: string;
   price: number;
   pricingMode: 'flat' | 'per_person';
   enabled: boolean;
