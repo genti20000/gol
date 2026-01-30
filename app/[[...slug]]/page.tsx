@@ -9,7 +9,7 @@ import Processing from '@/views/Processing';
 import Cancelled from '@/views/Cancelled';
 import Admin from '@/views/Admin';
 import ManageBooking from '@/views/ManageBooking';
-import { WHATSAPP_URL, LOGO_URL } from '@/constants';
+import { LOGO_URL } from '@/constants';
 import { RouterContext, RouteState } from '@/lib/routerShim';
 import { StoreProvider } from '@/store';
 
@@ -30,20 +30,10 @@ function Header({ navigate }: { navigate: (p: string) => void }) {
   );
 }
 
-function FloatingWhatsApp({ currentPath }: { currentPath: string }) {
-  if (currentPath.startsWith("/admin")) return null;
-
-  return (
-    <a href={WHATSAPP_URL} target="_blank" className="fixed bottom-8 right-8 z-[60] flex items-center gap-3 bg-[#25D366] hover:scale-110 active:scale-95 transition-all text-white p-4 sm:px-6 sm:py-4 rounded-full shadow-2xl no-underline">
-      <i className="fa-brands fa-whatsapp text-2xl"></i>
-      <span className="hidden sm:inline text-[9px] font-bold uppercase tracking-[0.2em]">Live Support</span>
-    </a>
-  );
-}
-
 export default function Page() {
   const [route, setRoute] = useState<RouteState>({ path: '/', params: new URLSearchParams() });
   const [history, setHistory] = useState<RouteState[]>([]);
+  const isAdmin = route.path.startsWith('/admin');
 
   useEffect(() => {
     const syncRouteFromUrl = () => {
@@ -101,7 +91,7 @@ export default function Page() {
 
   return (
     <RouterContext.Provider value={{ route, navigate, back }}>
-      <StoreProvider mode={route.path.startsWith('/admin') ? 'admin' : 'public'}>
+      <StoreProvider mode={isAdmin ? 'admin' : 'public'}>
         <div className="min-h-screen bg-zinc-950 text-zinc-50 pt-16 font-sans flex flex-col">
           <Header navigate={navigate} />
 
@@ -124,13 +114,27 @@ export default function Page() {
                     <li><a href="#" className="no-underline text-inherit">Catering</a></li>
                   </ul>
                 </div>
-                <div className="space-y-4">
-                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Company</h4>
-                  <ul className="text-xs space-y-2 text-zinc-500 uppercase font-bold tracking-tighter list-none p-0">
-                    <li><button onClick={() => navigate('/admin')} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white uppercase font-bold tracking-tighter text-xs text-left">Staff Console</button></li>
-                    <li><a href="#" className="no-underline text-inherit">Terms</a></li>
-                    <li><a href="#" className="no-underline text-inherit">Privacy</a></li>
-                  </ul>
+                <div className="space-y-8">
+                  <div className="space-y-4">
+                    <h4 className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Company</h4>
+                    <ul className="text-xs space-y-2 text-zinc-500 uppercase font-bold tracking-tighter list-none p-0">
+                      <li><button onClick={() => navigate('/admin')} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white uppercase font-bold tracking-tighter text-xs text-left">Staff Console</button></li>
+                      <li><a href="#" className="no-underline text-inherit">Terms</a></li>
+                      <li><a href="#" className="no-underline text-inherit">Privacy</a></li>
+                    </ul>
+                  </div>
+                  {!isAdmin && (
+                    <div className="space-y-4">
+                      <h4 className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Live Support</h4>
+                      <ul className="text-xs space-y-2 text-zinc-500 uppercase font-bold tracking-tighter list-none p-0">
+                        <li>
+                          <a href="tel:+447761383514" className="no-underline text-inherit">
+                            Call Support
+                          </a>
+                        </li>
+                      </ul>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -138,7 +142,6 @@ export default function Page() {
               &copy; {new Date().getFullYear()} London Karaoke Club. V2.1-DB.
             </div>
           </footer>
-          <FloatingWhatsApp currentPath={route.path} />
         </div>
       </StoreProvider>
     </RouterContext.Provider>
