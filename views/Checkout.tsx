@@ -34,9 +34,12 @@ export default function Checkout() {
   const [extrasSelection, setExtrasSelection] = useState<Record<string, number>>({});
   const [currentStep, setCurrentStep] = useState<'extras' | 'details' | 'payment'>('details');
   const [showExtrasInfo, setShowExtrasInfo] = useState(false);
+  const [activeExtraInfoId, setActiveExtraInfoId] = useState<string | null>(null);
   const embeddedCheckoutRef = useRef<HTMLDivElement | null>(null);
   const extrasInfoRef = useRef<HTMLDivElement | null>(null);
   const extrasInfoButtonRef = useRef<HTMLButtonElement | null>(null);
+  const extraInfoRef = useRef<HTMLDivElement | null>(null);
+  const extraInfoButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const date = route.params.get('date') || '';
   const time = route.params.get('time') || '';
@@ -175,6 +178,23 @@ export default function Checkout() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showExtrasInfo]);
+
+  useEffect(() => {
+    if (!activeExtraInfoId) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (extraInfoRef.current?.contains(target) || extraInfoButtonRef.current?.contains(target)) {
+        return;
+      }
+      setActiveExtraInfoId(null);
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [activeExtraInfoId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -345,7 +365,42 @@ export default function Checkout() {
               {enabledExtras.map((extra: Extra) => (
                 <div key={extra.id} className={`p-6 rounded-[1.5rem] border transition-all flex items-center justify-between gap-6 ${extrasSelection[extra.id] ? 'bg-amber-500/5 border-amber-500/40' : 'glass-panel border-zinc-800'}`}>
                   <div className="flex-1">
-                    <p className="text-sm font-bold uppercase tracking-tight text-white">{extra.name}</p>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-bold uppercase tracking-tight text-white">{extra.name}</p>
+                      {extra.description && (
+                        <div className="relative">
+                          <button
+                            ref={activeExtraInfoId === extra.id ? extraInfoButtonRef : undefined}
+                            type="button"
+                            onClick={() => setActiveExtraInfoId((prev) => (prev === extra.id ? null : extra.id))}
+                            aria-label={`More info about ${extra.name}`}
+                            aria-expanded={activeExtraInfoId === extra.id}
+                            className="w-7 h-7 rounded-full border border-zinc-800 bg-zinc-950/70 text-zinc-400 hover:text-white hover:border-zinc-700 transition-colors flex items-center justify-center"
+                          >
+                            <i className="fa-solid fa-circle-info text-[11px]"></i>
+                          </button>
+                          {activeExtraInfoId === extra.id && (
+                            <div
+                              ref={extraInfoRef}
+                              className="absolute right-0 mt-3 w-56 rounded-2xl border border-zinc-800 bg-zinc-950/95 p-3 text-[10px] text-zinc-300 shadow-2xl shadow-black/40 backdrop-blur"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <p className="font-semibold uppercase tracking-widest text-[9px] text-white">Extra Details</p>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveExtraInfoId(null)}
+                                  className="text-zinc-500 hover:text-white transition-colors"
+                                  aria-label={`Close ${extra.name} details`}
+                                >
+                                  <i className="fa-solid fa-xmark text-[10px]"></i>
+                                </button>
+                              </div>
+                              <p className="mt-2 text-zinc-400 leading-relaxed">{extra.description}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mt-1">
                       £{extra.price} {extra.pricingMode === 'per_person' ? 'per guest' : 'flat rate'}
                     </p>
