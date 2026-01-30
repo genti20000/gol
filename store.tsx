@@ -56,9 +56,9 @@ const DEFAULT_SERVICES: Service[] = [
 ];
 
 const DEFAULT_EXTRAS: Extra[] = [
-  { id: 'ext-1', name: 'Pizza Party Platter', price: 45, pricingMode: 'flat', enabled: true, sortOrder: 1 },
-  { id: 'ext-2', name: 'Bottle of Prosecco', price: 35, pricingMode: 'flat', enabled: true, sortOrder: 2 },
-  { id: 'ext-3', name: 'Unlimited Soft Drinks', price: 5, pricingMode: 'per_person', enabled: true, sortOrder: 3 },
+  { id: 'ext-1', name: 'Pizza Party Platter', price: 45, pricingMode: 'flat', enabled: true, sortOrder: 1, infoText: '' },
+  { id: 'ext-2', name: 'Bottle of Prosecco', price: 35, pricingMode: 'flat', enabled: true, sortOrder: 2, infoText: '' },
+  { id: 'ext-3', name: 'Unlimited Soft Drinks', price: 5, pricingMode: 'per_person', enabled: true, sortOrder: 3, infoText: '' },
 ];
 
 interface StoreContextValue {
@@ -297,6 +297,7 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
         });
         if (extrasData) setExtras(extrasData.map(e => ({
           ...e,
+          infoText: e.info_text ?? '',
           pricingMode: e.pricing_mode as 'flat' | 'per_person',
           sortOrder: e.sort_order
         })));
@@ -802,10 +803,11 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
   }, []);
 
   const toExtraDbPayload = useCallback((extra: Partial<Extra>) => {
-    const { pricingMode, sortOrder, ...rest } = extra;
+    const { pricingMode, sortOrder, infoText, ...rest } = extra;
     const payload: Record<string, unknown> = { ...rest };
     if (pricingMode !== undefined) payload.pricing_mode = pricingMode;
     if (sortOrder !== undefined) payload.sort_order = sortOrder;
+    if (infoText !== undefined) payload.info_text = infoText;
     return payload;
   }, []);
 
