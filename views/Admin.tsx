@@ -19,7 +19,7 @@ import {
   WaitlistEntry,
   Extra
 } from '../types';
-import { ROOMS, LOGO_URL, PRICING_TIERS, EXTRAS, SLOT_MINUTES, BUFFER_MINUTES, getGuestLabel } from '../constants';
+import { ROOMS, LOGO_URL, PRICING_TIERS, EXTRAS, SLOT_MINUTES, BUFFER_MINUTES, getGuestLabel, LS_ADMIN_USERS } from '../constants';
 
 type Tab = 'bookings' | 'customers' | 'blocks' | 'settings' | 'reports';
 type ViewMode = 'day' | 'week' | 'month';
@@ -46,6 +46,12 @@ const handleMutation = async (action: Promise<MutationResult>, fallbackMessage: 
   return true;
 };
 
+const parseAllowlist = (value: string) =>
+  value
+    .split(',')
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean);
+
 export default function Admin() {
   const store = useStore();
   const [activeTab, setActiveTab] = useState<Tab>('bookings');
@@ -55,13 +61,16 @@ export default function Admin() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [credentials, setCredentials] = useState({ email: '', password: '' });
+  const [localAllowlist, setLocalAllowlist] = useState<string[]>([]);
+  const [localAllowlistInput, setLocalAllowlistInput] = useState('');
 
   const allowedEmails = useMemo(
-    () => (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? '')
-      .split(',')
-      .map(email => email.trim().toLowerCase())
-      .filter(Boolean),
-    []
+    () => {
+      const envAllowlist = parseAllowlist(process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? '');
+      const combined = new Set([...envAllowlist, ...localAllowlist]);
+      return Array.from(combined);
+    },
+    [localAllowlist]
   );
 
   const allowlistConfigured = useMemo(() => allowedEmails.length > 0, [allowedEmails.length]);
@@ -91,6 +100,19 @@ export default function Admin() {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const storedAllowlist = localStorage.getItem(LS_ADMIN_USERS) ?? '';
+    setLocalAllowlistInput(storedAllowlist);
+    setLocalAllowlist(parseAllowlist(storedAllowlist));
+  }, []);
+
+  useEffect(() => {
+    if (!session?.user?.email) return;
+    if (localAllowlistInput.trim()) return;
+    setLocalAllowlistInput(session.user.email);
+  }, [localAllowlistInput, session?.user?.email]);
+
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
     setAuthError(null);
@@ -106,6 +128,19 @@ export default function Admin() {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     setSession(null);
+  };
+
+  const handleLocalAllowlistSave = (event: React.FormEvent) => {
+    event.preventDefault();
+    const trimmedValue = localAllowlistInput.trim();
+    if (typeof window !== 'undefined') {
+      if (trimmedValue) {
+        localStorage.setItem(LS_ADMIN_USERS, trimmedValue);
+      } else {
+        localStorage.removeItem(LS_ADMIN_USERS);
+      }
+    }
+    setLocalAllowlist(parseAllowlist(trimmedValue));
   };
 
   useEffect(() => {
@@ -217,6 +252,29 @@ export default function Admin() {
                 : 'Set NEXT_PUBLIC_ADMIN_EMAILS to enable admin access.'}
             </p>
           </div>
+          {!allowlistConfigured && (
+            <form onSubmit={handleLocalAllowlistSave} className="space-y-3 text-left">
+              <div className="space-y-2">
+                <label className="text-[9px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Local allowlist (comma-separated)</label>
+                <input
+                  type="text"
+                  value={localAllowlistInput}
+                  onChange={(event) => setLocalAllowlistInput(event.target.value)}
+                  placeholder="name@company.com, admin@company.com"
+                  className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-4 py-3 text-[11px] text-white outline-none focus:ring-1 ring-amber-500 shadow-inner"
+                />
+              </div>
+              <p className="text-[9px] uppercase tracking-widest text-zinc-500">
+                Saved only in this browser for local access.
+              </p>
+              <button
+                type="submit"
+                className="w-full gold-gradient text-black py-3 rounded-xl text-[9px] font-bold uppercase tracking-widest shadow-xl shadow-amber-500/10 active:scale-95 transition-transform"
+              >
+                Save Allowlist
+              </button>
+            </form>
+          )}
           <button
             onClick={handleSignOut}
             className="w-full bg-zinc-900 border border-zinc-800 py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest text-white"
