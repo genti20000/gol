@@ -63,7 +63,7 @@ export default function Results() {
     if (result.ok) {
       setWaitlistSent(true);
     } else {
-      setError(result.reason || "Failed to join waitlist");
+      setError(result.error || "Failed to join waitlist");
     }
   };
 
