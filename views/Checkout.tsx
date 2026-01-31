@@ -7,6 +7,11 @@ import { Booking, Extra } from '@/types';
 import { EXTRAS, PRICING_TIERS, getGuestLabel } from '@/constants';
 import { shouldShowExtraInfoIcon } from '@/lib/extras';
 import { computeAmountDueNow } from '@/lib/paymentLogic';
+import {
+  REQUIRED_BOOKING_DRAFT_FIELDS,
+  normalizeBookingDraftInput,
+  validateBookingDraftInput
+} from '@/lib/bookingValidation';
 
 export default function Checkout() {
   const { route, navigate, back } = useRouterShim();
@@ -70,7 +75,37 @@ export default function Checkout() {
       }),
     [store.settings.deposit_enabled, store.settings.deposit_amount, estimatedTotal]
   );
-  const draftKey = `${date}|${time}|${guests}|${extraHours}|${promo}|${queryServiceId ?? ''}|${queryStaffId ?? ''}`;
+  const bookingDraftValidation = useMemo(
+    () =>
+      validateBookingDraftInput({
+        date,
+        time,
+        guests,
+        extraHours,
+        firstName: formData.name,
+        surname: formData.surname,
+        email: formData.email
+      }),
+    [date, time, guests, extraHours, formData.name, formData.surname, formData.email]
+  );
+  const normalizedDraftInput = useMemo(
+    () =>
+      normalizeBookingDraftInput({
+        date,
+        time,
+        guests,
+        extraHours,
+        firstName: formData.name,
+        surname: formData.surname,
+        email: formData.email
+      }),
+    [date, time, guests, extraHours, formData.name, formData.surname, formData.email]
+  );
+  const hasValidDraftDetails = bookingDraftValidation.isValid;
+  const draftFieldErrors = bookingDraftValidation.fieldErrors;
+  const draftErrorSummary = Object.values(draftFieldErrors);
+
+  const draftKey = `${date}|${time}|${guests}|${extraHours}|${promo}|${queryServiceId ?? ''}|${queryStaffId ?? ''}|${normalizedDraftInput.firstName}|${normalizedDraftInput.surname}|${normalizedDraftInput.email}|${formData.phone}|${formData.notes}`;
   const bookingId = draftBooking?.id ?? null;
   const summaryGuestCount = draftBooking?.guests ?? guests;
   const summaryStartDate = draftBooking?.start_at ? new Date(draftBooking.start_at) : new Date(date);
@@ -128,7 +163,7 @@ export default function Checkout() {
   }, [paymentRedirectUrl]);
 
   useEffect(() => {
-    if (!hasValidBookingDetails) {
+    if (!hasValidBookingDetails || !hasValidDraftDetails) {
       return;
     }
 
@@ -147,13 +182,18 @@ export default function Checkout() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            date,
-            time,
-            guests,
-            extraHours,
+            date: normalizedDraftInput.date,
+            time: normalizedDraftInput.time,
+            guests: normalizedDraftInput.guests,
+            extraHours: normalizedDraftInput.extraHours,
             promo,
             serviceId: queryServiceId,
-            staffId: queryStaffId
+            staffId: queryStaffId,
+            firstName: normalizedDraftInput.firstName,
+            surname: normalizedDraftInput.surname,
+            email: normalizedDraftInput.email,
+            phone: formData.phone?.trim() || null,
+            notes: formData.notes?.trim() || null
           })
         });
 
@@ -180,7 +220,21 @@ export default function Checkout() {
     };
 
     void createDraft();
-  }, [date, draftKey, extraHours, guests, hasValidBookingDetails, promo, queryServiceId, queryStaffId, time]);
+  }, [
+    date,
+    draftKey,
+    extraHours,
+    guests,
+    hasValidBookingDetails,
+    hasValidDraftDetails,
+    promo,
+    queryServiceId,
+    queryStaffId,
+    time,
+    normalizedDraftInput,
+    formData.notes,
+    formData.phone
+  ]);
 
   useEffect(() => {
     if (!showExtrasInfo) {
@@ -244,6 +298,10 @@ export default function Checkout() {
     try {
       if (!hasValidBookingDetails) {
         setPaymentError('Please select valid booking details before continuing.');
+        return;
+      }
+      if (!hasValidDraftDetails) {
+        setPaymentError('Please complete all required guest details before continuing.');
         return;
       }
       if (!bookingId) {
@@ -510,16 +568,43 @@ export default function Checkout() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
                 <div className="flex flex-col gap-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">First Name</label>
-                  <input type="text" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner min-h-[44px]" />
+                  <input
+                    type="text"
+                    required
+                    value={formData.name}
+                    onChange={e => setFormData({ ...formData, name: e.target.value })}
+                    className={`bg-zinc-900 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 shadow-inner min-h-[44px] ${draftFieldErrors.firstName ? 'border-red-500/60 ring-red-500' : 'border-zinc-800 ring-amber-500'}`}
+                  />
+                  {draftFieldErrors.firstName && (
+                    <p className="text-[9px] uppercase tracking-widest text-red-300 ml-1">{draftFieldErrors.firstName}</p>
+                  )}
                 </div>
                 <div className="flex flex-col gap-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Surname</label>
-                  <input type="text" required value={formData.surname} onChange={e => setFormData({ ...formData, surname: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner min-h-[44px]" />
+                  <input
+                    type="text"
+                    required
+                    value={formData.surname}
+                    onChange={e => setFormData({ ...formData, surname: e.target.value })}
+                    className={`bg-zinc-900 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 shadow-inner min-h-[44px] ${draftFieldErrors.surname ? 'border-red-500/60 ring-red-500' : 'border-zinc-800 ring-amber-500'}`}
+                  />
+                  {draftFieldErrors.surname && (
+                    <p className="text-[9px] uppercase tracking-widest text-red-300 ml-1">{draftFieldErrors.surname}</p>
+                  )}
                 </div>
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Email Address</label>
-                <input type="email" required value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner min-h-[44px]" />
+                <input
+                  type="email"
+                  required
+                  value={formData.email}
+                  onChange={e => setFormData({ ...formData, email: e.target.value })}
+                  className={`bg-zinc-900 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 text-white outline-none focus:ring-1 shadow-inner min-h-[44px] ${draftFieldErrors.email ? 'border-red-500/60 ring-red-500' : 'border-zinc-800 ring-amber-500'}`}
+                />
+                {draftFieldErrors.email && (
+                  <p className="text-[9px] uppercase tracking-widest text-red-300 ml-1">{draftFieldErrors.email}</p>
+                )}
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Phone Number</label>
@@ -531,9 +616,19 @@ export default function Checkout() {
             </div>
           </div>
 
-          {paymentError && (
-            <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-red-200">
-              {paymentError}
+          {(paymentError || draftErrorSummary.length > 0) && (
+            <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-red-200 space-y-2">
+              {paymentError && <p>{paymentError}</p>}
+              {draftErrorSummary.length > 0 && (
+                <>
+                  <p>Please complete the highlighted fields before confirming your booking.</p>
+                  <ul className="list-disc list-inside space-y-1 text-[9px] text-red-100/80 uppercase tracking-widest">
+                    {REQUIRED_BOOKING_DRAFT_FIELDS.filter((field) => draftFieldErrors[field]).map((field) => (
+                      <li key={field}>{draftFieldErrors[field]}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
             </div>
           )}
 
@@ -551,9 +646,7 @@ export default function Checkout() {
               disabled={
                 isProcessing ||
                 isDraftLoading ||
-                !formData.name ||
-                !formData.surname ||
-                !formData.email ||
+                !hasValidDraftDetails ||
                 !bookingId ||
                 Boolean(draftError)
               }

@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 import { BASE_DURATION_HOURS, EXTRAS, MIDWEEK_DISCOUNT_PERCENT, PRICING_TIERS } from '@/constants';
+import {
+  REQUIRED_BOOKING_DRAFT_FIELDS,
+  REQUIRED_BOOKING_INSERT_FIELDS,
+  buildCustomerName,
+  validateBookingDraftInput
+} from '@/lib/bookingValidation';
 import { computeAmountDueNow } from '@/lib/paymentLogic';
 import { BookingStatus } from '@/types';
 
@@ -26,12 +32,6 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const isNonEmptyString = (value?: string | null): value is string =>
   typeof value === 'string' && value.trim().length > 0;
 
-const parseNumber = (value: number | string | undefined) => {
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string' && value.trim().length > 0) return Number(value);
-  return NaN;
-};
-
 export async function POST(request: Request) {
   try {
     if (!supabaseUrl || !supabaseServiceKey) {
@@ -46,23 +46,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid request payload.' }, { status: 400 });
     }
 
-    const date = payload.date?.trim();
-    const time = payload.time?.trim();
-    const guests = parseNumber(payload.guests);
-    const extraHours = parseNumber(payload.extraHours);
+    const validation = validateBookingDraftInput(payload);
+    if (!validation.isValid) {
+      return NextResponse.json(
+        {
+          error: 'Missing or invalid booking details.',
+          fields: validation.fieldErrors,
+          required: REQUIRED_BOOKING_DRAFT_FIELDS
+        },
+        { status: 400 }
+      );
+    }
+
+    const { date, time, guests, extraHours, firstName, surname, email } = validation.normalized;
     const promo = payload.promo?.trim() ?? '';
-
-    if (!date || !time) {
-      return NextResponse.json({ error: 'Missing date or time.' }, { status: 400 });
-    }
-
-    if (!Number.isFinite(guests)) {
-      return NextResponse.json({ error: 'Invalid guests value.' }, { status: 400 });
-    }
-
-    if (!Number.isFinite(extraHours)) {
-      return NextResponse.json({ error: 'Invalid extra hours value.' }, { status: 400 });
-    }
 
     const tier = PRICING_TIERS.find((t) => guests >= t.min && guests <= t.max);
     if (!tier) {
@@ -75,9 +72,6 @@ export async function POST(request: Request) {
     }
 
     const startDate = new Date(`${date}T${time}`);
-    if (!Number.isFinite(startDate.getTime())) {
-      return NextResponse.json({ error: 'Invalid booking date or time.' }, { status: 400 });
-    }
 
     const totalDurationHours = BASE_DURATION_HOURS + extraHours;
     const endDate = new Date(startDate.getTime() + totalDurationHours * 3600000);
@@ -181,7 +175,25 @@ export async function POST(request: Request) {
     }
 
     if (existingDraft) {
-      return NextResponse.json({ bookingId: existingDraft.id, booking: existingDraft });
+      const { data: refreshedDraft, error: refreshError } = await supabase
+        .from('bookings')
+        .update({
+          customer_name: buildCustomerName(firstName, surname),
+          customer_surname: surname,
+          customer_email: email,
+          customer_phone: isNonEmptyString(payload.phone) ? payload.phone.trim() : null,
+          notes: isNonEmptyString(payload.notes) ? payload.notes.trim() : null
+        })
+        .eq('id', existingDraft.id)
+        .select('*')
+        .maybeSingle();
+
+      if (refreshError) {
+        console.error('Failed to refresh booking draft details.', refreshError);
+        return NextResponse.json({ error: 'Unable to update booking draft.' }, { status: 500 });
+      }
+
+      return NextResponse.json({ bookingId: existingDraft.id, booking: refreshedDraft ?? existingDraft });
     }
 
     const { data: rooms, error: roomsError } = await supabase
@@ -268,11 +280,11 @@ export async function POST(request: Request) {
       status: BookingStatus.DRAFT,
       expires_at: expiresAt,
       guests,
-      customer_name: isNonEmptyString(payload.firstName) ? payload.firstName : null,
-      customer_surname: isNonEmptyString(payload.surname) ? payload.surname : null,
-      customer_email: isNonEmptyString(payload.email) ? payload.email : null,
-      customer_phone: isNonEmptyString(payload.phone) ? payload.phone : null,
-      notes: isNonEmptyString(payload.notes) ? payload.notes : null,
+      customer_name: buildCustomerName(firstName, surname),
+      customer_surname: surname,
+      customer_email: email,
+      customer_phone: isNonEmptyString(payload.phone) ? payload.phone.trim() : null,
+      notes: isNonEmptyString(payload.notes) ? payload.notes.trim() : null,
       base_total: baseTotal,
       extras_hours: extraHours,
       extras_price: extrasPrice,
@@ -287,7 +299,23 @@ export async function POST(request: Request) {
       extras_snapshot: []
     };
 
-    console.info('Booking draft insert payload.', bookingPayload);
+    const missingInsertFields = REQUIRED_BOOKING_INSERT_FIELDS.filter((field) => {
+      const value = bookingPayload[field as keyof typeof bookingPayload];
+      if (typeof value === 'string') return value.trim().length === 0;
+      return value === null || value === undefined;
+    });
+
+    if (missingInsertFields.length > 0) {
+      return NextResponse.json(
+        {
+          error: 'Missing required booking fields for insert.',
+          fields: missingInsertFields
+        },
+        { status: 400 }
+      );
+    }
+
+    console.log('booking insert payload', bookingPayload);
 
     const { data: insertedBooking, error: bookingError } = await supabase
       .from('bookings')
