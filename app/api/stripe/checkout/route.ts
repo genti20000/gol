@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 import { BookingStatus } from "@/types";
-import { computeAmountDueNow, normalizeAmount } from "@/lib/paymentLogic";
+import { normalizeAmount } from "@/lib/paymentLogic";
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     // Fetch booking amount from DB (do NOT trust client)
     const { data: booking, error } = await supabase
       .from("bookings")
-      .select("total_price,status,deposit_paid,stripe_session_id")
+      .select("total_price,deposit_amount,status,deposit_paid,stripe_session_id")
       .eq("id", bookingId)
       .single();
 
@@ -51,6 +51,7 @@ export async function POST(req: Request) {
     }
 
     const totalPrice = normalizeAmount(booking.total_price);
+    const bookingDepositAmount = normalizeAmount(booking.deposit_amount);
 
     if (booking.status === BookingStatus.CANCELLED) {
       return NextResponse.json({ error: "Booking has been cancelled." }, { status: 400 });
@@ -74,22 +75,21 @@ export async function POST(req: Request) {
     }
 
     const depositEnabled = Boolean(settings?.deposit_enabled);
-    const depositAmount = normalizeAmount(settings?.deposit_amount);
-    const dueNow = computeAmountDueNow({ totalPrice, depositEnabled, depositAmount });
-    const unitAmount = Math.round(dueNow * 100);
+    const settingsDepositAmount = normalizeAmount(settings?.deposit_amount);
+    const amountToCharge = depositEnabled ? bookingDepositAmount || settingsDepositAmount : totalPrice;
+    const unitAmount = Math.round(amountToCharge * 100);
     if (!Number.isFinite(unitAmount) || unitAmount < 0) {
       return NextResponse.json({ error: "Booking total is invalid." }, { status: 400 });
     }
 
-    if (unitAmount <= 0) {
+    if (unitAmount === 0) {
       const { error: updateError } = await supabase
         .from("bookings")
         .update({
           status: "CONFIRMED",
-          deposit_paid: true,
-          deposit_forfeited: false,
-          amount_paid: dueNow,
-          deposit_amount: 0
+          deposit_paid: false,
+          amount_charged: 0,
+          payment_intent_id: null
         })
         .eq("id", bookingId);
 
@@ -98,24 +98,13 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Unable to confirm booking." }, { status: 500 });
       }
 
-      console.log("Booking confirmed without payment.", { bookingId, dueNow });
-      return NextResponse.json({
-        skipPayment: true,
-        redirectUrl: `/booking/confirmed?id=${bookingId}`,
-        dueNow
-      });
+      console.log("Booking confirmed without payment.", { bookingId, amountToCharge });
+      return NextResponse.json({ confirmed: true });
     }
 
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL;
     if (!siteUrl) {
       return NextResponse.json({ error: "Site URL is not configured." }, { status: 500 });
-    }
-
-    if (booking.stripe_session_id) {
-      const existingSession = await stripe.checkout.sessions.retrieve(booking.stripe_session_id);
-      if (existingSession.url) {
-        return NextResponse.json({ redirectUrl: existingSession.url, dueNow });
-      }
     }
 
     const session = await stripe.checkout.sessions.create(
@@ -127,18 +116,19 @@ export async function POST(req: Request) {
               currency: "gbp",
               unit_amount: unitAmount,
               product_data: {
-                name: "London Karaoke Club Booking",
+                name: "Karaoke booking – deposit/payment",
               },
             },
             quantity: 1,
           },
         ],
         metadata: {
-          bookingId,
+          booking_id: bookingId,
         },
         payment_intent_data: {
+          description: "Karaoke booking – deposit/payment",
           metadata: {
-            bookingId
+            booking_id: bookingId
           }
         },
         success_url: `${siteUrl}/booking/confirmed?id=${bookingId}&session_id={CHECKOUT_SESSION_ID}`,
@@ -156,8 +146,8 @@ export async function POST(req: Request) {
       .from("bookings")
       .update({
         stripe_session_id: session.id,
-        stripe_payment_intent_id: typeof session.payment_intent === "string" ? session.payment_intent : undefined,
-        deposit_amount: dueNow,
+        payment_intent_id: typeof session.payment_intent === "string" ? session.payment_intent : undefined,
+        amount_charged: 0,
         status: BookingStatus.PENDING,
         deposit_paid: false
       })
@@ -167,7 +157,7 @@ export async function POST(req: Request) {
       console.error("Failed to store Stripe session for booking.", stripeUpdateError);
     }
 
-    return NextResponse.json({ redirectUrl: session.url, dueNow });
+    return NextResponse.json({ checkoutUrl: session.url });
   } catch (error) {
     console.error("Failed to create Stripe Checkout session.", error);
     return NextResponse.json({ error: "Unable to start checkout." }, { status: 500 });
