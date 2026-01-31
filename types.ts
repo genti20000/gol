@@ -5,6 +5,7 @@ export enum RateType {
 }
 
 export enum BookingStatus {
+  DRAFT = 'DRAFT',
   PENDING = 'PENDING',
   CONFIRMED = 'CONFIRMED',
   FAILED = 'FAILED',

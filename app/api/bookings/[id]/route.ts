@@ -25,9 +25,12 @@ export async function GET(
     .from('bookings')
     .select('id,status')
     .eq('id', bookingId)
-    .single();
+    .maybeSingle();
 
   if (error || !data) {
+    if (error) {
+      console.error('Failed to load booking by id.', error);
+    }
     return NextResponse.json({ error: 'Booking not found.' }, { status: 404 });
   }
 

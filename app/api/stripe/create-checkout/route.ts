@@ -38,7 +38,7 @@ export async function POST(req: Request) {
       .from("bookings")
       .select("total_price,deposit_amount,status,deposit_paid,stripe_session_id")
       .eq("id", bookingId)
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error("Failed to load booking for checkout session.", error);

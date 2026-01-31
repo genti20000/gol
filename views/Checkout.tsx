@@ -548,7 +548,15 @@ export default function Checkout() {
             )}
             <button
               onClick={handleSubmit}
-              disabled={isProcessing || !formData.name || !formData.surname || !formData.email || !bookingId || Boolean(draftError)}
+              disabled={
+                isProcessing ||
+                isDraftLoading ||
+                !formData.name ||
+                !formData.surname ||
+                !formData.email ||
+                !bookingId ||
+                Boolean(draftError)
+              }
               className={`${enabledExtras.length > 0 ? 'flex-[2]' : 'w-full'} gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-50 text-[10px] min-h-[44px] cursor-pointer`}
             >
               {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : estimatedDueNow <= 0 ? 'Confirm booking' : `Pay £${estimatedDueNow} now`}
