@@ -444,6 +444,36 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     const normalizedStaffId = typeof booking.staff_id === 'string' && booking.staff_id.trim().length > 0
       ? booking.staff_id
       : null;
+    const normalizedRoomId = typeof booking.room_id === 'string' && booking.room_id.trim().length > 0
+      ? booking.room_id.trim()
+      : '';
+    const normalizedRoomName = typeof booking.room_name === 'string' ? booking.room_name.trim() : '';
+    let resolvedRoomName = normalizedRoomName;
+    if (!resolvedRoomName && normalizedRoomId) {
+      resolvedRoomName = rooms.find(room => room.id === normalizedRoomId)?.name?.trim() ?? '';
+    }
+    if (!resolvedRoomName && normalizedRoomId) {
+      const { data: roomData, error: roomError } = await supabase
+        .from('rooms')
+        .select('name')
+        .eq('id', normalizedRoomId)
+        .single();
+      if (roomError) {
+        console.error('Failed to resolve room name for booking.', roomError);
+      }
+      resolvedRoomName = roomData?.name?.trim() ?? '';
+    }
+    if (!normalizedRoomId || !resolvedRoomName) {
+      const message = !normalizedRoomId
+        ? 'Booking is missing a room assignment. Please select a room before continuing.'
+        : 'Booking room could not be resolved. Please refresh and try again.';
+      console.error('Booking room validation failed.', {
+        roomId: normalizedRoomId || booking.room_id,
+        roomName: resolvedRoomName || booking.room_name
+      });
+      alert(message);
+      return null;
+    }
     const cryptoSource = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
     const magicToken = cryptoSource?.randomUUID
       ? cryptoSource.randomUUID()
@@ -456,8 +486,8 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
         return `${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
       })();
     const { data, error } = await supabase.from('bookings').insert([{
-      room_id: booking.room_id,
-      room_name: booking.room_name,
+      room_id: normalizedRoomId,
+      room_name: resolvedRoomName,
       service_id: booking.service_id,
       staff_id: normalizedStaffId,
       start_at: booking.start_at,
@@ -569,7 +599,7 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     }
 
     return newBooking;
-  }, []);
+  }, [rooms]);
 
   const updateBooking = useCallback(async (id: string, patch: Partial<Booking>): Promise<MutationResult> => {
     const payload: Record<string, unknown> = {};
