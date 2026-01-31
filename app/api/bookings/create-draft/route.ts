@@ -144,6 +144,7 @@ export async function POST(request: Request) {
       depositEnabled,
       depositAmount: depositAmountSetting
     });
+    const isZeroDeposit = depositAmount <= 0;
 
     const { data: rooms, error: roomsError } = await supabase
       .from('rooms')
@@ -226,13 +227,12 @@ export async function POST(request: Request) {
       staff_id: isNonEmptyString(payload.staffId) ? payload.staffId : null,
       start_at: startDate.toISOString(),
       end_at: endDate.toISOString(),
-      status: BookingStatus.PENDING,
-      payment_status: 'UNPAID',
+      status: isZeroDeposit ? BookingStatus.CONFIRMED : BookingStatus.PENDING,
       expires_at: expiresAt,
       guests,
-      customer_name: isNonEmptyString(payload.firstName) ? payload.firstName : null,
+      customer_name: isNonEmptyString(payload.firstName) ? payload.firstName : 'Pending Guest',
       customer_surname: isNonEmptyString(payload.surname) ? payload.surname : null,
-      customer_email: isNonEmptyString(payload.email) ? payload.email : null,
+      customer_email: isNonEmptyString(payload.email) ? payload.email : 'pending@booking.local',
       customer_phone: isNonEmptyString(payload.phone) ? payload.phone : null,
       notes: isNonEmptyString(payload.notes) ? payload.notes : null,
       base_total: baseTotal,
@@ -244,14 +244,12 @@ export async function POST(request: Request) {
       total_price: totalPrice,
       source: 'public',
       deposit_amount: depositAmount,
-      deposit_paid: false,
+      deposit_paid: isZeroDeposit,
       extras_total: 0,
       extras_snapshot: []
     };
 
-    if (process.env.NODE_ENV === 'development') {
-      console.debug('Booking draft insert payload.', bookingPayload);
-    }
+    console.info('Booking draft insert payload.', bookingPayload);
 
     const { data: booking, error: bookingError } = await supabase
       .from('bookings')
@@ -260,8 +258,11 @@ export async function POST(request: Request) {
       .single();
 
     if (bookingError || !booking) {
-      console.error('Failed to create booking draft.', bookingError);
-      return NextResponse.json({ error: 'Unable to create booking draft.' }, { status: 500 });
+      console.error('Failed to create booking draft.', { error: bookingError, payload: bookingPayload });
+      const errorMessage = bookingError?.message
+        ? `Unable to create booking draft: ${bookingError.message}`
+        : 'Unable to create booking draft.';
+      return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 
     return NextResponse.json({ bookingId: booking.id, booking });

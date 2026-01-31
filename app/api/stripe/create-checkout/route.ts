@@ -87,7 +87,7 @@ export async function POST(req: Request) {
         .from("bookings")
         .update({
           status: "CONFIRMED",
-          deposit_paid: false,
+          deposit_paid: true,
           amount_charged: 0,
           payment_intent_id: null
         })

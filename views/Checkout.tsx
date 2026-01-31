@@ -160,20 +160,20 @@ export default function Checkout() {
         if (!response.ok) {
           const errorBody = await response.json().catch(() => ({}));
           console.error('Failed to create booking draft.', errorBody);
-          setDraftError(errorBody?.error || 'Unable to load booking.');
+          setDraftError(errorBody?.error || 'Unable to create booking draft.');
           return;
         }
 
         const payload = await response.json().catch(() => ({}));
         if (!payload?.bookingId) {
-          setDraftError('Unable to load booking.');
+          setDraftError('Unable to create booking draft.');
           return;
         }
 
         setDraftBooking(payload.booking ?? null);
       } catch (error) {
         console.error('Failed to create booking draft.', error);
-        setDraftError('Unable to load booking.');
+        setDraftError('Unable to create booking draft.');
       } finally {
         setIsDraftLoading(false);
       }
@@ -252,7 +252,12 @@ export default function Checkout() {
       }
 
       if (draftError) {
-        setPaymentError('Unable to start checkout. Please refresh and try again.');
+        setPaymentError(draftError);
+        return;
+      }
+
+      if ((draftBooking?.deposit_amount ?? 0) <= 0) {
+        navigate(`/booking/confirmed?id=${bookingId}`);
         return;
       }
 
