@@ -164,6 +164,13 @@ export interface PromoCode {
   uses: number;
 }
 
+export interface Offer {
+  id: string;
+  title: string;
+  description?: string;
+  enabled: boolean;
+}
+
 export interface Customer {
   id: string;
   name: string;
@@ -194,6 +201,9 @@ export interface VenueSettings {
   // Lead Time Settings
   minDaysBeforeBooking: number;
   minHoursBeforeBooking: number;
+  // Offers & Discounts
+  midweekDiscountPercent: number;
+  offers: Offer[];
 }
 
 export interface CalendarSyncConfig {
