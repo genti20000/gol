@@ -51,6 +51,19 @@ body {
     box-shadow: 0 0 15px rgba(245, 158, 11, 0.3);
 }
 
+.offer-pill {
+    animation: offer-float 4s ease-in-out infinite;
+}
+
+@keyframes offer-float {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-6px);
+    }
+}
+
 .admin-text-primary { color: var(--text); }
 .admin-text-secondary { color: var(--text2); }
 .admin-text-muted { color: var(--text3); }

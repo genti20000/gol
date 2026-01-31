@@ -17,7 +17,8 @@ import {
   StaffMember,
   Customer,
   WaitlistEntry,
-  Extra
+  Extra,
+  Offer
 } from '../types';
 import { ROOMS, LOGO_URL, PRICING_TIERS, EXTRAS, SLOT_MINUTES, BUFFER_MINUTES, getGuestLabel, LS_ADMIN_USERS } from '../constants';
 
@@ -1247,6 +1248,12 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
     setTimeout(() => setShowSaved(false), 2000);
   };
 
+  const createOfferId = () => {
+    const cryptoSource = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
+    if (cryptoSource?.randomUUID) return cryptoSource.randomUUID();
+    return `offer-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  };
+
   return (
     <div className="flex flex-col lg:flex-row gap-10">
       <div className="lg:w-64 shrink-0 space-y-2 overflow-y-auto no-scrollbar max-h-[80vh]">
@@ -1332,6 +1339,107 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                       onChange={async e => handleSettingChange(() => store.updateSettings({ minHoursBeforeBooking: Math.max(0, parseInt(e.target.value)) }), 'Failed to update minimum hours lead time.')}
                       className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
                     />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-6 border-t border-zinc-900 pt-6 md:col-span-2">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Discounts & Offers</p>
+                    <p className="text-[9px] text-zinc-600 uppercase font-bold tracking-widest mt-1">Homepage offer ribbon + midweek pricing</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Midweek Discount (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={store.settings.midweekDiscountPercent}
+                      onChange={async e => handleSettingChange(() => store.updateSettings({ midweekDiscountPercent: Math.max(0, parseInt(e.target.value || '0')) }), 'Failed to update midweek discount.')}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                    />
+                    <p className="text-[9px] text-zinc-600 uppercase font-bold tracking-widest">Applies Monday–Wednesday</p>
+                  </div>
+                  <div className="p-4 bg-zinc-950 border border-zinc-900 rounded-2xl flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-white uppercase">Show Midweek Offer</p>
+                      <p className="text-[9px] text-zinc-600 uppercase font-bold tracking-widest mt-1">Displayed above the booking form</p>
+                    </div>
+                    <button
+                      onClick={async () => handleSettingChange(() => store.updateSettings({ midweekDiscountPercent: store.settings.midweekDiscountPercent > 0 ? 0 : Math.max(1, store.settings.midweekDiscountPercent || 25) }), 'Failed to toggle midweek offer.')}
+                      className={`w-12 h-6 rounded-full relative transition-all ${store.settings.midweekDiscountPercent > 0 ? 'bg-amber-500' : 'bg-zinc-800'}`}
+                    >
+                      <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${store.settings.midweekDiscountPercent > 0 ? 'left-7' : 'left-1'}`}></div>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Homepage Offer Cards</p>
+                    <button
+                      onClick={async () => {
+                        const nextOffers = [
+                          ...(store.settings.offers || []),
+                          { id: createOfferId(), title: 'New Offer', description: 'Limited time offer', enabled: true } as Offer
+                        ];
+                        await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to add offer.');
+                      }}
+                      className="bg-zinc-900 border border-zinc-800 text-amber-500 px-4 py-2 rounded-xl text-[9px] font-bold uppercase tracking-widest"
+                    >
+                      Add Offer
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4">
+                    {(store.settings.offers || []).map((offer: Offer) => (
+                      <div key={offer.id} className="p-5 bg-zinc-950 border border-zinc-900 rounded-2xl flex flex-col md:flex-row md:items-center gap-4">
+                        <div className="flex-1 space-y-3">
+                          <input
+                            type="text"
+                            value={offer.title}
+                            onChange={async e => {
+                              const nextOffers = (store.settings.offers || []).map((item: Offer) => item.id === offer.id ? { ...item, title: e.target.value } : item);
+                              await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to update offer title.');
+                            }}
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white text-sm font-bold"
+                          />
+                          <input
+                            type="text"
+                            value={offer.description ?? ''}
+                            onChange={async e => {
+                              const nextOffers = (store.settings.offers || []).map((item: Offer) => item.id === offer.id ? { ...item, description: e.target.value } : item);
+                              await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to update offer description.');
+                            }}
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white text-xs"
+                          />
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={async () => {
+                              const nextOffers = (store.settings.offers || []).map((item: Offer) => item.id === offer.id ? { ...item, enabled: !item.enabled } : item);
+                              await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to update offer visibility.');
+                            }}
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all ${offer.enabled ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-zinc-900 border-zinc-800 text-zinc-800'}`}
+                          >
+                            <i className={`fa-solid ${offer.enabled ? 'fa-eye' : 'fa-eye-slash'} text-[12px]`}></i>
+                          </button>
+                          <button
+                            onClick={async () => {
+                              const nextOffers = (store.settings.offers || []).filter((item: Offer) => item.id !== offer.id);
+                              await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to delete offer.');
+                            }}
+                            className="text-zinc-700 hover:text-red-500 p-2"
+                          >
+                            <i className="fa-solid fa-trash-can"></i>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {(store.settings.offers || []).length === 0 && (
+                      <p className="text-[9px] text-zinc-600 uppercase font-bold tracking-widest">No additional offers yet.</p>
+                    )}
                   </div>
                 </div>
               </div>

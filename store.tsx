@@ -16,6 +16,7 @@ import {
   VenueSettings,
   CalendarSyncConfig,
   Extra,
+  Offer,
   DayOperatingHours
 } from './types';
 import { normalizeExtraInfoText } from './lib/extras';
@@ -40,7 +41,9 @@ const DEFAULT_SETTINGS: VenueSettings = {
   deposit_enabled: false,
   deposit_amount: 0,
   minDaysBeforeBooking: 0,
-  minHoursBeforeBooking: 0
+  minHoursBeforeBooking: 0,
+  midweekDiscountPercent: MIDWEEK_DISCOUNT_PERCENT,
+  offers: []
 };
 
 const DEFAULT_CAL_SYNC: CalendarSyncConfig = {
@@ -294,7 +297,9 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
           deposit_enabled: settingsData.deposit_enabled,
           deposit_amount: settingsData.deposit_amount,
           minDaysBeforeBooking: settingsData.min_days_before_booking,
-          minHoursBeforeBooking: settingsData.min_hours_before_booking
+          minHoursBeforeBooking: settingsData.min_hours_before_booking,
+          midweekDiscountPercent: settingsData.midweek_discount_percent ?? MIDWEEK_DISCOUNT_PERCENT,
+          offers: (settingsData.offers ?? []) as Offer[]
         });
         if (extrasData) setExtras(extrasData.map(e => ({
           ...e,
@@ -364,7 +369,7 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     const baseTotal = basePrice;
     const day = new Date(date + 'T00:00:00').getDay();
     const isMidweek = day >= 1 && day <= 3;
-    const discountPercent = isMidweek ? MIDWEEK_DISCOUNT_PERCENT : 0;
+    const discountPercent = isMidweek ? Math.max(0, settings.midweekDiscountPercent ?? MIDWEEK_DISCOUNT_PERCENT) : 0;
     const discountAmount = Math.round((baseTotal + extraPrice) * (discountPercent / 100));
     let promoDiscountAmount = 0;
     if (promoCode) {
@@ -375,8 +380,8 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
       }
     }
     const totalPrice = baseTotal + extraPrice - discountAmount - promoDiscountAmount;
-    return { baseTotal, extrasPrice: extraPrice, discountAmount, promoDiscountAmount, totalPrice };
-  }, [promoCodes]);
+    return { baseTotal, extrasPrice: extraPrice, discountAmount, promoDiscountAmount, totalPrice, discountPercent };
+  }, [promoCodes, settings.midweekDiscountPercent]);
 
   const validateInterval = useCallback((roomId: string, start: string, end: string, excludeBookingId?: string, staffId?: string, skipWindowCheck = false) => {
     const startTs = new Date(start).getTime();
@@ -719,7 +724,9 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
       deposit_enabled: patch.deposit_enabled,
       deposit_amount: patch.deposit_amount,
       min_days_before_booking: patch.minDaysBeforeBooking,
-      min_hours_before_booking: patch.minHoursBeforeBooking
+      min_hours_before_booking: patch.minHoursBeforeBooking,
+      midweek_discount_percent: patch.midweekDiscountPercent,
+      offers: patch.offers
     }).eq('id', 1);
     if (error) return { ok: false, error: error.message };
     setSettings(prev => ({ ...prev, ...patch }));

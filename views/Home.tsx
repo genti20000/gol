@@ -44,6 +44,22 @@ export default function Home() {
   }, [date, store.settings]);
 
   const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promoCode), [date, guests, extraHours, promoCode, store]);
+  const offers = useMemo(() => {
+    const items: { id: string; title: string; description?: string }[] = [];
+    if (store.settings.midweekDiscountPercent > 0) {
+      items.push({
+        id: 'midweek',
+        title: 'Midweek Discount',
+        description: `Save ${store.settings.midweekDiscountPercent}% Mon–Wed`
+      });
+    }
+    (store.settings.offers || [])
+      .filter(offer => offer.enabled)
+      .forEach(offer => {
+        items.push({ id: offer.id, title: offer.title, description: offer.description });
+      });
+    return items;
+  }, [store.settings.midweekDiscountPercent, store.settings.offers]);
 
   const handleSearch = (e: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -114,6 +130,22 @@ export default function Home() {
           </p>
         </div>
 
+        {offers.length > 0 && (
+          <div className="flex flex-wrap items-center justify-center gap-3 animate-in fade-in slide-in-from-top-4 duration-700">
+            {offers.map((offer, index) => (
+              <div
+                key={offer.id}
+                className="offer-pill bg-zinc-900/70 border border-zinc-800 text-white px-4 py-2 rounded-full text-[9px] md:text-[10px] font-bold uppercase tracking-[0.2em] shadow-lg shadow-amber-500/10"
+                style={{ animationDelay: `${index * 0.15}s` }}
+              >
+                <span className="text-amber-500 mr-2">★</span>
+                <span>{offer.title}</span>
+                {offer.description && <span className="text-zinc-400 ml-2 font-medium normal-case tracking-normal">{offer.description}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+
         <form onSubmit={handleSearch} className="glass-panel p-6 sm:p-10 rounded-[2rem] md:rounded-[2.5rem] shadow-2xl space-y-6 md:space-y-10 text-sm">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
             <div className="flex flex-col text-left gap-2">
@@ -144,7 +176,7 @@ export default function Home() {
               <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Live Quote</div>
               <div className="flex items-baseline gap-2">
                 <span className="text-4xl md:text-5xl font-bold text-white tracking-tighter">£{pricing.totalPrice}</span>
-                {pricing.discountAmount > 0 && <span className="text-green-500 font-bold text-[10px] uppercase tracking-widest ml-2">-{pricing.discountPercent || 25}% Midweek</span>}
+                {pricing.discountAmount > 0 && <span className="text-green-500 font-bold text-[10px] uppercase tracking-widest ml-2">-{pricing.discountPercent}% Midweek</span>}
               </div>
             </div>
             <button type="submit" className="w-full md:w-auto gold-gradient hover:scale-[1.02] active:scale-95 transition-all text-black font-bold py-4 md:py-5 px-16 rounded-xl md:rounded-2xl shadow-xl shadow-amber-500/10 uppercase tracking-[0.2em] text-[10px] min-h-[44px] cursor-pointer">
