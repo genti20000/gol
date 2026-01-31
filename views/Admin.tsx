@@ -4,7 +4,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { useStore, type MutationResult } from '../store';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 import {
   Booking,
   BookingStatus,
@@ -83,6 +83,11 @@ export default function Admin() {
   }, [allowedEmails, allowlistConfigured, session?.user?.email]);
 
   useEffect(() => {
+    if (!supabaseConfigured) {
+      setAuthLoading(false);
+      setAuthError('Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.');
+      return;
+    }
     let isMounted = true;
     supabase.auth.getSession().then(({ data }) => {
       if (!isMounted) return;
@@ -99,7 +104,7 @@ export default function Admin() {
       isMounted = false;
       data.subscription.unsubscribe();
     };
-  }, []);
+  }, [supabaseConfigured]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -191,6 +196,24 @@ export default function Admin() {
 
   if (authLoading) {
     return <div className="p-20 text-center font-bold animate-pulse text-zinc-500 uppercase tracking-widest text-xs">Checking Admin Session...</div>;
+  }
+
+  if (!supabaseConfigured) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="glass-panel p-8 md:p-10 rounded-[2rem] border-red-500/30 max-w-md w-full text-center space-y-6">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-500/10 border border-red-500/30 mx-auto">
+            <i className="fa-solid fa-triangle-exclamation text-2xl text-red-400"></i>
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-xl font-bold uppercase tracking-tighter">Supabase not configured</h1>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">
+              Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable admin access.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!session) {
@@ -290,7 +313,7 @@ export default function Admin() {
   if (store.loadError) {
     return (
       <div className="p-20 text-center font-bold uppercase tracking-widest text-red-400 text-xs">
-        Failed to load admin data. Please refresh and try again.
+        {store.loadError || 'Failed to load admin data. Please refresh and try again.'}
       </div>
     );
   }

@@ -30,7 +30,7 @@ import {
   BUFFER_MINUTES,
   WHATSAPP_URL
 } from './constants';
-import { supabase } from './lib/supabase';
+import { supabase, supabaseConfigured } from './lib/supabase';
 
 export type MutationResult = { ok: boolean; error?: string };
 
@@ -154,6 +154,10 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
   useEffect(() => {
     const fetchData = async () => {
       try {
+        if (!supabaseConfigured) {
+          setLoadError('Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.');
+          return;
+        }
         setLoading(true);
         setLoadError(null);
 
@@ -358,7 +362,7 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
       }
     };
     fetchData();
-  }, [mode]);
+  }, [mode, supabaseConfigured]);
 
   const getOperatingWindow = useCallback((date: string) => {
     const special = specialHours.find(s => s.date === date);

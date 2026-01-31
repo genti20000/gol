@@ -132,7 +132,7 @@ export default function Checkout() {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="text-center uppercase font-bold tracking-widest text-red-400 text-sm">
-          Failed to load booking details. Please refresh and try again.
+          {store.loadError || 'Failed to load booking details. Please refresh and try again.'}
         </div>
       </div>
     );
