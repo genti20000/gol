@@ -87,11 +87,12 @@ export async function POST(request: Request) {
     const { data: settings, error: settingsError } = await supabase
       .from('venue_settings')
       .select('deposit_enabled,deposit_amount,midweek_discount_percent')
-      .single();
+      .maybeSingle();
 
     if (settingsError) {
-      console.error('Failed to load venue settings for booking draft.', settingsError);
-      return NextResponse.json({ error: 'Unable to load pricing settings.' }, { status: 500 });
+      console.warn('Failed to load venue settings for booking draft, using defaults.', settingsError);
+    } else if (!settings) {
+      console.warn('Venue settings row is missing for booking draft, using defaults.');
     }
 
     const baseTotal = tier.price;

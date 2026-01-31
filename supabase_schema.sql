@@ -147,6 +147,11 @@ CREATE TABLE venue_settings (
   min_days_before_booking INTEGER DEFAULT 0,
   min_hours_before_booking INTEGER DEFAULT 0,
   midweek_discount_percent NUMERIC DEFAULT 25,
+  require_deposit BOOLEAN DEFAULT false,
+  min_days_lead_time INTEGER DEFAULT 0,
+  min_hours_lead_time INTEGER DEFAULT 0,
+  midweek_discount INTEGER DEFAULT 0,
+  show_midweek_offer BOOLEAN DEFAULT false,
   offers JSONB DEFAULT '[]'::jsonb,
   updated_at TIMESTAMPTZ DEFAULT now(),
   CONSTRAINT one_row CHECK (id = 1)

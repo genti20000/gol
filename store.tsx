@@ -168,7 +168,7 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
         const blocksQuery = supabase.from('room_blocks').select('*');
         const specialHoursQuery = supabase.from('special_hours').select('*');
         const operatingHoursQuery = supabase.from('operating_hours').select('*').order('day', { ascending: true });
-        const settingsQuery = supabase.from('venue_settings').select('*').single();
+        const settingsQuery = supabase.from('venue_settings').select('*').maybeSingle();
         const extrasQuery = supabase.from('extras').select('*').order('sort_order', { ascending: true });
         const staffQuery = mode === 'admin'
           ? supabase.from('staff_members').select('*')
@@ -223,7 +223,6 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
           { name: 'room blocks', error: blocksError },
           { name: 'special hours', error: specialHoursError },
           { name: 'operating hours', error: operatingHoursError },
-          { name: 'venue settings', error: settingsError },
           { name: 'extras', error: extrasError },
           { name: 'staff members', error: staffError },
           { name: 'recurring blocks', error: recurringBlocksError },
@@ -231,6 +230,12 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
           { name: 'customers', error: customersError },
           { name: 'waitlist', error: waitlistError }
         ].filter(({ error }) => error);
+
+        if (settingsError) {
+          console.warn('Failed to load venue settings, using defaults.', settingsError);
+        } else if (!settingsData) {
+          console.warn('Venue settings row is missing, using defaults.');
+        }
 
         if (queryErrors.length > 0) {
           queryErrors.forEach(({ name, error }) => {
@@ -290,16 +295,18 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
           close: oh.close_time,
           enabled: oh.enabled
         })));
-        if (settingsData) setSettings({
-          cancelCutoffHours: settingsData.cancel_cutoff_hours,
-          rescheduleCutoffHours: settingsData.reschedule_cutoff_hours,
-          releasePendingOnPaymentFailure: settingsData.release_pending_on_failure,
-          deposit_enabled: settingsData.deposit_enabled,
-          deposit_amount: settingsData.deposit_amount,
-          minDaysBeforeBooking: settingsData.min_days_before_booking,
-          minHoursBeforeBooking: settingsData.min_hours_before_booking,
-          midweekDiscountPercent: settingsData.midweek_discount_percent ?? MIDWEEK_DISCOUNT_PERCENT,
-          offers: (settingsData.offers ?? []) as Offer[]
+        const resolvedSettings = settingsData ?? null;
+        setSettings({
+          ...DEFAULT_SETTINGS,
+          cancelCutoffHours: resolvedSettings?.cancel_cutoff_hours ?? DEFAULT_SETTINGS.cancelCutoffHours,
+          rescheduleCutoffHours: resolvedSettings?.reschedule_cutoff_hours ?? DEFAULT_SETTINGS.rescheduleCutoffHours,
+          releasePendingOnPaymentFailure: resolvedSettings?.release_pending_on_failure ?? DEFAULT_SETTINGS.releasePendingOnPaymentFailure,
+          deposit_enabled: resolvedSettings?.deposit_enabled ?? DEFAULT_SETTINGS.deposit_enabled,
+          deposit_amount: resolvedSettings?.deposit_amount ?? DEFAULT_SETTINGS.deposit_amount,
+          minDaysBeforeBooking: resolvedSettings?.min_days_before_booking ?? DEFAULT_SETTINGS.minDaysBeforeBooking,
+          minHoursBeforeBooking: resolvedSettings?.min_hours_before_booking ?? DEFAULT_SETTINGS.minHoursBeforeBooking,
+          midweekDiscountPercent: resolvedSettings?.midweek_discount_percent ?? MIDWEEK_DISCOUNT_PERCENT,
+          offers: (resolvedSettings?.offers ?? DEFAULT_SETTINGS.offers) as Offer[]
         });
         if (extrasData) setExtras(extrasData.map(e => ({
           ...e,
