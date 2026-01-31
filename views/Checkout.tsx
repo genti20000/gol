@@ -7,6 +7,7 @@ import { Booking, Extra } from '@/types';
 import { EXTRAS, PRICING_TIERS, getGuestLabel } from '@/constants';
 import { shouldShowExtraInfoIcon } from '@/lib/extras';
 import { computeAmountDueNow } from '@/lib/paymentLogic';
+import { parseCheckoutParams } from '@/lib/checkoutParams';
 import {
   REQUIRED_BOOKING_DRAFT_FIELDS,
   normalizeBookingDraftInput,
@@ -35,13 +36,20 @@ export default function Checkout() {
   const extraInfoButtonRef = useRef<HTMLButtonElement | null>(null);
   const draftKeyRef = useRef<string | null>(null);
 
-  const date = route.params.get('date') || '';
-  const time = route.params.get('time') || '';
-  const parsedGuests = Number(route.params.get('guests') || '8');
-  const parsedExtraHours = Number(route.params.get('extraHours') || '0');
-  const promo = route.params.get('promo') || '';
-  const queryServiceId = route.params.get('serviceId') || undefined;
-  const queryStaffId = route.params.get('staffId') || undefined;
+  const checkoutParams = useMemo(() => parseCheckoutParams(route.params), [route.params]);
+  const {
+    date,
+    time,
+    guests: parsedGuests,
+    extraHours: parsedExtraHours,
+    promo,
+    serviceId: parsedServiceId,
+    staffId: parsedStaffId
+  } = checkoutParams.params;
+  const queryServiceId = parsedServiceId || undefined;
+  const queryStaffId = parsedStaffId;
+  const failedParamFields = Object.keys(checkoutParams.errors);
+  const debugParamsText = `debug params=${JSON.stringify(checkoutParams.params)} invalid=${failedParamFields.length ? failedParamFields.join(', ') : 'none'}`;
 
   const guestMin = Math.min(...PRICING_TIERS.map(tier => tier.min));
   const guestMax = Math.max(...PRICING_TIERS.map(tier => tier.max));
@@ -60,7 +68,7 @@ export default function Checkout() {
   }, [date, time]);
   const isValidGuests = Number.isFinite(parsedGuests) && parsedGuests === guests;
   const isValidExtraHours = Number.isFinite(parsedExtraHours) && extraHourOptions.includes(parsedExtraHours);
-  const hasValidBookingDetails = isValidDateTime && isValidGuests && isValidExtraHours;
+  const hasValidBookingDetails = checkoutParams.isValid && isValidDateTime && isValidGuests && isValidExtraHours;
 
   const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promo), [date, guests, extraHours, promo, store]);
   const enabledExtras = useMemo(() => store.getEnabledExtras(), [store]);
@@ -161,6 +169,10 @@ export default function Checkout() {
 
     return () => window.clearTimeout(timer);
   }, [paymentRedirectUrl]);
+
+  useEffect(() => {
+    console.debug('Checkout query params', checkoutParams.params, checkoutParams.errors);
+  }, [checkoutParams]);
 
   useEffect(() => {
     if (!hasValidBookingDetails || !hasValidDraftDetails) {
@@ -379,6 +391,7 @@ export default function Checkout() {
           >
             Back to Availability
           </button>
+          <p className="text-[9px] uppercase tracking-widest text-zinc-500 break-words">{debugParamsText}</p>
         </div>
       </div>
     );
@@ -388,6 +401,7 @@ export default function Checkout() {
     <>
     <div className="w-full px-4 py-8 md:py-12 md:max-w-6xl md:mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12">
       <div className="order-2 lg:order-1 space-y-8 md:space-y-12">
+        <p className="text-[9px] uppercase tracking-widest text-zinc-600 break-words">{debugParamsText}</p>
         {isDraftLoading && (
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-zinc-400">
             Creating your booking draft...
