@@ -192,41 +192,70 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No rooms available for this time.' }, { status: 409 });
     }
 
+    const assignedRoomId = assignedRoom.id;
+    if (!assignedRoomId) {
+      return NextResponse.json({ error: 'Unable to allocate a room.' }, { status: 500 });
+    }
+
+    let resolvedRoomName = assignedRoom.name?.trim() ?? '';
+    if (!resolvedRoomName) {
+      const { data: roomData, error: roomError } = await supabase
+        .from('rooms')
+        .select('name')
+        .eq('id', assignedRoomId)
+        .single();
+
+      if (roomError) {
+        console.error('Failed to resolve room name for booking draft.', roomError);
+        return NextResponse.json({ error: 'Unable to allocate a room.' }, { status: 500 });
+      }
+
+      resolvedRoomName = roomData?.name?.trim() ?? '';
+    }
+
+    if (!resolvedRoomName) {
+      return NextResponse.json({ error: 'Unable to allocate a room.' }, { status: 500 });
+    }
+
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+    const bookingPayload = {
+      room_id: assignedRoomId,
+      room_name: resolvedRoomName,
+      service_id: isNonEmptyString(payload.serviceId) ? payload.serviceId : null,
+      staff_id: isNonEmptyString(payload.staffId) ? payload.staffId : null,
+      start_at: startDate.toISOString(),
+      end_at: endDate.toISOString(),
+      status: BookingStatus.PENDING,
+      payment_status: 'UNPAID',
+      expires_at: expiresAt,
+      guests,
+      customer_name: isNonEmptyString(payload.firstName) ? payload.firstName : null,
+      customer_surname: isNonEmptyString(payload.surname) ? payload.surname : null,
+      customer_email: isNonEmptyString(payload.email) ? payload.email : null,
+      customer_phone: isNonEmptyString(payload.phone) ? payload.phone : null,
+      notes: isNonEmptyString(payload.notes) ? payload.notes : null,
+      base_total: baseTotal,
+      extras_hours: extraHours,
+      extras_price: extrasPrice,
+      discount_amount: discountAmount,
+      promo_code: promoCodeToStore,
+      promo_discount_amount: promoDiscountAmount,
+      total_price: totalPrice,
+      source: 'public',
+      deposit_amount: depositAmount,
+      deposit_paid: false,
+      extras_total: 0,
+      extras_snapshot: []
+    };
+
+    if (process.env.NODE_ENV === 'development') {
+      console.debug('Booking draft insert payload.', bookingPayload);
+    }
 
     const { data: booking, error: bookingError } = await supabase
       .from('bookings')
-      .insert([
-        {
-          room_id: assignedRoom.id,
-          room_name: assignedRoom.name,
-          service_id: isNonEmptyString(payload.serviceId) ? payload.serviceId : null,
-          staff_id: isNonEmptyString(payload.staffId) ? payload.staffId : null,
-          start_at: startDate.toISOString(),
-          end_at: endDate.toISOString(),
-          status: BookingStatus.PENDING,
-          payment_status: 'UNPAID',
-          expires_at: expiresAt,
-          guests,
-          customer_name: isNonEmptyString(payload.firstName) ? payload.firstName : null,
-          customer_surname: isNonEmptyString(payload.surname) ? payload.surname : null,
-          customer_email: isNonEmptyString(payload.email) ? payload.email : null,
-          customer_phone: isNonEmptyString(payload.phone) ? payload.phone : null,
-          notes: isNonEmptyString(payload.notes) ? payload.notes : null,
-          base_total: baseTotal,
-          extras_hours: extraHours,
-          extras_price: extrasPrice,
-          discount_amount: discountAmount,
-          promo_code: promoCodeToStore,
-          promo_discount_amount: promoDiscountAmount,
-          total_price: totalPrice,
-          source: 'public',
-          deposit_amount: depositAmount,
-          deposit_paid: false,
-          extras_total: 0,
-          extras_snapshot: []
-        }
-      ])
+      .insert([bookingPayload])
       .select('*')
       .single();
 
