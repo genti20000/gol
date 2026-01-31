@@ -67,11 +67,12 @@ export async function POST(req: Request) {
     const { data: settings, error: settingsError } = await supabase
       .from("venue_settings")
       .select("deposit_enabled,deposit_amount")
-      .single();
+      .maybeSingle();
 
     if (settingsError) {
-      console.error("Failed to load venue settings for checkout session.", settingsError);
-      return NextResponse.json({ error: "Unable to load payment settings." }, { status: 500 });
+      console.warn("Failed to load venue settings for checkout session, using defaults.", settingsError);
+    } else if (!settings) {
+      console.warn("Venue settings row is missing for checkout session, using defaults.");
     }
 
     const depositEnabled = Boolean(settings?.deposit_enabled);
