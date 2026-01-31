@@ -34,6 +34,7 @@ export default function Page() {
   const [route, setRoute] = useState<RouteState>({ path: '/', params: new URLSearchParams() });
   const [history, setHistory] = useState<RouteState[]>([]);
   const isAdmin = route.path.startsWith('/admin');
+  const liveSupportLinks = [{ href: 'tel:+447761383514', label: 'Live Support' }];
 
   useEffect(() => {
     const syncRouteFromUrl = () => {
@@ -123,15 +124,17 @@ export default function Page() {
                       <li><a href="#" className="no-underline text-inherit">Privacy</a></li>
                     </ul>
                   </div>
-                  {!isAdmin && (
+                  {!isAdmin && liveSupportLinks.length > 0 && (
                     <div className="space-y-4">
                       <h4 className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Live Support</h4>
                       <ul className="text-xs space-y-2 text-zinc-500 uppercase font-bold tracking-tighter list-none p-0">
-                        <li>
-                          <a href="tel:+447761383514" className="no-underline text-inherit">
-                            Call Support
-                          </a>
-                        </li>
+                        {liveSupportLinks.map((link) => (
+                          <li key={link.href}>
+                            <a href={link.href} className="no-underline text-inherit">
+                              {link.label}
+                            </a>
+                          </li>
+                        ))}
                       </ul>
                     </div>
                   )}
