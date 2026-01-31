@@ -196,15 +196,13 @@ export default function Checkout() {
 
       const bookingExtras = store.buildBookingExtrasSnapshot(extrasSelection, guests);
 
-      const requiresPayment = estimatedDueNow > 0 && store.settings.deposit_enabled;
       const booking = {
         room_id: assignment.room_id,
-        room_name: store.rooms.find(r => r.id === assignment.room_id)!.name,
         staff_id: assignment.staff_id,
         service_id: queryServiceId,
         start_at: startAt,
         end_at: endAt,
-        status: requiresPayment ? BookingStatus.PENDING : BookingStatus.CONFIRMED,
+        status: BookingStatus.PENDING,
         guests,
         customer_name: formData.name,
         customer_surname: formData.surname,
@@ -222,10 +220,10 @@ export default function Checkout() {
         source: 'public' as const,
         extras: bookingExtras,
         extras_total: extrasTotal,
-        deposit_amount: requiresPayment ? estimatedDueNow : 0,
-        deposit_paid: !requiresPayment,
+        deposit_amount: store.settings.deposit_enabled ? estimatedDueNow : 0,
+        deposit_paid: false,
         deposit_forfeited: false,
-        amount_paid: requiresPayment ? 0 : 0
+        amount_paid: 0
       };
 
       const finalBooking = await store.addBooking(booking);
@@ -234,12 +232,7 @@ export default function Checkout() {
         return;
       }
 
-      if (!requiresPayment) {
-        navigate(`/booking/confirmed?id=${finalBooking.id}`);
-        return;
-      }
-
-      const checkoutResponse = await fetch('/api/stripe/create-checkout', {
+      const checkoutResponse = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bookingId: finalBooking.id })
@@ -252,17 +245,17 @@ export default function Checkout() {
       }
 
       const payload = await checkoutResponse.json();
-      if (payload?.skipPayment && payload?.redirectUrl) {
-        navigate(payload.redirectUrl);
+      if (payload?.confirmed) {
+        navigate(`/booking/confirmed?id=${finalBooking.id}`);
         return;
       }
 
-      if (!payload?.redirectUrl) {
+      if (!payload?.checkoutUrl) {
         setPaymentError('Unable to start the payment. Please try again.');
         return;
       }
 
-      setPaymentRedirectUrl(payload.redirectUrl);
+      setPaymentRedirectUrl(payload.checkoutUrl);
       setCurrentStep('payment');
     } catch (error) {
       setPaymentError('Something went wrong while processing the payment.');
