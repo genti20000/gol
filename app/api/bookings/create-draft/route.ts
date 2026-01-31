@@ -112,7 +112,11 @@ export async function POST(request: Request) {
         .from('promo_codes')
         .select('code,enabled,percent_off,fixed_off,start_date,end_date,min_guests,max_uses,uses')
         .eq('code', promoCodeToStore)
-        .single();
+        .maybeSingle();
+
+      if (promoError) {
+        console.error('Failed to load promo code for booking draft.', promoError);
+      }
 
       if (promoError || !promoData || !promoData.enabled) {
         promoCodeToStore = null;
@@ -145,6 +149,40 @@ export async function POST(request: Request) {
       depositAmount: depositAmountSetting
     });
     const isZeroDeposit = depositAmount <= 0;
+
+    const nowIso = new Date().toISOString();
+    let existingDraftQuery = supabase
+      .from('bookings')
+      .select('*')
+      .eq('status', BookingStatus.DRAFT)
+      .eq('source', 'public')
+      .eq('start_at', startDate.toISOString())
+      .eq('end_at', endDate.toISOString())
+      .eq('guests', guests)
+      .eq('extras_hours', extraHours);
+
+    existingDraftQuery = isNonEmptyString(payload.serviceId)
+      ? existingDraftQuery.eq('service_id', payload.serviceId)
+      : existingDraftQuery.is('service_id', null);
+    existingDraftQuery = isNonEmptyString(payload.staffId)
+      ? existingDraftQuery.eq('staff_id', payload.staffId)
+      : existingDraftQuery.is('staff_id', null);
+    existingDraftQuery = isNonEmptyString(promoCodeToStore)
+      ? existingDraftQuery.eq('promo_code', promoCodeToStore)
+      : existingDraftQuery.is('promo_code', null);
+
+    const { data: existingDraft, error: existingDraftError } = await existingDraftQuery
+      .or(`expires_at.is.null,expires_at.gte.${nowIso}`)
+      .maybeSingle();
+
+    if (existingDraftError) {
+      console.error('Failed to load existing booking draft.', existingDraftError);
+      return NextResponse.json({ error: 'Unable to load booking draft.' }, { status: 500 });
+    }
+
+    if (existingDraft) {
+      return NextResponse.json({ bookingId: existingDraft.id, booking: existingDraft });
+    }
 
     const { data: rooms, error: roomsError } = await supabase
       .from('rooms')
@@ -218,7 +256,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unable to allocate a room.' }, { status: 500 });
     }
 
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
 
     const bookingPayload = {
       room_id: assignedRoomId,
@@ -227,12 +265,12 @@ export async function POST(request: Request) {
       staff_id: isNonEmptyString(payload.staffId) ? payload.staffId : null,
       start_at: startDate.toISOString(),
       end_at: endDate.toISOString(),
-      status: isZeroDeposit ? BookingStatus.CONFIRMED : BookingStatus.PENDING,
+      status: BookingStatus.DRAFT,
       expires_at: expiresAt,
       guests,
-      customer_name: isNonEmptyString(payload.firstName) ? payload.firstName : 'Pending Guest',
+      customer_name: isNonEmptyString(payload.firstName) ? payload.firstName : null,
       customer_surname: isNonEmptyString(payload.surname) ? payload.surname : null,
-      customer_email: isNonEmptyString(payload.email) ? payload.email : 'pending@booking.local',
+      customer_email: isNonEmptyString(payload.email) ? payload.email : null,
       customer_phone: isNonEmptyString(payload.phone) ? payload.phone : null,
       notes: isNonEmptyString(payload.notes) ? payload.notes : null,
       base_total: baseTotal,
@@ -251,18 +289,29 @@ export async function POST(request: Request) {
 
     console.info('Booking draft insert payload.', bookingPayload);
 
-    const { data: booking, error: bookingError } = await supabase
+    const { data: insertedBooking, error: bookingError } = await supabase
       .from('bookings')
       .insert([bookingPayload])
-      .select('*')
-      .single();
+      .select('id')
+      .maybeSingle();
 
-    if (bookingError || !booking) {
+    if (bookingError || !insertedBooking) {
       console.error('Failed to create booking draft.', { error: bookingError, payload: bookingPayload });
       const errorMessage = bookingError?.message
         ? `Unable to create booking draft: ${bookingError.message}`
         : 'Unable to create booking draft.';
       return NextResponse.json({ error: errorMessage }, { status: 500 });
+    }
+
+    const { data: booking, error: fetchError } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', insertedBooking.id)
+      .maybeSingle();
+
+    if (fetchError || !booking) {
+      console.error('Failed to fetch booking draft after insert.', { error: fetchError, payload: bookingPayload });
+      return NextResponse.json({ error: 'Unable to load booking draft.' }, { status: 500 });
     }
 
     return NextResponse.json({ bookingId: booking.id, booking });
