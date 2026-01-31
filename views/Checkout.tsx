@@ -3,8 +3,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
-import { BookingStatus, Extra } from '@/types';
-import { BASE_DURATION_HOURS, EXTRAS, PRICING_TIERS, getGuestLabel } from '@/constants';
+import { Booking, Extra } from '@/types';
+import { EXTRAS, PRICING_TIERS, getGuestLabel } from '@/constants';
 import { shouldShowExtraInfoIcon } from '@/lib/extras';
 import { computeAmountDueNow } from '@/lib/paymentLogic';
 
@@ -18,6 +18,9 @@ export default function Checkout() {
   const [formData, setFormData] = useState({ name: '', surname: '', email: '', phone: '', notes: '' });
   const [extrasSelection, setExtrasSelection] = useState<Record<string, number>>({});
   const [currentStep, setCurrentStep] = useState<'extras' | 'details' | 'payment'>('details');
+  const [draftBooking, setDraftBooking] = useState<Booking | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [isDraftLoading, setIsDraftLoading] = useState(false);
   const [showExtrasInfo, setShowExtrasInfo] = useState(false);
   const [activeExtraInfoId, setActiveExtraInfoId] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -25,6 +28,7 @@ export default function Checkout() {
   const extrasInfoButtonRef = useRef<HTMLButtonElement | null>(null);
   const extraInfoRef = useRef<HTMLDivElement | null>(null);
   const extraInfoButtonRef = useRef<HTMLButtonElement | null>(null);
+  const draftKeyRef = useRef<string | null>(null);
 
   const date = route.params.get('date') || '';
   const time = route.params.get('time') || '';
@@ -44,7 +48,6 @@ export default function Checkout() {
   const guests = Number.isFinite(parsedGuests) ? clampValue(parsedGuests, guestMin, guestMax) : guestMin;
   const extraHours = Number.isFinite(parsedExtraHours) ? clampValue(parsedExtraHours, extraMin, extraMax) : extraMin;
 
-  const totalDuration = BASE_DURATION_HOURS + extraHours;
   const isValidDateTime = useMemo(() => {
     if (!date || !time) return false;
     const parsed = new Date(`${date}T${time}`);
@@ -67,6 +70,10 @@ export default function Checkout() {
       }),
     [store.settings.deposit_enabled, store.settings.deposit_amount, estimatedTotal]
   );
+  const draftKey = `${date}|${time}|${guests}|${extraHours}|${promo}|${queryServiceId ?? ''}|${queryStaffId ?? ''}`;
+  const bookingId = draftBooking?.id ?? null;
+  const summaryGuestCount = draftBooking?.guests ?? guests;
+  const summaryStartDate = draftBooking?.start_at ? new Date(draftBooking.start_at) : new Date(date);
 
   if (store.loading) {
     return (
@@ -114,11 +121,66 @@ export default function Checkout() {
     }
 
     const timer = window.setTimeout(() => {
-      window.location.assign(paymentRedirectUrl);
+      window.location.href = paymentRedirectUrl;
     }, 250);
 
     return () => window.clearTimeout(timer);
   }, [paymentRedirectUrl]);
+
+  useEffect(() => {
+    if (!hasValidBookingDetails) {
+      return;
+    }
+
+    if (draftKeyRef.current === draftKey) {
+      return;
+    }
+
+    draftKeyRef.current = draftKey;
+    setDraftBooking(null);
+    setDraftError(null);
+    setIsDraftLoading(true);
+
+    const createDraft = async () => {
+      try {
+        const response = await fetch('/api/bookings/create-draft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            date,
+            time,
+            guests,
+            extraHours,
+            promo,
+            serviceId: queryServiceId,
+            staffId: queryStaffId
+          })
+        });
+
+        if (!response.ok) {
+          const errorBody = await response.json().catch(() => ({}));
+          console.error('Failed to create booking draft.', errorBody);
+          setDraftError(errorBody?.error || 'Unable to load booking.');
+          return;
+        }
+
+        const payload = await response.json().catch(() => ({}));
+        if (!payload?.bookingId) {
+          setDraftError('Unable to load booking.');
+          return;
+        }
+
+        setDraftBooking(payload.booking ?? null);
+      } catch (error) {
+        console.error('Failed to create booking draft.', error);
+        setDraftError('Unable to load booking.');
+      } finally {
+        setIsDraftLoading(false);
+      }
+    };
+
+    void createDraft();
+  }, [date, draftKey, extraHours, guests, hasValidBookingDetails, promo, queryServiceId, queryStaffId, time]);
 
   useEffect(() => {
     if (!showExtrasInfo) {
@@ -184,58 +246,20 @@ export default function Checkout() {
         setPaymentError('Please select valid booking details before continuing.');
         return;
       }
-      const startAt = new Date(`${date}T${time}`).toISOString();
-      const endAt = new Date(new Date(startAt).getTime() + totalDuration * 3600000).toISOString();
-
-      const assignment = store.findFirstAvailableRoomAndStaff(startAt, endAt, queryStaffId, queryServiceId);
-      if (!assignment) {
-        alert("This slot has been taken. Please choose another time.");
-        navigate('/');
+      if (!bookingId) {
+        setPaymentError('Unable to start checkout. Please refresh and try again.');
         return;
       }
 
-      const bookingExtras = store.buildBookingExtrasSnapshot(extrasSelection, guests);
-
-      const booking = {
-        room_id: assignment.room_id,
-        staff_id: assignment.staff_id,
-        service_id: queryServiceId,
-        start_at: startAt,
-        end_at: endAt,
-        status: BookingStatus.PENDING,
-        guests,
-        customer_name: formData.name,
-        customer_surname: formData.surname,
-        customer_email: formData.email,
-        customer_phone: formData.phone,
-        notes: formData.notes,
-        base_total: pricing.baseTotal,
-        extras_hours: extraHours,
-        extras_price: pricing.extrasPrice,
-        discount_amount: pricing.discountAmount,
-        promo_code: promo || undefined,
-        promo_discount_amount: pricing.promoDiscountAmount,
-        total_price: pricing.totalPrice + extrasTotal,
-        created_at: new Date().toISOString(),
-        source: 'public' as const,
-        extras: bookingExtras,
-        extras_total: extrasTotal,
-        deposit_amount: store.settings.deposit_enabled ? estimatedDueNow : 0,
-        deposit_paid: false,
-        deposit_forfeited: false,
-        amount_paid: 0
-      };
-
-      const finalBooking = await store.addBooking(booking);
-      if (!finalBooking) {
-        setPaymentError('Something went wrong while creating your booking.');
+      if (draftError) {
+        setPaymentError('Unable to start checkout. Please refresh and try again.');
         return;
       }
 
-      const checkoutResponse = await fetch('/api/stripe/checkout', {
+      const checkoutResponse = await fetch('/api/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bookingId: finalBooking.id })
+        body: JSON.stringify({ bookingId })
       });
 
       if (!checkoutResponse.ok) {
@@ -246,16 +270,16 @@ export default function Checkout() {
 
       const payload = await checkoutResponse.json();
       if (payload?.confirmed) {
-        navigate(`/booking/confirmed?id=${finalBooking.id}`);
+        navigate(`/booking/confirmed?id=${bookingId}`);
         return;
       }
 
-      if (!payload?.checkoutUrl) {
+      if (!payload?.url) {
         setPaymentError('Unable to start the payment. Please try again.');
         return;
       }
 
-      setPaymentRedirectUrl(payload.checkoutUrl);
+      setPaymentRedirectUrl(payload.url);
       setCurrentStep('payment');
     } catch (error) {
       setPaymentError('Something went wrong while processing the payment.');
@@ -301,6 +325,16 @@ export default function Checkout() {
     <>
     <div className="w-full px-4 py-8 md:py-12 md:max-w-6xl md:mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12">
       <div className="order-2 lg:order-1 space-y-8 md:space-y-12">
+        {isDraftLoading && (
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-zinc-400">
+            Creating your booking draft...
+          </div>
+        )}
+        {draftError && (
+          <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-red-200">
+            {draftError}
+          </div>
+        )}
         {enabledExtras.length > 0 && currentStep === 'extras' ? (
           <div className="space-y-8 animate-in fade-in duration-500">
             <div className="space-y-2">
@@ -509,7 +543,7 @@ export default function Checkout() {
             )}
             <button
               onClick={handleSubmit}
-              disabled={isProcessing || !formData.name || !formData.surname || !formData.email}
+              disabled={isProcessing || !formData.name || !formData.surname || !formData.email || !bookingId || Boolean(draftError)}
               className={`${enabledExtras.length > 0 ? 'flex-[2]' : 'w-full'} gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-50 text-[10px] min-h-[44px] cursor-pointer`}
             >
               {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : estimatedDueNow <= 0 ? 'Confirm booking' : `Pay £${estimatedDueNow} now`}
@@ -544,10 +578,10 @@ export default function Checkout() {
           <div className="space-y-4">
             <div className="flex justify-between items-start">
               <div>
-                <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Summary</h3>
-                <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">{new Date(date).toLocaleDateString('en-GB', { dateStyle: 'full' })} at {time}</p>
+            <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Summary</h3>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">{summaryStartDate.toLocaleDateString('en-GB', { dateStyle: 'full' })} at {time}</p>
               </div>
-              <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest">{getGuestLabel(guests)}</span>
+              <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest">{getGuestLabel(summaryGuestCount)}</span>
             </div>
           </div>
 
