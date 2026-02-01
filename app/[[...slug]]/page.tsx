@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
 import Home from '@/views/Home';
 import Results from '@/views/Results';
 import Checkout from '@/views/Checkout';
@@ -17,7 +18,15 @@ function Header({ navigate }: { navigate: (p: string) => void }) {
   return (
     <header className="fixed top-0 left-0 right-0 z-50 glass-panel h-16 flex items-center justify-between px-4 sm:px-10">
       <button onClick={() => navigate('/')} className="flex items-center gap-3 bg-transparent border-none cursor-pointer">
-        <img src={LOGO_URL} alt="LKC" className="h-8 w-auto" />
+        <Image
+          src={LOGO_URL}
+          alt="LKC"
+          width={0}
+          height={0}
+          sizes="100vw"
+          className="h-8 w-auto"
+          style={{ width: 'auto', height: '2rem' }}
+        />
         <span className="text-sm font-bold tracking-tighter text-white uppercase hidden sm:inline">
           London <span className="text-amber-500">Karaoke</span> Club
         </span>
@@ -103,7 +112,15 @@ export default function Page() {
           <footer className="bg-zinc-950 border-t border-zinc-900 py-16 px-4 sm:px-10 mt-20">
             <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start gap-12">
               <div className="space-y-4">
-                <img src={LOGO_URL} alt="LKC" className="h-8 opacity-40 grayscale" />
+                <Image
+                  src={LOGO_URL}
+                  alt="LKC"
+                  width={0}
+                  height={0}
+                  sizes="100vw"
+                  className="h-8 w-auto opacity-40 grayscale"
+                  style={{ width: 'auto', height: '2rem' }}
+                />
                 <p className="text-zinc-600 text-xs max-w-xs leading-relaxed uppercase font-bold tracking-widest">Premium nightlife for groups of 8 to 100 in the heart of the city.</p>
               </div>
               <div className="grid grid-cols-2 gap-20">

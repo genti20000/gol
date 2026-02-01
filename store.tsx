@@ -414,8 +414,32 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     if (conflicts.length > 0) return { ok: false, reason: 'Room occupied' };
     const blockConflicts = blocks.filter(b => b.roomId === roomId && (startTs < new Date(b.end_at).getTime() && endTs > new Date(b.start_at).getTime()));
     if (blockConflicts.length > 0) return { ok: false, reason: 'Room blocked' };
+
+    // Check recurring blocks
+    const d = new Date(startTs);
+    const dayOfWeek = d.getDay();
+    const recurringConflicts = recurringBlocks.filter(rb => {
+      if (!rb.enabled || rb.roomId !== roomId || rb.dayOfWeek !== dayOfWeek) return false;
+
+      const [rbStartH, rbStartM] = rb.startTime.split(':').map(Number);
+      const [rbEndH, rbEndM] = rb.endTime.split(':').map(Number);
+
+      // Convert recurring block times to timestamps for the specific date
+      // We assume recurring blocks don't span across midnight for now, or if they do, logic needs to be complex.
+      // Assuming straightforward same-day blocks for simplicity as per common use case.
+      const rbStartTs = new Date(d.getFullYear(), d.getMonth(), d.getDate(), rbStartH, rbStartM).getTime();
+      let rbEndTs = new Date(d.getFullYear(), d.getMonth(), d.getDate(), rbEndH, rbEndM).getTime();
+
+      // Handle cross-midnight block if end time is smaller than start time
+      if (rbEndTs <= rbStartTs) rbEndTs += 24 * 60 * 60 * 1000;
+
+      return (startTs < rbEndTs && endTs > rbStartTs);
+    });
+
+    if (recurringConflicts.length > 0) return { ok: false, reason: 'Room blocked (recurring)' };
+
     return { ok: true };
-  }, [bookings, blocks, getOperatingWindow]);
+  }, [bookings, blocks, recurringBlocks, getOperatingWindow]);
 
   const getValidStartTimes = useCallback((date: string, durationMinutes: number, staffId?: string, serviceId?: string) => {
     const window = getOperatingWindow(date);

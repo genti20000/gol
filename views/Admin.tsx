@@ -5,6 +5,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { useStore, type MutationResult } from '../store';
 import { supabase, supabaseConfigured } from '../lib/supabase';
+import { OperatingHourRow } from './OperatingHourRow';
 import {
   Booking,
   BookingStatus,
@@ -1013,10 +1014,15 @@ function CustomersTab({ store }: { store: any }) {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [showModal, setShowModal] = useState(false);
 
-  const filtered = store.customers.filter((c: Customer) =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    c.email.toLowerCase().includes(search.toLowerCase())
-  ).sort((a: Customer, b: Customer) => (b.lastBookingAt || 0) - (a.lastBookingAt || 0));
+  const filtered = store.customers.filter((c: Customer) => {
+    const term = search.toLowerCase();
+    const fullName = `${c.name} ${c.surname || ''}`.toLowerCase();
+    return (
+      fullName.includes(term) ||
+      c.email.toLowerCase().includes(term) ||
+      (c.phone && c.phone.includes(term))
+    );
+  }).sort((a: Customer, b: Customer) => (b.lastBookingAt || 0) - (a.lastBookingAt || 0));
 
   const handleEdit = (c: Customer) => {
     setEditingCustomer(c);
@@ -1475,40 +1481,12 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
             <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Operating Hours</h3>
             <div className="space-y-4">
               {store.operatingHours.map((oh: DayOperatingHours) => (
-                <div key={oh.day} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                  <div className="flex items-center gap-4">
-                    <button
-                      onClick={async () => {
-                        await handleMutation(store.updateOperatingHours(oh.day, { enabled: !oh.enabled }), 'Failed to update operating hours.');
-                      }}
-                      className={`w-12 h-6 rounded-full relative transition-all ${oh.enabled ? 'bg-amber-500' : 'bg-zinc-800'}`}
-                    >
-                      <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${oh.enabled ? 'left-7' : 'left-1'}`}></div>
-                    </button>
-                    <span className="text-xs font-bold uppercase tracking-widest text-white w-24">{['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][oh.day]}</span>
-                  </div>
-                  <div className="flex items-center gap-4 w-full md:w-auto">
-                    <input
-                      type="time"
-                      disabled={!oh.enabled}
-                      value={oh.open}
-                      onChange={async e => {
-                        await handleMutation(store.updateOperatingHours(oh.day, { open: e.target.value }), 'Failed to update opening time.');
-                      }}
-                      className="flex-1 md:flex-none bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-white font-mono text-sm disabled:opacity-20"
-                    />
-                    <span className="text-zinc-700">to</span>
-                    <input
-                      type="time"
-                      disabled={!oh.enabled}
-                      value={oh.close}
-                      onChange={async e => {
-                        await handleMutation(store.updateOperatingHours(oh.day, { close: e.target.value }), 'Failed to update closing time.');
-                      }}
-                      className="flex-1 md:flex-none bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-white font-mono text-sm disabled:opacity-20"
-                    />
-                  </div>
-                </div>
+                <OperatingHourRow
+                  key={oh.day}
+                  oh={oh}
+                  store={store}
+                  handleMutation={handleSettingChange}
+                />
               ))}
             </div>
           </div>
