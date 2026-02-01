@@ -18,16 +18,3 @@ View your app in AI Studio: https://ai.studio/apps/drive/1eG_LrBExB3drphL70pqRZ0
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
-
-## Supabase Integration
-
-This project uses Supabase for database management and authentication.
-
-**Prerequisites:** Supabase Project
-
-1. Set the following environment variables in `.env.local`:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-2. Run the SQL schema provided in `supabase_schema.sql` and `migration_secure_rls.sql` in your Supabase SQL Editor.
-
