@@ -23,7 +23,7 @@ export async function GET(
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
   const { data, error } = await supabase
     .from('bookings')
-    .select('id,status,booking_ref,customer_email,deposit_amount,confirmed_at')
+    .select('id,status,booking_ref,customer_email,deposit_amount,confirmed_at,booking_date,start_time,service_id,guests,duration_hours,promo_code,base_total,extras_price,discount_amount,promo_discount_amount,total_price,extras_total,extras_snapshot,room_id,room_name,staff_id,extras_hours')
     .eq('id', bookingId)
     .maybeSingle();
 
@@ -43,7 +43,24 @@ export async function GET(
       booking_ref: data.booking_ref,
       customer_email: data.customer_email,
       deposit_amount: data.deposit_amount,
-      confirmed_at: data.confirmed_at
+      confirmed_at: data.confirmed_at,
+      booking_date: data.booking_date,
+      start_time: data.start_time,
+      service_id: data.service_id,
+      guests: data.guests,
+      duration_hours: data.duration_hours,
+      promo_code: data.promo_code,
+      base_total: data.base_total,
+      extras_price: data.extras_price,
+      discount_amount: data.discount_amount,
+      promo_discount_amount: data.promo_discount_amount,
+      total_price: data.total_price,
+      extras_total: data.extras_total,
+      extras_snapshot: data.extras_snapshot,
+      room_id: data.room_id,
+      room_name: data.room_name,
+      staff_id: data.staff_id,
+      extras_hours: data.extras_hours
     }
   });
 }

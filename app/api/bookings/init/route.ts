@@ -180,6 +180,9 @@ export async function POST(request: Request) {
             room_name: assignedRoom.name,
             service_id: serviceId || null,
             staff_id: staffId || null,
+            booking_date: date,
+            start_time: time,
+            duration_hours: totalDurationHours,
             start_at: startDate.toISOString(),
             end_at: endDate.toISOString(),
             status: BookingStatus.PENDING, // Changed from DRAFT to PENDING
