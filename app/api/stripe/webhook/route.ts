@@ -14,6 +14,7 @@ type BookingUpdate = {
   deposit_paid?: boolean;
   amount_charged?: number;
   payment_intent_id?: string | null;
+  notes?: string;
 };
 
 type Database = {
@@ -105,6 +106,16 @@ export async function POST(request: Request) {
     };
     await updateBookingFromMetadata(supabase, session.metadata, update);
   }
+
+  if (event.type === 'checkout.session.expired') {
+    const session = event.data.object as Stripe.Checkout.Session;
+    const update: BookingUpdate = {
+      status: BookingStatus.CANCELLED,
+      notes: 'Session expired without payment.'
+    };
+    await updateBookingFromMetadata(supabase, session.metadata, update);
+  }
+
 
   return NextResponse.json({ received: true });
 }

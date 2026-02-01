@@ -5,14 +5,9 @@ import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { Booking, Extra, BookingStatus } from '@/types';
 import { EXTRAS, PRICING_TIERS, getGuestLabel } from '@/constants';
-import { createClient } from '@supabase/supabase-js';
 import { validateBookingDraftInput, normalizeBookingDraftInput } from '@/lib/bookingValidation';
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { supabase } from '@/lib/supabase';
 
 export default function Checkout() {
   const { route, navigate, back } = useRouterShim();
