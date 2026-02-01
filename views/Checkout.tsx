@@ -5,7 +5,7 @@ import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { BookingStatus, Extra } from '@/types';
 import { LOGO_URL, BASE_DURATION_HOURS, getGuestLabel } from '@/constants';
-import { getCheckoutSummaryFields } from '@/lib/checkoutSummary';
+import { isValidBookingDateTime } from '@/lib/bookingValidation';
 
 export default function Checkout() {
   const { route, navigate, back } = useRouterShim();
@@ -50,7 +50,13 @@ export default function Checkout() {
     effectivePromo
   ), [checkoutSummary.date, checkoutSummary.extraHours, checkoutSummary.guests, effectivePromo, store]);
   const enabledExtras = useMemo(() => store.getEnabledExtras(), [store]);
-  const extrasTotal = useMemo(() => store.computeExtrasTotal(extrasSelection, checkoutSummary.guests), [extrasSelection, checkoutSummary.guests, store]);
+  const extrasTotal = useMemo(() => store.computeExtrasTotal(extrasSelection, guests), [extrasSelection, guests, store]);
+  const parsedDateTime = useMemo(() => {
+    if (!date || !time) return null;
+    const timestamp = Date.parse(`${date}T${time}:00`);
+    if (!Number.isFinite(timestamp)) return null;
+    return new Date(timestamp);
+  }, [date, time]);
 
   // Show extras step first when available, otherwise go straight to details
   useEffect(() => {
@@ -118,42 +124,18 @@ export default function Checkout() {
     setIsProcessing(true);
 
     try {
-      if (bookingId) {
-        const updateResponse = await fetch(`/api/bookings/${bookingId}/update`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            firstName: formData.name,
-            surname: formData.surname,
-            email: formData.email,
-            phone: formData.phone,
-            notes: formData.notes,
-            extras: extrasSelection
-          })
-        });
-
-        if (!updateResponse.ok) {
-          const payload = await updateResponse.json().catch(() => ({}));
-          setPaymentError(payload?.error || 'Something went wrong while updating your booking.');
-          return;
-        }
-
-        const confirmResponse = await fetch(`/api/bookings/${bookingId}/confirm`, {
-          method: 'POST'
-        });
-
-        if (!confirmResponse.ok) {
-          const payload = await confirmResponse.json().catch(() => ({}));
-          setPaymentError(payload?.error || 'Something went wrong while confirming your booking.');
-          return;
-        }
-
-        navigate(`/confirmation?id=${bookingId}`);
-        return;
+      if (!date || !time) {
+        throw new Error('Booking date and time are required.');
       }
-
-      const startAt = new Date(`${checkoutSummary.date}T${checkoutSummary.time}`).toISOString();
-      const endAt = new Date(new Date(startAt).getTime() + totalDuration * 3600000).toISOString();
+      if (!isValidBookingDateTime(date, time)) {
+        throw new Error('Invalid booking date/time');
+      }
+      const startTimestamp = Date.parse(`${date}T${time}:00`);
+      if (!Number.isFinite(startTimestamp)) {
+        throw new Error('Invalid booking date/time');
+      }
+      const startAt = new Date(startTimestamp).toISOString();
+      const endAt = new Date(startTimestamp + totalDuration * 3600000).toISOString();
 
       const assignment = store.findFirstAvailableRoomAndStaff(startAt, endAt, queryStaffId, queryServiceId);
       if (!assignment) {
@@ -195,12 +177,18 @@ export default function Checkout() {
 
       const finalBooking = await store.addBooking(booking);
       if (!finalBooking) {
-        setPaymentError('Something went wrong while creating your booking.');
-        return;
+        throw new Error('Unable to create booking. Please try again.');
       }
       navigate(`/confirmation?id=${finalBooking.id}`);
     } catch (error) {
-      setPaymentError('Something went wrong while processing your booking.');
+      console.error('BOOKING_CONFIRM_ERROR', {
+        error,
+        payload: { date, time, guests, extraHours, promo, serviceId: queryServiceId, staffId: queryStaffId }
+      });
+      const message = error instanceof Error && error.message
+        ? error.message
+        : 'Something went wrong while processing your booking.';
+      setPaymentError(message);
     } finally {
       setIsProcessing(false);
     }
@@ -339,18 +327,11 @@ export default function Checkout() {
               <div>
                 <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Summary</h3>
                 <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">
-                  {checkoutSummary.date
-                    ? new Date(checkoutSummary.date).toLocaleDateString('en-GB', { dateStyle: 'full' })
-                    : 'Select a valid date'}
-                  {' '}at{' '}
-                  {checkoutSummary.time || 'Select a time'}
+                  {parsedDateTime
+                    ? parsedDateTime.toLocaleDateString('en-GB', { dateStyle: 'full' })
+                    : 'Select a valid date'}{' '}
+                  at {time || 'Select a time'}
                 </p>
-                {loadingDraft && (
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-600">Loading booking details...</p>
-                )}
-                {draftError && (
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-red-400">{draftError}</p>
-                )}
               </div>
               <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest">{getGuestLabel(checkoutSummary.guests)}</span>
             </div>
