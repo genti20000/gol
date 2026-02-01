@@ -56,11 +56,25 @@ export const parseNumberInput = (value: number | string | null | undefined) => {
   return NaN;
 };
 
+const parseOptionalHours = (value: number | string | null | undefined) => {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'string' && value.trim().length === 0) return 0;
+  return parseNumberInput(value);
+};
+
+const safeDecode = (value: string) => {
+  try {
+    return decodeURIComponent(value);
+  } catch (error) {
+    return value;
+  }
+};
+
 export const normalizeBookingDraftInput = (input: BookingDraftInput) => ({
-  date: input.date?.trim() ?? '',
-  time: input.time?.trim() ?? '',
+  date: safeDecode(input.date?.trim() ?? ''),
+  time: safeDecode(input.time?.trim() ?? ''),
   guests: parseNumberInput(input.guests),
-  extraHours: parseNumberInput(input.extraHours),
+  extraHours: parseOptionalHours(input.extraHours),
   firstName: input.firstName?.trim() ?? '',
   surname: input.surname?.trim() ?? '',
   email: input.email?.trim().toLowerCase() ?? ''
@@ -97,6 +111,8 @@ export const validateBookingInitInput = (input: BookingDraftInput): BookingDraft
   }
 
   if (!Number.isFinite(normalized.extraHours)) {
+    fieldErrors.extraHours = 'Session length is required.';
+  } else if (normalized.extraHours < 0) {
     fieldErrors.extraHours = 'Session length is required.';
   }
 
