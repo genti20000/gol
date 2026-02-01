@@ -32,6 +32,8 @@ export function OperatingHourRow({ oh, store, handleMutation }: OperatingHourRow
                     onClick={async () => {
                         await handleMutation(() => store.updateOperatingHours(oh.day, { enabled: !oh.enabled }), 'Failed to update operating hours.');
                     }}
+                    title={oh.enabled ? 'Disable day' : 'Enable day'}
+                    aria-label={`${oh.enabled ? 'Disable' : 'Enable'} ${dayNames[oh.day]}`}
                     className={`w-12 h-6 rounded-full relative transition-all ${oh.enabled ? 'bg-amber-500' : 'bg-zinc-800'}`}
                 >
                     <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${oh.enabled ? 'left-7' : 'left-1'}`}></div>
@@ -43,6 +45,8 @@ export function OperatingHourRow({ oh, store, handleMutation }: OperatingHourRow
                     type="time"
                     disabled={!oh.enabled}
                     value={open}
+                    title="Opening time"
+                    aria-label="Opening time"
                     onChange={e => setOpen(e.target.value)}
                     onBlur={handleBlur}
                     onKeyDown={e => e.key === 'Enter' && handleBlur()}
@@ -53,6 +57,8 @@ export function OperatingHourRow({ oh, store, handleMutation }: OperatingHourRow
                     type="time"
                     disabled={!oh.enabled}
                     value={close}
+                    title="Closing time"
+                    aria-label="Closing time"
                     onChange={e => setClose(e.target.value)}
                     onBlur={handleBlur}
                     onKeyDown={e => e.key === 'Enter' && handleBlur()}

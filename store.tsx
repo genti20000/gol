@@ -782,7 +782,8 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
   }, []);
 
   const updateSettings = useCallback(async (patch: Partial<VenueSettings>): Promise<MutationResult> => {
-    const { error } = await supabase.from('venue_settings').update({
+    const { error } = await supabase.from('venue_settings').upsert({
+      id: 1,
       cancel_cutoff_hours: patch.cancelCutoffHours,
       reschedule_cutoff_hours: patch.rescheduleCutoffHours,
       release_pending_on_failure: patch.releasePendingOnPaymentFailure,
@@ -792,7 +793,7 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
       min_hours_before_booking: patch.minHoursBeforeBooking,
       midweek_discount_percent: patch.midweekDiscountPercent,
       offers: patch.offers
-    }).eq('id', 1);
+    });
     if (error) return { ok: false, error: error.message };
     setSettings(prev => ({ ...prev, ...patch }));
     return { ok: true };

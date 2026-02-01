@@ -227,8 +227,9 @@ export default function Admin() {
           </div>
           <div className="space-y-4">
             <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Email</label>
+              <label htmlFor="admin-email" className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Email</label>
               <input
+                id="admin-email"
                 type="email"
                 required
                 value={credentials.email}
@@ -237,8 +238,9 @@ export default function Admin() {
               />
             </div>
             <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Password</label>
+              <label htmlFor="admin-password" className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Password</label>
               <input
+                id="admin-password"
                 type="password"
                 required
                 value={credentials.password}
@@ -457,6 +459,8 @@ function BookingsTab({ store, selectedDate, setSelectedDate }: { store: any, sel
               <input
                 type="date"
                 value={selectedDate}
+                title="Select Date"
+                aria-label="Select view date"
                 onChange={e => setSelectedDate(e.target.value)}
                 className="bg-transparent text-amber-500 font-bold text-xl outline-none cursor-pointer focus:ring-1 ring-amber-500/20 rounded-lg px-2 min-h-[44px]"
               />

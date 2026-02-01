@@ -100,9 +100,6 @@ export interface Booking {
   deposit_forfeited?: boolean;
   amount_paid?: number;
   amount_charged?: number;
-  stripe_session_id?: string;
-  stripe_payment_intent_id?: string;
-  payment_intent_id?: string;
   // Extras
   extras?: BookingExtraSelection[];
   extras_total?: number;

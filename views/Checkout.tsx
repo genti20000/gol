@@ -201,50 +201,22 @@ export default function Checkout() {
     // 1. Sync one last time
     await updateBookingOnServer();
 
-    // 2. Confirm booking logic
-    // Ideally we integrate Stripe here. 
-    // If no deposit, we confirm directly.
-    const dueNow = booking?.deposit_amount ?? 0; // or calculate? 
-    // booking.total_price is from server. 
-    // We rely on booking.deposit_paid flag.
+    // 2. Confirm booking logic directly (Stripe removed)
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}/confirm`, { method: 'POST' });
+      const payload = await res.json();
 
-    if (dueNow > 0 && !booking?.deposit_paid) {
-      // Stripe Flow
-      try {
-        const checkoutResponse = await fetch('/api/stripe/create-checkout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bookingId })
-        });
-
-        const payload = await checkoutResponse.json();
-        if (payload.url) {
-          window.location.href = payload.url;
-        } else {
-          setPaymentError('Payment initialization failed.');
-          setIsProcessing(false);
-        }
-      } catch (e) {
-        setPaymentError('Payment error.');
+      if (res.ok && payload.success) {
+        navigate(`/booking/confirmed?id=${bookingId}`);
+      } else {
+        setPaymentError(payload.error || 'Confirmation failed.');
         setIsProcessing(false);
       }
-    } else {
-      // Confirm immediately (Zero deposit or already paid)
-      try {
-        const res = await fetch(`/api/bookings/${bookingId}/confirm`, { method: 'POST' });
-        const payload = await res.json();
-
-        if (res.ok && payload.success) {
-          navigate(`/booking/confirmed?id=${bookingId}`);
-        } else {
-          setPaymentError(payload.error || 'Confirmation failed.');
-          setIsProcessing(false);
-        }
-      } catch (e) {
-        setPaymentError('Network error during confirmation.');
-        setIsProcessing(false);
-      }
+    } catch (e) {
+      setPaymentError('Network error during confirmation.');
+      setIsProcessing(false);
     }
+
   };
 
 
@@ -425,7 +397,7 @@ export default function Checkout() {
                   disabled={isProcessing}
                   className={`${enabledExtras.length > 0 ? 'flex-[2]' : 'w-full'} gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-50 text-[10px] min-h-[44px] cursor-pointer`}
                 >
-                  {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : booking.deposit_amount > 0 ? `Pay £${booking.deposit_amount} Deposit` : 'Confirm Booking'}
+                  {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : 'Confirm Booking'}
                 </button>
               </div>
             </div>
@@ -477,7 +449,7 @@ export default function Checkout() {
                   <span>-£{booking.discount_amount}</span>
                 </div>
               )}
-              {booking.promo_discount_amount > 0 && (
+              {(booking.promo_discount_amount ?? 0) > 0 && (
                 <div className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-amber-500">
                   <span>Promo Applied</span>
                   <span>-£{booking.promo_discount_amount}</span>
@@ -489,17 +461,7 @@ export default function Checkout() {
               <div className="flex justify-between items-end">
                 <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">Total Price</span>
                 <span className="text-4xl font-bold text-white tracking-tighter">£{booking.total_price}</span>
-                {/* Note: booking.total_price from server includes extras updates hopefully returned by update API, but local state might lag? 
-                  Ideally we trust the server total. 
-                  If update logic syncs response to state, it should be correct. 
-              */}
               </div>
-              {booking.deposit_amount > 0 && (
-                <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl flex justify-between items-center">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Deposit Due Now</span>
-                  <span className="text-xl font-bold text-amber-500 tracking-tighter">£{booking.deposit_amount}</span>
-                </div>
-              )}
             </div>
 
             <div className="bg-zinc-900/50 p-4 rounded-2xl border border-zinc-800 space-y-3">
