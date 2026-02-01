@@ -154,6 +154,8 @@ export default function Checkout() {
         service_id: queryServiceId,
         start_at: startAt,
         end_at: endAt,
+        booking_date: checkoutSummary.date,
+        start_time: checkoutSummary.time,
         status: BookingStatus.CONFIRMED,
         confirmed_at: new Date().toISOString(),
         guests,
