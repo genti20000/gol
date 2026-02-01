@@ -4,7 +4,6 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { Booking, Extra, BookingStatus } from '@/types';
-import { getGuestLabel } from '@/constants';
 import { EXTRAS, PRICING_TIERS, getGuestLabel } from '@/constants';
 import { createClient } from '@supabase/supabase-js';
 import { validateBookingDraftInput, normalizeBookingDraftInput } from '@/lib/bookingValidation';
