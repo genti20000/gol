@@ -65,6 +65,7 @@ export default function Checkout() {
         start_at: startAt,
         end_at: endAt,
         status: BookingStatus.CONFIRMED,
+        confirmed_at: new Date().toISOString(),
         guests,
         customer_name: formData.name,
         customer_surname: formData.surname,
