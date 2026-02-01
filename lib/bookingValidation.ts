@@ -68,8 +68,8 @@ export const normalizeBookingDraftInput = (input: BookingDraftInput) => ({
 
 export const isValidBookingDateTime = (date: string, time: string) => {
   if (!date || !time) return false;
-  const parsed = new Date(`${date}T${time}`);
-  return Number.isFinite(parsed.getTime());
+  const parsed = Date.parse(`${date}T${time}:00`);
+  return Number.isFinite(parsed);
 };
 
 export const buildCustomerName = (firstName: string, surname: string) =>

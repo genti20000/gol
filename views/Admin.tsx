@@ -1833,13 +1833,21 @@ function BookingModal({ store, onClose, initialDate, booking, prefill }: { store
   });
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
 
-  const isPastDay = new Date(formData.date).getTime() < new Date().setHours(0, 0, 0, 0);
+  const formDateTimestamp = Date.parse(`${formData.date}T00:00:00`);
+  const isPastDay = Number.isFinite(formDateTimestamp)
+    ? formDateTimestamp < new Date().setHours(0, 0, 0, 0)
+    : false;
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isPastDay) return;
-    const startAt = new Date(`${formData.date}T${formData.time}`).toISOString();
-    const endAt = new Date(new Date(startAt).getTime() + formData.duration * 3600000).toISOString();
+    const startTimestamp = Date.parse(`${formData.date}T${formData.time}:00`);
+    if (!Number.isFinite(startTimestamp)) {
+      alert('Invalid booking date/time.');
+      return;
+    }
+    const startAt = new Date(startTimestamp).toISOString();
+    const endAt = new Date(startTimestamp + formData.duration * 3600000).toISOString();
     const check = store.validateInterval(formData.roomId, startAt, endAt, booking?.id, formData.staffId);
     if (!check.ok) { alert(check.reason); return; }
     const pricing = store.calculatePricing(formData.date, formData.guests, Math.max(0, formData.duration - 2));
@@ -1873,16 +1881,22 @@ function BookingModal({ store, onClose, initialDate, booking, prefill }: { store
       const ok = await handleMutation(store.updateBooking(booking.id, basePatch), 'Failed to update booking.');
       if (ok) onClose();
     } else {
-      const created = await store.addBooking({
-        ...basePatch,
-        created_at: new Date().toISOString(),
-        source: 'admin'
-      });
-      if (!created) {
-        alert('Failed to create booking.');
-        return;
+      try {
+        const created = await store.addBooking({
+          ...basePatch,
+          created_at: new Date().toISOString(),
+          source: 'admin'
+        });
+        if (!created) {
+          alert('Failed to create booking.');
+          return;
+        }
+        onClose();
+      } catch (error) {
+        const message = error instanceof Error && error.message ? error.message : 'Failed to create booking.';
+        console.error('BOOKING_CONFIRM_ERROR', { error, payload: basePatch });
+        alert(message);
       }
-      onClose();
     }
   };
 

@@ -520,7 +520,7 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
         }
         return `${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
       })();
-    const { data, error } = await supabase.from('bookings').insert([{
+    const bookingPayload = {
       room_id: normalizedRoomId,
       room_name: resolvedRoomName,
       service_id: booking.service_id,
@@ -548,16 +548,16 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
       deposit_forfeited: booking.deposit_forfeited,
       extras_total: booking.extras_total,
       extras_snapshot: booking.extras
-    }]).select().single();
+    };
+    const { data, error } = await supabase.from('bookings').insert([bookingPayload]).select().single();
     if (error) {
-      console.error("Supabase Error:", error);
-      alert(`Database Error: ${error.message}`);
-      return null;
+      const message = error.message ? `Database Error: ${error.message}` : 'Database Error: Unable to create booking.';
+      console.error('BOOKING_CONFIRM_ERROR', { error, payload: bookingPayload });
+      throw new Error(message);
     }
     if (!data) {
-      console.error("No data returned from insert");
-      alert("Error: Database did not return a confirmation.");
-      return null;
+      console.error('BOOKING_CONFIRM_ERROR', { error: 'No data returned from insert', payload: bookingPayload });
+      throw new Error('Error: Database did not return a confirmation.');
     }
     const newBooking = { ...data, magicToken: data.magic_token, booking_ref: data.booking_ref } as Booking;
     setBookings(prev => [...prev, newBooking]);
