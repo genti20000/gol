@@ -5,7 +5,7 @@ import { DayOperatingHours } from '../types';
 interface OperatingHourRowProps {
     oh: DayOperatingHours;
     store: any;
-    handleMutation: (promise: Promise<MutationResult>, errorMsg: string) => Promise<boolean>;
+    handleMutation: (updateFn: () => Promise<MutationResult>, errorMsg: string) => Promise<void>;
 }
 
 export function OperatingHourRow({ oh, store, handleMutation }: OperatingHourRowProps) {
@@ -19,7 +19,7 @@ export function OperatingHourRow({ oh, store, handleMutation }: OperatingHourRow
 
     const handleBlur = async () => {
         if (open !== oh.open || close !== oh.close) {
-            await handleMutation(store.updateOperatingHours(oh.day, { open, close }), 'Failed to update hours.');
+            await handleMutation(() => store.updateOperatingHours(oh.day, { open, close }), 'Failed to update hours.');
         }
     };
 
@@ -30,7 +30,7 @@ export function OperatingHourRow({ oh, store, handleMutation }: OperatingHourRow
             <div className="flex items-center gap-4">
                 <button
                     onClick={async () => {
-                        await handleMutation(store.updateOperatingHours(oh.day, { enabled: !oh.enabled }), 'Failed to update operating hours.');
+                        await handleMutation(() => store.updateOperatingHours(oh.day, { enabled: !oh.enabled }), 'Failed to update operating hours.');
                     }}
                     className={`w-12 h-6 rounded-full relative transition-all ${oh.enabled ? 'bg-amber-500' : 'bg-zinc-800'}`}
                 >
