@@ -6,6 +6,7 @@ import { useStore } from '@/store';
 import { BookingStatus, Extra } from '@/types';
 import { LOGO_URL, BASE_DURATION_HOURS, getGuestLabel } from '@/constants';
 import { isValidBookingDateTime } from '@/lib/bookingValidation';
+import { getCheckoutSummaryFields } from '@/lib/checkoutSummary';
 
 export default function Checkout() {
   const { route, navigate, back } = useRouterShim();
