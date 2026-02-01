@@ -479,6 +479,11 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     const normalizedStaffId = typeof booking.staff_id === 'string' && booking.staff_id.trim().length > 0
       ? booking.staff_id
       : null;
+    const resolvedConfirmedAt = booking.confirmed_at
+      ? booking.confirmed_at
+      : booking.status === BookingStatus.CONFIRMED
+        ? new Date().toISOString()
+        : undefined;
     const normalizedRoomId = typeof booking.room_id === 'string' && booking.room_id.trim().length > 0
       ? booking.room_id.trim()
       : '';
@@ -543,6 +548,7 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
       total_price: booking.total_price,
       magic_token: magicToken,
       source: booking.source,
+      confirmed_at: resolvedConfirmedAt,
       deposit_amount: booking.deposit_amount,
       deposit_paid: booking.deposit_paid,
       deposit_forfeited: booking.deposit_forfeited,
@@ -638,11 +644,18 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
 
   const updateBooking = useCallback(async (id: string, patch: Partial<Booking>): Promise<MutationResult> => {
     const payload: Record<string, unknown> = {};
+    const existingBooking = bookings.find(booking => booking.id === id);
+    const resolvedConfirmedAt = patch.confirmed_at
+      ? patch.confirmed_at
+      : patch.status === BookingStatus.CONFIRMED && !existingBooking?.confirmed_at
+        ? new Date().toISOString()
+        : existingBooking?.confirmed_at;
     const assign = (key: string, value: unknown) => {
       if (value !== undefined) payload[key] = value;
     };
 
     assign('status', patch.status);
+    assign('confirmed_at', resolvedConfirmedAt);
     assign('notes', patch.notes);
     assign('deposit_paid', patch.deposit_paid);
     assign('deposit_forfeited', patch.deposit_forfeited);
@@ -670,9 +683,12 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
 
     const { error } = await supabase.from('bookings').update(payload).eq('id', id);
     if (error) return { ok: false, error: error.message };
-    setBookings(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
+    const updatedPatch = resolvedConfirmedAt !== undefined
+      ? { ...patch, confirmed_at: resolvedConfirmedAt }
+      : patch;
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, ...updatedPatch } : b));
     return { ok: true };
-  }, []);
+  }, [bookings]);
 
   const getBookingByMagicToken = useCallback((token: string) => bookings.find(b => b.magicToken === token), [bookings]);
 
