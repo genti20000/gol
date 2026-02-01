@@ -326,11 +326,6 @@ export default function Checkout() {
         return;
       }
 
-      if ((draftBooking?.deposit_amount ?? 0) <= 0) {
-        navigate(`/booking/confirmed?id=${bookingId}`);
-        return;
-      }
-
       const checkoutResponse = await fetch('/api/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

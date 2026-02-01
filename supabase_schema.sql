@@ -98,7 +98,8 @@ CREATE TABLE bookings (
   stripe_payment_intent_id TEXT,
   extras_total NUMERIC DEFAULT 0,
   extras_snapshot JSONB DEFAULT '[]',
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT now(),
+  confirmed_at TIMESTAMPTZ
 );
 
 -- Waitlist Table
