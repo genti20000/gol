@@ -125,13 +125,13 @@ export default function Checkout() {
     setIsProcessing(true);
 
     try {
-      if (!date || !time) {
+      if (!checkoutSummary.date || !checkoutSummary.time) {
         throw new Error('Booking date and time are required.');
       }
-      if (!isValidBookingDateTime(date, time)) {
+      if (!isValidBookingDateTime(checkoutSummary.date, checkoutSummary.time)) {
         throw new Error('Invalid booking date/time');
       }
-      const startTimestamp = Date.parse(`${date}T${time}:00`);
+      const startTimestamp = Date.parse(`${checkoutSummary.date}T${checkoutSummary.time}:00`);
       if (!Number.isFinite(startTimestamp)) {
         throw new Error('Invalid booking date/time');
       }
