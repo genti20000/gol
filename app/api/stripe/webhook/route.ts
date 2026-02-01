@@ -10,6 +10,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '', {
 
 type BookingUpdate = {
   status?: BookingStatus;
+  confirmed_at?: string | null;
   deposit_paid?: boolean;
   amount_charged?: number;
   payment_intent_id?: string | null;
@@ -97,6 +98,7 @@ export async function POST(request: Request) {
       typeof session.amount_total === 'number' ? session.amount_total / 100 : 0;
     const update: BookingUpdate = {
       status: BookingStatus.CONFIRMED,
+      confirmed_at: new Date().toISOString(),
       deposit_paid: true,
       amount_charged: amountCharged,
       payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : null

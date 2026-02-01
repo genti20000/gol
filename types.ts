@@ -91,6 +91,7 @@ export interface Booking {
   promo_discount_amount?: number;
   total_price: number;
   created_at: string;
+  confirmed_at?: string | null;
   source?: 'public' | 'admin';
   magicToken?: string;
   // Deposit tracking

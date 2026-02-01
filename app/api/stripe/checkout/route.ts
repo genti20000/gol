@@ -88,6 +88,7 @@ export async function POST(req: Request) {
         .from("bookings")
         .update({
           status: "CONFIRMED",
+          confirmed_at: new Date().toISOString(),
           deposit_paid: false,
           amount_charged: 0,
           payment_intent_id: null

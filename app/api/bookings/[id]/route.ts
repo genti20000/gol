@@ -23,7 +23,7 @@ export async function GET(
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
   const { data, error } = await supabase
     .from('bookings')
-    .select('id,status')
+    .select('id,status,booking_ref,customer_email,deposit_amount,confirmed_at')
     .eq('id', bookingId)
     .maybeSingle();
 
@@ -34,5 +34,16 @@ export async function GET(
     return NextResponse.json({ error: 'Booking not found.' }, { status: 404 });
   }
 
-  return NextResponse.json({ id: data.id, status: data.status });
+  return NextResponse.json({
+    id: data.id,
+    status: data.status,
+    booking: {
+      id: data.id,
+      status: data.status,
+      booking_ref: data.booking_ref,
+      customer_email: data.customer_email,
+      deposit_amount: data.deposit_amount,
+      confirmed_at: data.confirmed_at
+    }
+  });
 }
