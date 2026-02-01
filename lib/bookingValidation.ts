@@ -75,7 +75,7 @@ export const isValidBookingDateTime = (date: string, time: string) => {
 export const buildCustomerName = (firstName: string, surname: string) =>
   `${firstName} ${surname}`.trim();
 
-export const validateBookingDraftInput = (input: BookingDraftInput): BookingDraftValidationResult => {
+export const validateBookingInitInput = (input: BookingDraftInput): BookingDraftValidationResult => {
   const normalized = normalizeBookingDraftInput(input);
   const fieldErrors: Record<string, string> = {};
 
@@ -100,6 +100,18 @@ export const validateBookingDraftInput = (input: BookingDraftInput): BookingDraf
     fieldErrors.extraHours = 'Session length is required.';
   }
 
+  return { normalized, fieldErrors, isValid: Object.keys(fieldErrors).length === 0 };
+};
+
+export const validateBookingDraftInput = (input: BookingDraftInput): BookingDraftValidationResult => {
+  const normalized = normalizeBookingDraftInput(input);
+  const fieldErrors: Record<string, string> = {};
+
+  // All Init fields must be present
+  const initResult = validateBookingInitInput(input);
+  Object.assign(fieldErrors, initResult.fieldErrors);
+
+  // Plus customer details
   if (!normalized.firstName) {
     fieldErrors.firstName = 'First name is required.';
   }

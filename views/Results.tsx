@@ -36,17 +36,47 @@ export default function Results() {
   const [waitlistSent, setWaitlistSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleBook = (time: string) => {
-    const params = new URLSearchParams({
-      date: queryDate,
-      guests: queryGuests.toString(),
-      extraHours: queryExtraHours.toString(),
-      time,
-      promo: queryPromo,
-      serviceId: queryServiceId,
-      staffId: queryStaffId
-    });
-    navigate(`/checkout?${params.toString()}`);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const handleBook = async (time: string) => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/bookings/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: queryDate,
+          time,
+          guests: queryGuests,
+          extraHours: queryExtraHours,
+          serviceId: queryServiceId,
+          staffId: queryStaffId,
+          promo: queryPromo
+        })
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        setError(payload.error || 'Failed to initialize booking.');
+        setIsProcessing(false);
+        return;
+      }
+
+      const { bookingId } = await response.json();
+      if (bookingId) {
+        navigate(`/checkout?bookingId=${bookingId}`);
+      } else {
+        setError('Unexpected server response. Please try again.');
+        setIsProcessing(false);
+      }
+    } catch (err) {
+      console.error('Booking init failed', err);
+      setError('Unable to start booking. Please try again.');
+      setIsProcessing(false);
+    }
   };
 
   const handleJoinWaitlist = async (e: React.FormEvent) => {
@@ -108,6 +138,12 @@ export default function Results() {
         </button>
       </div>
 
+      {error && !waitlistSent && (
+        <div className="mb-8 rounded-2xl border border-red-500/40 bg-red-500/10 px-6 py-4 text-center">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-red-200">{error}</p>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 md:gap-8 mb-10 md:mb-16">
         <div>
           <h2 className="text-3xl md:text-4xl font-bold uppercase tracking-tighter mb-2">Available <span className="text-amber-500">Times</span></h2>
@@ -146,7 +182,9 @@ export default function Results() {
           {validTimes.map(time => (
             <button key={time} onClick={() => handleBook(time)} className="bg-transparent border-none cursor-pointer glass-panel hover:border-amber-500/50 p-5 md:p-6 rounded-xl md:rounded-2xl flex flex-col items-center justify-center gap-2 transition-all group min-h-[100px] md:min-h-[120px] text-zinc-50">
               <span className="text-xl md:text-2xl font-bold font-mono group-hover:text-amber-500 transition-colors">{time}</span>
-              <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-zinc-500">Book Now</span>
+              <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                {isProcessing ? <i className="fa-solid fa-spinner fa-spin"></i> : 'Book Now'}
+              </span>
             </button>
           ))}
         </div>
