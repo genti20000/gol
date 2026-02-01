@@ -5,6 +5,7 @@ import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { BookingStatus, Extra } from '@/types';
 import { LOGO_URL, BASE_DURATION_HOURS, getGuestLabel } from '@/constants';
+import { isValidBookingDateTime } from '@/lib/bookingValidation';
 
 export default function Checkout() {
   const { route, navigate, back } = useRouterShim();
@@ -29,6 +30,12 @@ export default function Checkout() {
   const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promo), [date, guests, extraHours, promo, store]);
   const enabledExtras = useMemo(() => store.getEnabledExtras(), [store]);
   const extrasTotal = useMemo(() => store.computeExtrasTotal(extrasSelection, guests), [extrasSelection, guests, store]);
+  const parsedDateTime = useMemo(() => {
+    if (!date || !time) return null;
+    const timestamp = Date.parse(`${date}T${time}:00`);
+    if (!Number.isFinite(timestamp)) return null;
+    return new Date(timestamp);
+  }, [date, time]);
 
   // Show extras step first when available, otherwise go straight to details
   useEffect(() => {
@@ -45,8 +52,18 @@ export default function Checkout() {
     setIsProcessing(true);
 
     try {
-      const startAt = new Date(`${date}T${time}`).toISOString();
-      const endAt = new Date(new Date(startAt).getTime() + totalDuration * 3600000).toISOString();
+      if (!date || !time) {
+        throw new Error('Booking date and time are required.');
+      }
+      if (!isValidBookingDateTime(date, time)) {
+        throw new Error('Invalid booking date/time');
+      }
+      const startTimestamp = Date.parse(`${date}T${time}:00`);
+      if (!Number.isFinite(startTimestamp)) {
+        throw new Error('Invalid booking date/time');
+      }
+      const startAt = new Date(startTimestamp).toISOString();
+      const endAt = new Date(startTimestamp + totalDuration * 3600000).toISOString();
 
       const assignment = store.findFirstAvailableRoomAndStaff(startAt, endAt, queryStaffId, queryServiceId);
       if (!assignment) {
@@ -88,12 +105,18 @@ export default function Checkout() {
 
       const finalBooking = await store.addBooking(booking);
       if (!finalBooking) {
-        setPaymentError('Something went wrong while creating your booking.');
-        return;
+        throw new Error('Unable to create booking. Please try again.');
       }
       navigate(`/confirmation?id=${finalBooking.id}`);
     } catch (error) {
-      setPaymentError('Something went wrong while processing your booking.');
+      console.error('BOOKING_CONFIRM_ERROR', {
+        error,
+        payload: { date, time, guests, extraHours, promo, serviceId: queryServiceId, staffId: queryStaffId }
+      });
+      const message = error instanceof Error && error.message
+        ? error.message
+        : 'Something went wrong while processing your booking.';
+      setPaymentError(message);
     } finally {
       setIsProcessing(false);
     }
@@ -231,7 +254,12 @@ export default function Checkout() {
             <div className="flex justify-between items-start">
               <div>
                 <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Summary</h3>
-                <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">{new Date(date).toLocaleDateString('en-GB', { dateStyle: 'full' })} at {time}</p>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">
+                  {parsedDateTime
+                    ? parsedDateTime.toLocaleDateString('en-GB', { dateStyle: 'full' })
+                    : 'Select a valid date'}{' '}
+                  at {time || 'Select a time'}
+                </p>
               </div>
               <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest">{getGuestLabel(guests)}</span>
             </div>
