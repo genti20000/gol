@@ -74,6 +74,9 @@ export interface Booking {
   room_name: string;
   service_id?: string;
   staff_id?: string;
+  booking_date?: string;
+  start_time?: string;
+  duration_hours?: number;
   start_at: string; // ISO
   end_at: string; // ISO
   status: BookingStatus;

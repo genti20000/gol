@@ -5,6 +5,7 @@ import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { BookingStatus, Extra } from '@/types';
 import { LOGO_URL, BASE_DURATION_HOURS, getGuestLabel } from '@/constants';
+import { isValidBookingDateTime } from '@/lib/bookingValidation';
 
 export default function Checkout() {
   const { route, navigate, back } = useRouterShim();
@@ -15,7 +16,11 @@ export default function Checkout() {
   const [formData, setFormData] = useState({ name: '', surname: '', email: '', phone: '', notes: '' });
   const [extrasSelection, setExtrasSelection] = useState<Record<string, number>>({});
   const [currentStep, setCurrentStep] = useState<'extras' | 'details'>('details');
+  const [draftBooking, setDraftBooking] = useState<any | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [loadingDraft, setLoadingDraft] = useState(false);
 
+  const bookingId = route.params.get('bookingId') || '';
   const date = route.params.get('date') || '';
   const time = route.params.get('time') || '';
   const guests = parseInt(route.params.get('guests') || '8');
@@ -24,11 +29,34 @@ export default function Checkout() {
   const queryServiceId = route.params.get('serviceId') || undefined;
   const queryStaffId = route.params.get('staffId') || undefined;
 
-  const totalDuration = 2 + extraHours;
+  const checkoutSummary = useMemo(() => getCheckoutSummaryFields({
+    booking: draftBooking,
+    fallback: {
+      date,
+      time,
+      guests,
+      extraHours
+    },
+    baseDurationHours: BASE_DURATION_HOURS
+  }), [draftBooking, date, time, guests, extraHours]);
 
-  const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promo), [date, guests, extraHours, promo, store]);
+  const effectivePromo = draftBooking?.promo_code || promo;
+  const totalDuration = BASE_DURATION_HOURS + checkoutSummary.extraHours;
+
+  const pricing = useMemo(() => store.calculatePricing(
+    checkoutSummary.date,
+    checkoutSummary.guests,
+    checkoutSummary.extraHours,
+    effectivePromo
+  ), [checkoutSummary.date, checkoutSummary.extraHours, checkoutSummary.guests, effectivePromo, store]);
   const enabledExtras = useMemo(() => store.getEnabledExtras(), [store]);
   const extrasTotal = useMemo(() => store.computeExtrasTotal(extrasSelection, guests), [extrasSelection, guests, store]);
+  const parsedDateTime = useMemo(() => {
+    if (!date || !time) return null;
+    const timestamp = Date.parse(`${date}T${time}:00`);
+    if (!Number.isFinite(timestamp)) return null;
+    return new Date(timestamp);
+  }, [date, time]);
 
   // Show extras step first when available, otherwise go straight to details
   useEffect(() => {
@@ -39,14 +67,75 @@ export default function Checkout() {
     setCurrentStep('details');
   }, [enabledExtras.length]);
 
+  useEffect(() => {
+    if (!bookingId) {
+      setDraftBooking(null);
+      setDraftError(null);
+      return;
+    }
+
+    let isMounted = true;
+    setLoadingDraft(true);
+    setDraftError(null);
+
+    const loadDraft = async () => {
+      try {
+        const response = await fetch(`/api/bookings/${bookingId}`);
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(payload?.error || 'Unable to load booking.');
+        }
+        const payload = await response.json();
+        const booking = payload?.booking ?? null;
+
+        if (isMounted) {
+          setDraftBooking(booking);
+        }
+
+        if (booking) {
+          const requiredFields = ['booking_date', 'start_time', 'service_id', 'guests', 'duration_hours'];
+          const missingFields = requiredFields.filter((field) => booking[field] === null || booking[field] === undefined || booking[field] === '');
+          if (missingFields.length > 0) {
+            console.warn('Booking draft missing required summary fields.', { bookingId, booking });
+          }
+        }
+      } catch (error) {
+        if (isMounted) {
+          const message = error instanceof Error ? error.message : 'Unable to load booking.';
+          setDraftError(message);
+          setDraftBooking(null);
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingDraft(false);
+        }
+      }
+    };
+
+    loadDraft();
+    return () => {
+      isMounted = false;
+    };
+  }, [bookingId]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPaymentError(null);
     setIsProcessing(true);
 
     try {
-      const startAt = new Date(`${date}T${time}`).toISOString();
-      const endAt = new Date(new Date(startAt).getTime() + totalDuration * 3600000).toISOString();
+      if (!date || !time) {
+        throw new Error('Booking date and time are required.');
+      }
+      if (!isValidBookingDateTime(date, time)) {
+        throw new Error('Invalid booking date/time');
+      }
+      const startTimestamp = Date.parse(`${date}T${time}:00`);
+      if (!Number.isFinite(startTimestamp)) {
+        throw new Error('Invalid booking date/time');
+      }
+      const startAt = new Date(startTimestamp).toISOString();
+      const endAt = new Date(startTimestamp + totalDuration * 3600000).toISOString();
 
       const assignment = store.findFirstAvailableRoomAndStaff(startAt, endAt, queryStaffId, queryServiceId);
       if (!assignment) {
@@ -55,7 +144,7 @@ export default function Checkout() {
         return;
       }
 
-      const bookingExtras = store.buildBookingExtrasSnapshot(extrasSelection, guests);
+      const bookingExtras = store.buildBookingExtrasSnapshot(extrasSelection, checkoutSummary.guests);
 
       const booking = {
         room_id: assignment.room_id,
@@ -73,10 +162,10 @@ export default function Checkout() {
         customer_phone: formData.phone,
         notes: formData.notes,
         base_total: pricing.baseTotal,
-        extras_hours: extraHours,
+        extras_hours: checkoutSummary.extraHours,
         extras_price: pricing.extrasPrice,
         discount_amount: pricing.discountAmount,
-        promo_code: promo || undefined,
+        promo_code: effectivePromo || undefined,
         promo_discount_amount: pricing.promoDiscountAmount,
         total_price: pricing.totalPrice + extrasTotal,
         created_at: new Date().toISOString(),
@@ -89,12 +178,18 @@ export default function Checkout() {
 
       const finalBooking = await store.addBooking(booking);
       if (!finalBooking) {
-        setPaymentError('Something went wrong while creating your booking.');
-        return;
+        throw new Error('Unable to create booking. Please try again.');
       }
       navigate(`/confirmation?id=${finalBooking.id}`);
     } catch (error) {
-      setPaymentError('Something went wrong while processing your booking.');
+      console.error('BOOKING_CONFIRM_ERROR', {
+        error,
+        payload: { date, time, guests, extraHours, promo, serviceId: queryServiceId, staffId: queryStaffId }
+      });
+      const message = error instanceof Error && error.message
+        ? error.message
+        : 'Something went wrong while processing your booking.';
+      setPaymentError(message);
     } finally {
       setIsProcessing(false);
     }
@@ -232,9 +327,14 @@ export default function Checkout() {
             <div className="flex justify-between items-start">
               <div>
                 <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Summary</h3>
-                <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">{new Date(date).toLocaleDateString('en-GB', { dateStyle: 'full' })} at {time}</p>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">
+                  {parsedDateTime
+                    ? parsedDateTime.toLocaleDateString('en-GB', { dateStyle: 'full' })
+                    : 'Select a valid date'}{' '}
+                  at {time || 'Select a time'}
+                </p>
               </div>
-              <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest">{getGuestLabel(guests)}</span>
+              <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest">{getGuestLabel(checkoutSummary.guests)}</span>
             </div>
           </div>
 
@@ -243,16 +343,16 @@ export default function Checkout() {
               <span>Base Session (2h)</span>
               <span>£{pricing.baseTotal}</span>
             </div>
-            {extraHours > 0 && (
+            {checkoutSummary.extraHours > 0 && (
               <div className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-zinc-400">
-                <span>Extended Time (+{extraHours}h)</span>
+                <span>Extended Time (+{checkoutSummary.extraHours}h)</span>
                 <span>£{pricing.extrasPrice}</span>
               </div>
             )}
             {Object.entries(extrasSelection).map(([id, qty]) => {
               const extra = store.extras.find(e => e.id === id);
               if (!extra) return null;
-              const cost = extra.pricingMode === 'per_person' ? extra.price * guests * qty : extra.price * qty;
+              const cost = extra.pricingMode === 'per_person' ? extra.price * checkoutSummary.guests * qty : extra.price * qty;
               return (
                 <div key={id} className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-zinc-400 animate-in slide-in-from-left-2">
                   <span>{extra.name} (x{qty})</span>

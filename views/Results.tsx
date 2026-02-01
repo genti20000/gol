@@ -148,7 +148,15 @@ export default function Results() {
         <div>
           <h2 className="text-3xl md:text-4xl font-bold uppercase tracking-tighter mb-2">Available <span className="text-amber-500">Times</span></h2>
           <div className="text-zinc-500 font-bold uppercase tracking-widest text-[10px] space-y-1">
-            <p><span className="text-white">{getGuestLabel(queryGuests)}</span> • {queryDate ? new Date(queryDate).toLocaleDateString('en-GB', { dateStyle: 'full' }) : 'Invalid Date'}</p>
+            <p>
+              <span className="text-white">{getGuestLabel(queryGuests)}</span> •{' '}
+              {(() => {
+                if (!queryDate) return 'Select a valid date';
+                const parsed = Date.parse(`${queryDate}T00:00:00`);
+                if (!Number.isFinite(parsed)) return 'Select a valid date';
+                return new Date(parsed).toLocaleDateString('en-GB', { dateStyle: 'full' });
+              })()}
+            </p>
             <p className="text-amber-500">{2 + queryExtraHours} Hour Experience</p>
           </div>
         </div>

@@ -71,7 +71,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid extra hours selection.' }, { status: 400 });
     }
 
-    const startDate = new Date(`${date}T${time}`);
+    const startTimestamp = Date.parse(`${date}T${time}:00`);
+    if (!Number.isFinite(startTimestamp)) {
+      console.error('Invalid booking date/time for booking draft.', { date, time, payload });
+      return NextResponse.json({ error: 'Invalid booking date/time' }, { status: 400 });
+    }
+    const startDate = new Date(startTimestamp);
 
     const totalDurationHours = BASE_DURATION_HOURS + extraHours;
     const endDate = new Date(startDate.getTime() + totalDurationHours * 3600000);
@@ -178,6 +183,9 @@ export async function POST(request: Request) {
       const { data: refreshedDraft, error: refreshError } = await supabase
         .from('bookings')
         .update({
+          booking_date: date,
+          start_time: time,
+          duration_hours: totalDurationHours,
           customer_name: buildCustomerName(firstName, surname),
           customer_surname: surname,
           customer_email: email,
@@ -275,6 +283,9 @@ export async function POST(request: Request) {
       room_name: resolvedRoomName,
       service_id: isNonEmptyString(payload.serviceId) ? payload.serviceId : null,
       staff_id: isNonEmptyString(payload.staffId) ? payload.staffId : null,
+      booking_date: date,
+      start_time: time,
+      duration_hours: totalDurationHours,
       start_at: startDate.toISOString(),
       end_at: endDate.toISOString(),
       status: BookingStatus.DRAFT,

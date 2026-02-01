@@ -64,7 +64,12 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Invalid extra hours selection.' }, { status: 400 });
         }
 
-        const startDate = new Date(`${date}T${time}`);
+        const startTimestamp = Date.parse(`${date}T${time}:00`);
+        if (!Number.isFinite(startTimestamp)) {
+            console.error('Invalid booking date/time for init.', { date, time, payload });
+            return NextResponse.json({ error: 'Invalid booking date/time' }, { status: 400 });
+        }
+        const startDate = new Date(startTimestamp);
         const totalDurationHours = BASE_DURATION_HOURS + extraHours;
         const endDate = new Date(startDate.getTime() + totalDurationHours * 3600000);
 
@@ -180,6 +185,9 @@ export async function POST(request: Request) {
             room_name: assignedRoom.name,
             service_id: serviceId || null,
             staff_id: staffId || null,
+            booking_date: date,
+            start_time: time,
+            duration_hours: totalDurationHours,
             start_at: startDate.toISOString(),
             end_at: endDate.toISOString(),
             status: BookingStatus.PENDING, // Changed from DRAFT to PENDING
