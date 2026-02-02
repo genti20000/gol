@@ -567,6 +567,7 @@ function WaitlistListing({ store, date }: { store: any, date: string }) {
                 }}
                 className="text-zinc-500 hover:text-white transition-colors p-2"
                 title="Update Status"
+                aria-label="Update waitlist status"
               >
                 <i className="fa-solid fa-check"></i>
               </button>
@@ -580,6 +581,7 @@ function WaitlistListing({ store, date }: { store: any, date: string }) {
                 }}
                 className="text-zinc-700 hover:text-red-500 transition-colors p-2"
                 title="Delete"
+                aria-label="Delete waitlist entry"
               >
                 <i className="fa-solid fa-trash"></i>
               </button>
@@ -856,6 +858,40 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
     hours.push(h);
   }
 
+  // Inject dynamic CSS for schedule heights/top positions to avoid inline styles
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const styleId = 'admin-schedule-styles';
+    let styleEl = document.getElementById(styleId) as HTMLStyleElement | null;
+    const maxRows = hours.length;
+    let css = '';
+    // root var for row height
+    css += `.admin-schedule { --row-height: ${rowHeight}px; }\n`;
+    css += `.admin-row { height: var(--row-height); }\n`;
+    css += `.admin-room-grid { height: calc(var(--row-height) * ${maxRows}); }\n`;
+
+    // booking positions
+    store.rooms.forEach((r: Room) => {
+      const items = store.getBusyIntervals(date, r.id);
+      items.forEach((item: any) => {
+        const dayStartTs = new Date(`${date}T${window.open}`).getTime();
+        const startOffsetHrs = (item.start - dayStartTs) / 3600000;
+        const durationHrs = (item.end - item.start) / 3600000;
+        const topPx = Math.round(startOffsetHrs * rowHeight);
+        const heightPx = Math.round(durationHrs * rowHeight);
+        const slug = `booking-${item.id}`;
+        css += `.${slug} { top: ${topPx}px; height: ${heightPx}px; }\n`;
+      });
+    });
+
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = styleId;
+      document.head.appendChild(styleEl);
+    }
+    styleEl.innerHTML = css;
+  }, [rowHeight, hours.length, date, store.bookings]);
+
   const handleDrop = (event: React.DragEvent<HTMLDivElement>, roomId: string) => {
     if (isPastDay) return;
     event.preventDefault();
@@ -912,7 +948,7 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
         <div className="w-16 shrink-0 border-r border-zinc-900 bg-zinc-900/40 z-20">
           <div className="h-24 border-b border-zinc-900"></div>
           {hours.map(h => (
-            <div key={h} className="relative border-b border-zinc-800/50 flex items-start justify-center pt-2 text-[9px] font-mono text-zinc-600" style={{ height: rowHeight }}>
+            <div key={h} className="relative border-b border-zinc-800/50 flex items-start justify-center pt-2 text-[9px] font-mono text-zinc-600 admin-row">
               {(h % 24).toString().padStart(2, '0')}:00
               {/* Half-hour marker line sidebar */}
               <div className="absolute top-1/2 left-0 right-0 border-t border-zinc-800/10 pointer-events-none"></div>
@@ -933,9 +969,9 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                 </span>
               </div>
 
-              <div className="relative" style={{ height: hours.length * rowHeight }}>
+              <div className="relative admin-room-grid">
                 {hours.map(h => (
-                  <div key={h} className="relative border-b border-zinc-900/30 w-full" style={{ height: rowHeight }}>
+                  <div key={h} className="relative border-b border-zinc-900/30 w-full admin-row">
                     {/* 30-minute marker line */}
                     <div className="absolute top-1/2 left-0 right-0 border-t border-zinc-800/40 h-0 pointer-events-none"></div>
                   </div>
@@ -985,11 +1021,7 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                           ? 'bg-amber-500 text-black border-amber-400'
                           : 'bg-zinc-800 text-zinc-400 border-zinc-700')
                         : 'bg-red-500/20 text-red-500 border-red-500/20 cursor-default'
-                        } ${item.type === 'booking' ? (isPastDay ? 'cursor-pointer' : 'cursor-grab') : ''} ${draggingId === item.id ? 'opacity-70 cursor-grabbing' : ''}`}
-                      style={{
-                        top: startOffsetHrs * rowHeight,
-                        height: durationHrs * rowHeight
-                      }}
+                        } ${item.type === 'booking' ? (isPastDay ? 'cursor-pointer' : 'cursor-grab') : ''} ${draggingId === item.id ? 'opacity-70 cursor-grabbing' : ''} booking-${item.id}`}
                     >
                       <span className="text-[7px] font-bold uppercase text-center line-clamp-2 leading-none">
                         {item.type === 'booking' ? `${item.customer_name} • ${item.guests} GUESTS` : (item.reason || 'Blocked')}
@@ -1072,8 +1104,8 @@ function CustomersTab({ store }: { store: any }) {
         {filtered.map((c: Customer) => (
           <div key={c.id} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl space-y-4 hover:border-zinc-700 transition-all group shadow-lg relative">
             <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button onClick={() => handleEdit(c)} className="text-zinc-500 hover:text-white p-2" title="Edit Profile"><i className="fa-solid fa-pen-to-square"></i></button>
-              <button onClick={() => handleDelete(c.id)} className="text-zinc-700 hover:text-red-500 p-2" title="Delete Profile"><i className="fa-solid fa-trash-can"></i></button>
+              <button onClick={() => handleEdit(c)} className="text-zinc-500 hover:text-white p-2" title="Edit Profile" aria-label="Edit profile"><i className="fa-solid fa-pen-to-square"></i></button>
+              <button onClick={() => handleDelete(c.id)} className="text-zinc-700 hover:text-red-500 p-2" title="Delete Profile" aria-label="Delete profile"><i className="fa-solid fa-trash-can"></i></button>
             </div>
             <div className="flex justify-between items-start">
               <div className="w-10 h-10 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center font-bold text-lg">
@@ -1146,24 +1178,24 @@ function CustomerModal({ store, onClose, customer }: { store: any, onClose: () =
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">First Name</label>
-              <input type="text" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
+              <input aria-label="First name" type="text" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Surname</label>
-              <input type="text" value={formData.surname} onChange={e => setFormData({ ...formData, surname: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
+              <input aria-label="Surname" type="text" value={formData.surname} onChange={e => setFormData({ ...formData, surname: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
             </div>
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Email Address</label>
-            <input type="email" required value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
+            <input aria-label="Email address" type="email" required value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Phone Number</label>
-            <input type="tel" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
+            <input aria-label="Phone number" type="tel" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Internal Notes</label>
-            <textarea rows={3} value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500 resize-none" />
+            <textarea aria-label="Internal notes" rows={3} value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500 resize-none" />
           </div>
         </div>
 
@@ -1225,6 +1257,7 @@ function BlocksTab({ store, selectedDate }: { store: any, selectedDate: string }
                     await handleMutation(store.toggleRecurringBlock(rb.id, !rb.enabled), 'Failed to update recurring block.');
                   }}
                   className={`w-12 h-6 rounded-full relative transition-all ${rb.enabled ? 'bg-amber-500' : 'bg-zinc-800'}`}
+                  aria-label={rb.enabled ? 'Disable recurring block' : 'Enable recurring block'}
                 >
                   <i className={`fa-solid ${rb.enabled ? 'fa-check' : 'fa-power-off'} text-xs`}></i>
                 </button>
@@ -1254,9 +1287,10 @@ function BlocksTab({ store, selectedDate }: { store: any, selectedDate: string }
           <div className="relative glass-panel p-8 rounded-[2rem] border-zinc-800 max-w-sm w-full space-y-6">
             <h4 className="text-lg font-bold uppercase text-white">Add Maintenance Block</h4>
             <div className="space-y-4">
-              <select value={newBlock.roomId} onChange={e => setNewBlock({ ...newBlock, roomId: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white">
+              <select aria-label="Block room" value={newBlock.roomId} onChange={e => setNewBlock({ ...newBlock, roomId: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white">
                 {store.rooms.map((r: Room) => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
+              
               <input aria-label="Block reason" type="text" placeholder="Reason (e.g. Deep Clean)" value={newBlock.reason} onChange={e => setNewBlock({ ...newBlock, reason: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white" />
               <div className="grid grid-cols-2 gap-4">
                 <input aria-label="Block start time" type="time" value={newBlock.start_at.split('T')[1]} onChange={e => setNewBlock({ ...newBlock, start_at: `${selectedDate}T${e.target.value}` })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white" />
@@ -1318,6 +1352,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                   value={store.settings.cancelCutoffHours}
                   onChange={async e => handleSettingChange(() => store.updateSettings({ cancelCutoffHours: parseInt(e.target.value) }), 'Failed to update cancellation cutoff.')}
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                  aria-label="Cancellation Cutoff Hours"
                 />
               </div>
               <div className="space-y-2">
@@ -1327,6 +1362,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                   value={store.settings.rescheduleCutoffHours}
                   onChange={async e => handleSettingChange(() => store.updateSettings({ rescheduleCutoffHours: parseInt(e.target.value) }), 'Failed to update reschedule cutoff.')}
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                  aria-label="Reschedule Cutoff Hours"
                 />
               </div>
               <div className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex items-center justify-between">
@@ -1337,6 +1373,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                 <button
                   onClick={async () => handleSettingChange(() => store.updateSettings({ deposit_enabled: !store.settings.deposit_enabled }), 'Failed to update deposit setting.')}
                   className={`w-12 h-6 rounded-full relative transition-all ${store.settings.deposit_enabled ? 'bg-amber-500' : 'bg-zinc-800'}`}
+                    aria-label={store.settings.deposit_enabled ? 'Disable deposit requirement' : 'Enable deposit requirement'}
                 >
                   <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${store.settings.deposit_enabled ? 'left-7' : 'left-1'}`}></div>
                 </button>
@@ -1349,6 +1386,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                     value={store.settings.deposit_amount}
                     onChange={async e => handleSettingChange(() => store.updateSettings({ deposit_amount: parseInt(e.target.value) }), 'Failed to update deposit amount.')}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                    aria-label="Deposit Amount"
                   />
                 </div>
               )}
@@ -1365,6 +1403,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                       value={store.settings.minDaysBeforeBooking}
                       onChange={async e => handleSettingChange(() => store.updateSettings({ minDaysBeforeBooking: Math.max(0, parseInt(e.target.value)) }), 'Failed to update minimum days lead time.')}
                       className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                      aria-label="Min Days Lead Time"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1375,6 +1414,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                       value={store.settings.minHoursBeforeBooking}
                       onChange={async e => handleSettingChange(() => store.updateSettings({ minHoursBeforeBooking: Math.max(0, parseInt(e.target.value)) }), 'Failed to update minimum hours lead time.')}
                       className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                      aria-label="Min Hours Lead Time"
                     />
                   </div>
                 </div>
@@ -1396,6 +1436,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                       value={store.settings.midweekDiscountPercent}
                       onChange={async e => handleSettingChange(() => store.updateSettings({ midweekDiscountPercent: Math.max(0, parseInt(e.target.value || '0')) }), 'Failed to update midweek discount.')}
                       className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                      aria-label="Midweek Discount Percent"
                     />
                     <p className="text-[9px] text-zinc-600 uppercase font-bold tracking-widest">Applies Monday–Wednesday</p>
                   </div>
@@ -1407,6 +1448,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                     <button
                       onClick={async () => handleSettingChange(() => store.updateSettings({ midweekDiscountPercent: store.settings.midweekDiscountPercent > 0 ? 0 : Math.max(1, store.settings.midweekDiscountPercent || 25) }), 'Failed to toggle midweek offer.')}
                       className={`w-12 h-6 rounded-full relative transition-all ${store.settings.midweekDiscountPercent > 0 ? 'bg-amber-500' : 'bg-zinc-800'}`}
+                      aria-label={store.settings.midweekDiscountPercent > 0 ? 'Disable midweek offer' : 'Enable midweek offer'}
                     >
                       <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${store.settings.midweekDiscountPercent > 0 ? 'left-7' : 'left-1'}`}></div>
                     </button>
@@ -1436,6 +1478,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                           <input
                             type="text"
                             value={offer.title}
+                            aria-label="Offer title"
                             onChange={async e => {
                               const nextOffers = (store.settings.offers || []).map((item: Offer) => item.id === offer.id ? { ...item, title: e.target.value } : item);
                               await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to update offer title.');
@@ -1445,6 +1488,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                           <input
                             type="text"
                             value={offer.description ?? ''}
+                            aria-label="Offer description"
                             onChange={async e => {
                               const nextOffers = (store.settings.offers || []).map((item: Offer) => item.id === offer.id ? { ...item, description: e.target.value } : item);
                               await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to update offer description.');
@@ -1717,7 +1761,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Feed Subscription URL</label>
                     <div className="flex gap-2">
-                      <input readOnly value={`${window.location.origin}/.netlify/functions/calendar-ics?token=${store.getCalendarSyncConfig().token}`} className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white font-mono text-xs select-all" />
+                      <input readOnly aria-label="Feed Subscription URL" value={`${window.location.origin}/.netlify/functions/calendar-ics?token=${store.getCalendarSyncConfig().token}`} className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white font-mono text-xs select-all" />
                       <button onClick={() => store.regenerateCalendarToken()} className="px-4 bg-zinc-800 rounded-xl text-zinc-400 hover:text-white" title="Regenerate token" aria-label="Regenerate feed token"><i className="fa-solid fa-rotate"></i></button>
                     </div>
                   </div>
@@ -1750,6 +1794,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                     <div className="flex items-center gap-3">
                       <input
                         type="text"
+                        aria-label="Promo code"
                         value={p.code}
                         onChange={async e => {
                           await handleMutation(store.updatePromoCode(p.id, { code: e.target.value.toUpperCase() }), 'Failed to update promo code.');
@@ -1763,6 +1808,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                         <span className="text-[9px] text-zinc-600 font-bold">%:</span>
                         <input
                           type="number"
+                          aria-label="Promo percent off"
                           value={p.percentOff || 0}
                           onChange={async e => {
                             await handleMutation(store.updatePromoCode(p.id, { percentOff: parseInt(e.target.value), fixedOff: undefined }), 'Failed to update promo discount.');
@@ -1775,6 +1821,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                         <span className="text-[9px] text-zinc-600 font-bold">£:</span>
                         <input
                           type="number"
+                          aria-label="Promo fixed off"
                           value={p.fixedOff || 0}
                           onChange={async e => {
                             await handleMutation(store.updatePromoCode(p.id, { fixedOff: parseInt(e.target.value), percentOff: undefined }), 'Failed to update promo discount.');
@@ -1829,6 +1876,27 @@ function ReportsTab({ store }: { store: any }) {
     return { revenue, guestCount: guests, bookingCount: confirmed.length, revByMonth };
   }, [store.bookings]);
 
+  const revEntries = Object.entries(stats.revByMonth);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const styleId = 'reports-inline-styles';
+    let styleEl = document.getElementById(styleId) as HTMLStyleElement | null;
+    const max = stats.revenue || 0;
+    let css = '';
+    revEntries.forEach(([month, rev]) => {
+      const slug = `report-${month.replace(/\s+/g, '-').toLowerCase()}`;
+      const percent = max > 0 ? Math.round((Number(rev) / max) * 100) : 0;
+      css += `.${slug} { height: ${percent}%; }\n`;
+    });
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = styleId;
+      document.head.appendChild(styleEl);
+    }
+    styleEl.innerHTML = css;
+  }, [stats.revenue, stats.revByMonth]);
+
   return (
     <div className="space-y-10">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -1849,14 +1917,17 @@ function ReportsTab({ store }: { store: any }) {
       <div className="glass-panel p-10 rounded-[2.5rem] border-zinc-800 shadow-2xl">
         <h3 className="text-xl font-bold uppercase tracking-tighter text-white mb-10">Revenue Performance</h3>
         <div className="h-64 flex items-end justify-between gap-4">
-          {Object.entries(stats.revByMonth).map(([month, rev]) => (
-            <div key={month} className="flex-1 flex flex-col items-center gap-4 group">
-              <div className="w-full bg-amber-500/10 border border-amber-500/20 rounded-xl transition-all group-hover:bg-amber-500/30 relative" style={{ height: `${stats.revenue > 0 ? ((rev as number) / (stats.revenue as number)) * 100 : 0}%` }}>
-                <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-zinc-900 border border-zinc-800 px-3 py-1 rounded text-[8px] font-mono text-amber-500 opacity-0 group-hover:opacity-100 transition-opacity">£{rev}</div>
+          {revEntries.map(([month, rev]) => {
+            const slug = `report-${month.replace(/\s+/g, '-').toLowerCase()}`;
+            return (
+              <div key={month} className="flex-1 flex flex-col items-center gap-4 group">
+                <div className={`w-full bg-amber-500/10 border border-amber-500/20 rounded-xl transition-all group-hover:bg-amber-500/30 relative ${slug}`}>
+                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-zinc-900 border border-zinc-800 px-3 py-1 rounded text-[8px] font-mono text-amber-500 opacity-0 group-hover:opacity-100 transition-opacity">£{rev}</div>
+                </div>
+                <span className="text-[9px] font-bold uppercase text-zinc-600 group-hover:text-white transition-colors">{month}</span>
               </div>
-              <span className="text-[9px] font-bold uppercase text-zinc-600 group-hover:text-white transition-colors">{month}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
