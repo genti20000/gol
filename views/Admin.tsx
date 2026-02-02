@@ -65,6 +65,7 @@ export default function Admin() {
   const [credentials, setCredentials] = useState({ email: '', password: '' });
   const [localAllowlist, setLocalAllowlist] = useState<string[]>([]);
   const [localAllowlistInput, setLocalAllowlistInput] = useState('');
+  const calendarSyncConfig = store.calSync;
 
   const allowedEmails = useMemo(
     () => {
@@ -151,7 +152,7 @@ export default function Admin() {
   };
 
   useEffect(() => {
-    const config = store.getCalendarSyncConfig();
+    const config = calendarSyncConfig;
     if (!config.enabled || store.loading) return;
 
     const pushSnapshot = async () => {
@@ -183,15 +184,11 @@ export default function Admin() {
     };
     pushSnapshot();
   }, [
+    calendarSyncConfig,
     store.bookings,
     store.blocks,
     store.recurringBlocks,
     store.rooms,
-    store.getCalendarSyncConfig().enabled,
-    store.getCalendarSyncConfig().includeCustomerName,
-    store.getCalendarSyncConfig().includeBlocks,
-    store.getCalendarSyncConfig().includePending,
-    store.getCalendarSyncConfig().token,
     store.loading
   ]);
 
@@ -858,6 +855,11 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
     hours.push(h);
   }
 
+  const busyIntervalsByRoom = useMemo(() => {
+    const entries = store.rooms.map((room: Room) => [room.id, store.getBusyIntervals(date, room.id)] as const);
+    return new Map(entries);
+  }, [store.rooms, store.getBusyIntervals, date]);
+
   // Inject dynamic CSS for schedule heights/top positions to avoid inline styles
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -872,7 +874,7 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
 
     // booking positions
     store.rooms.forEach((r: Room) => {
-      const items = store.getBusyIntervals(date, r.id);
+      const items = busyIntervalsByRoom.get(r.id) ?? [];
       items.forEach((item: any) => {
         const dayStartTs = new Date(`${date}T${window.open}`).getTime();
         const startOffsetHrs = (item.start - dayStartTs) / 3600000;
@@ -890,7 +892,7 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
       document.head.appendChild(styleEl);
     }
     styleEl.innerHTML = css;
-  }, [rowHeight, hours.length, date, store.bookings]);
+  }, [rowHeight, hours.length, date, store.rooms, busyIntervalsByRoom, window.open]);
 
   const handleDrop = (event: React.DragEvent<HTMLDivElement>, roomId: string) => {
     if (isPastDay) return;
@@ -998,7 +1000,7 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                   onDrop={(event) => handleDrop(event, r.id)}
                 ></div>
 
-                {store.getBusyIntervals(date, r.id).map((item: any) => {
+                {(busyIntervalsByRoom.get(r.id) ?? []).map((item: any) => {
                   const dayStartTs = new Date(`${date}T${window.open}`).getTime();
                   const startOffsetHrs = (item.start - dayStartTs) / 3600000;
                   const durationHrs = (item.end - item.start) / 3600000;
@@ -1050,15 +1052,17 @@ function CustomersTab({ store }: { store: any }) {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [showModal, setShowModal] = useState(false);
 
-  const filtered = store.customers.filter((c: Customer) => {
+  const filtered = useMemo(() => {
     const term = search.toLowerCase();
-    const fullName = `${c.name} ${c.surname || ''}`.toLowerCase();
-    return (
-      fullName.includes(term) ||
-      c.email.toLowerCase().includes(term) ||
-      (c.phone && c.phone.includes(term))
-    );
-  }).sort((a: Customer, b: Customer) => (b.lastBookingAt || 0) - (a.lastBookingAt || 0));
+    return store.customers.filter((c: Customer) => {
+      const fullName = `${c.name} ${c.surname || ''}`.toLowerCase();
+      return (
+        fullName.includes(term) ||
+        c.email.toLowerCase().includes(term) ||
+        (c.phone && c.phone.includes(term))
+      );
+    }).sort((a: Customer, b: Customer) => (b.lastBookingAt || 0) - (a.lastBookingAt || 0));
+  }, [search, store.customers]);
 
   const handleEdit = (c: Customer) => {
     setEditingCustomer(c);
@@ -1751,17 +1755,17 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
             <div className="p-8 bg-zinc-950 border border-zinc-900 rounded-[2rem] space-y-6">
               <div className="flex items-center justify-between p-4 bg-zinc-900/50 rounded-2xl border border-zinc-800">
                 <span className="text-xs font-bold uppercase tracking-widest">Enable Live iCal Feed</span>
-                <button onClick={() => store.setCalendarSyncConfig({ enabled: !store.getCalendarSyncConfig().enabled })} className={`w-12 h-6 rounded-full relative transition-all ${store.getCalendarSyncConfig().enabled ? 'bg-amber-500' : 'bg-zinc-800'}`} title={store.getCalendarSyncConfig().enabled ? 'Disable iCal feed' : 'Enable iCal feed'} aria-label={store.getCalendarSyncConfig().enabled ? 'Disable iCal feed' : 'Enable iCal feed'}>
-                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${store.getCalendarSyncConfig().enabled ? 'left-7' : 'left-1'}`}></div>
+                <button onClick={() => store.setCalendarSyncConfig({ enabled: !calendarSyncConfig.enabled })} className={`w-12 h-6 rounded-full relative transition-all ${calendarSyncConfig.enabled ? 'bg-amber-500' : 'bg-zinc-800'}`} title={calendarSyncConfig.enabled ? 'Disable iCal feed' : 'Enable iCal feed'} aria-label={calendarSyncConfig.enabled ? 'Disable iCal feed' : 'Enable iCal feed'}>
+                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${calendarSyncConfig.enabled ? 'left-7' : 'left-1'}`}></div>
                 </button>
               </div>
 
-              {store.getCalendarSyncConfig().enabled && (
+              {calendarSyncConfig.enabled && (
                 <div className="space-y-6 animate-in slide-in-from-bottom-2">
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Feed Subscription URL</label>
                     <div className="flex gap-2">
-                      <input readOnly aria-label="Feed Subscription URL" value={`${window.location.origin}/.netlify/functions/calendar-ics?token=${store.getCalendarSyncConfig().token}`} className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white font-mono text-xs select-all" />
+                      <input readOnly aria-label="Feed Subscription URL" value={`${window.location.origin}/.netlify/functions/calendar-ics?token=${calendarSyncConfig.token}`} className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white font-mono text-xs select-all" />
                       <button onClick={() => store.regenerateCalendarToken()} className="px-4 bg-zinc-800 rounded-xl text-zinc-400 hover:text-white" title="Regenerate token" aria-label="Regenerate feed token"><i className="fa-solid fa-rotate"></i></button>
                     </div>
                   </div>
