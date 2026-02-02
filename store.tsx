@@ -31,6 +31,7 @@ import {
   WHATSAPP_URL
 } from './constants';
 import { supabase, supabaseConfigured } from './lib/supabase';
+import { computeOfferDiscounts } from './lib/offerUtils';
 
 export type MutationResult = { ok: boolean; error?: string };
 
@@ -378,21 +379,44 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     const basePrice = tier ? tier.price : 0;
     const extraPrice = SESSION_EXTRAS.find(e => e.hours === extraHours)?.price || 0;
     const baseTotal = basePrice;
-    const day = new Date(date + 'T00:00:00').getDay();
-    const isMidweek = day >= 1 && day <= 3;
-    const discountPercent = isMidweek ? Math.max(0, settings.midweekDiscountPercent ?? MIDWEEK_DISCOUNT_PERCENT) : 0;
-    const discountAmount = Math.round((baseTotal + extraPrice) * (discountPercent / 100));
+
+    // compute discounts using offers (midweek / percent / fixed)
+    const offers = settings.offers ?? [];
+    const offerRes = computeOfferDiscounts(offers, settings.midweekDiscountPercent, date, baseTotal, extraPrice);
+
+    const discountPercent = offerRes.effectiveMidweekPercent;
+    const discountAmount = offerRes.midweekDiscountAmount;
+
+    const subtotal = baseTotal + extraPrice - discountAmount;
+
+    // promo code handling
     let promoDiscountAmount = 0;
     if (promoCode) {
       const promo = promoCodes.find(p => p.code === promoCode && p.enabled);
       if (promo) {
-        if (promo.percentOff) promoDiscountAmount = Math.round((baseTotal + extraPrice - discountAmount) * (promo.percentOff / 100));
+        if (promo.percentOff) promoDiscountAmount = Math.round((subtotal) * (promo.percentOff / 100));
         else if (promo.fixedOff) promoDiscountAmount = promo.fixedOff;
       }
     }
-    const totalPrice = baseTotal + extraPrice - discountAmount - promoDiscountAmount;
-    return { baseTotal, extrasPrice: extraPrice, discountAmount, promoDiscountAmount, totalPrice, discountPercent };
-  }, [promoCodes, settings.midweekDiscountPercent]);
+
+    const afterPromo = Math.max(0, subtotal - promoDiscountAmount);
+    const offerPercentDiscount = offerRes.offerPercent > 0 ? Math.round(afterPromo * (offerRes.offerPercent / 100)) : 0;
+    const offerFixed = offerRes.offerFixed;
+
+    const totalPrice = Math.max(0, afterPromo - offerPercentDiscount - offerFixed);
+
+    return {
+      baseTotal,
+      extrasPrice: extraPrice,
+      discountAmount,
+      promoDiscountAmount,
+      offerPercent: offerRes.offerPercent,
+      offerFixed,
+      offerPercentDiscount,
+      totalPrice,
+      discountPercent
+    };
+  }, [promoCodes, settings]);
 
   const validateInterval = useCallback((roomId: string, start: string, end: string, excludeBookingId?: string, staffId?: string, skipWindowCheck = false) => {
     const startTs = new Date(start).getTime();

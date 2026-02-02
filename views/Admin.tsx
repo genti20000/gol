@@ -769,9 +769,9 @@ function MonthCalendar({ store, onSelectDay }: { store: any, onSelectDay: (d: st
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-center justify-between mb-4 md:mb-8 px-2 gap-4">
         <div className="flex items-center gap-2 md:gap-4">
-          <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))} className="text-zinc-500 hover:text-white p-3 min-h-[44px] min-w-[44px] flex items-center justify-center"><i className="fa-solid fa-chevron-left"></i></button>
+          <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))} className="text-zinc-500 hover:text-white p-3 min-h-[44px] min-w-[44px] flex items-center justify-center" title="Previous month" aria-label="Previous month"><i className="fa-solid fa-chevron-left"></i></button>
           <h3 className="text-xl font-bold uppercase tracking-tighter text-amber-500 whitespace-nowrap">{monthLabel}</h3>
-          <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))} className="text-zinc-500 hover:text-white p-3 min-h-[44px] min-w-[44px] flex items-center justify-center"><i className="fa-solid fa-chevron-right"></i></button>
+          <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))} className="text-zinc-500 hover:text-white p-3 min-h-[44px] min-w-[44px] flex items-center justify-center" title="Next month" aria-label="Next month"><i className="fa-solid fa-chevron-right"></i></button>
         </div>
         <div className="flex gap-4 text-[8px] font-bold uppercase tracking-widest">
           <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500"></span> Confirmed</div>
@@ -1139,7 +1139,7 @@ function CustomerModal({ store, onClose, customer }: { store: any, onClose: () =
       <form onSubmit={handleSave} className="relative w-full max-w-md glass-panel p-8 rounded-[2rem] border-zinc-800 shadow-2xl animate-in zoom-in duration-300 space-y-6">
         <div className="flex justify-between items-center">
           <h3 className="text-lg font-bold uppercase tracking-tight text-white">{customer ? 'Edit Profile' : 'New Guest'}</h3>
-          <button type="button" onClick={onClose} className="text-zinc-600 hover:text-white p-2"><i className="fa-solid fa-x"></i></button>
+          <button type="button" onClick={onClose} className="text-zinc-600 hover:text-white p-2" title="Close" aria-label="Close"><i className="fa-solid fa-x"></i></button>
         </div>
 
         <div className="space-y-4">
@@ -1199,14 +1199,16 @@ function BlocksTab({ store, selectedDate }: { store: any, selectedDate: string }
                 <p className="text-xs font-bold text-white uppercase">{store.rooms.find((r: Room) => r.id === b.roomId)?.name}</p>
                 <p className="text-[9px] text-zinc-600 font-bold uppercase tracking-widest">{b.reason || 'No reason'}</p>
               </div>
-              <button
-                onClick={async () => {
-                  await handleMutation(store.deleteBlock(b.id), 'Failed to delete block.');
-                }}
-                className="text-zinc-800 hover:text-red-500 p-2"
-              >
-                <i className="fa-solid fa-trash-can"></i>
-              </button>
+                    <button
+                      onClick={async () => {
+                        await handleMutation(store.deleteBlock(b.id), 'Failed to delete block.');
+                      }}
+                      className="text-zinc-800 hover:text-red-500 p-2"
+                      title="Delete block"
+                      aria-label="Delete block"
+                    >
+                      <i className="fa-solid fa-trash-can"></i>
+                    </button>
             </div>
           ))}
         </div>
@@ -1236,6 +1238,8 @@ function BlocksTab({ store, selectedDate }: { store: any, selectedDate: string }
                   await handleMutation(store.deleteRecurringBlock(rb.id), 'Failed to delete recurring block.');
                 }}
                 className="text-zinc-800 hover:text-red-500 p-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Delete recurring block"
+                aria-label="Delete recurring block"
               >
                 <i className="fa-solid fa-trash-can"></i>
               </button>
@@ -1253,10 +1257,10 @@ function BlocksTab({ store, selectedDate }: { store: any, selectedDate: string }
               <select value={newBlock.roomId} onChange={e => setNewBlock({ ...newBlock, roomId: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white">
                 {store.rooms.map((r: Room) => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
-              <input type="text" placeholder="Reason (e.g. Deep Clean)" value={newBlock.reason} onChange={e => setNewBlock({ ...newBlock, reason: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white" />
+              <input aria-label="Block reason" type="text" placeholder="Reason (e.g. Deep Clean)" value={newBlock.reason} onChange={e => setNewBlock({ ...newBlock, reason: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white" />
               <div className="grid grid-cols-2 gap-4">
-                <input type="time" value={newBlock.start_at.split('T')[1]} onChange={e => setNewBlock({ ...newBlock, start_at: `${selectedDate}T${e.target.value}` })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white" />
-                <input type="time" value={newBlock.end_at.split('T')[1]} onChange={e => setNewBlock({ ...newBlock, end_at: `${selectedDate}T${e.target.value}` })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white" />
+                <input aria-label="Block start time" type="time" value={newBlock.start_at.split('T')[1]} onChange={e => setNewBlock({ ...newBlock, start_at: `${selectedDate}T${e.target.value}` })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white" />
+                <input aria-label="Block end time" type="time" value={newBlock.end_at.split('T')[1]} onChange={e => setNewBlock({ ...newBlock, end_at: `${selectedDate}T${e.target.value}` })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white" />
               </div>
             </div>
             <div className="flex gap-4">
@@ -1449,6 +1453,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                           />
                           <div className="flex items-center gap-2 mt-2">
                             <select
+                              aria-label={`Offer option for ${offer.title}`}
                               value={(offer.woptions && offer.woptions.kind) || 'none'}
                               onChange={async e => {
                                 const kind = e.target.value === 'none' ? null : (e.target.value as 'percent'|'fixed'|'midweek');
@@ -1464,6 +1469,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                             </select>
                             {(offer.woptions && offer.woptions.kind !== 'midweek') && (
                               <input
+                                aria-label={`Offer value for ${offer.title}`}
                                 type="number"
                                 value={offer.woptions?.value ?? 0}
                                 onChange={async e => {
@@ -1482,7 +1488,9 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                               const nextOffers = (store.settings.offers || []).map((item: Offer) => item.id === offer.id ? { ...item, enabled: !item.enabled } : item);
                               await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to update offer visibility.');
                             }}
-                            className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all ${offer.enabled ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-zinc-900 border-zinc-800 text-zinc-800'}`}
+                            aria-label={offer.enabled ? 'Disable offer' : 'Enable offer'}
+                            title={offer.enabled ? 'Disable offer' : 'Enable offer'}
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all ${offer.enabled ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-zinc-900 border-zinc-800 text-zinc-800'}`} 
                           >
                             <i className={`fa-solid ${offer.enabled ? 'fa-eye' : 'fa-eye-slash'} text-[12px]`}></i>
                           </button>
@@ -1492,6 +1500,8 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                               await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to delete offer.');
                             }}
                             className="text-zinc-700 hover:text-red-500 p-2"
+                            title="Delete offer"
+                            aria-label="Delete offer"
                           >
                             <i className="fa-solid fa-trash-can"></i>
                           </button>
@@ -1542,6 +1552,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                 <div key={s.id} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                   <div className="space-y-1 flex-1 w-full">
                     <input
+                      aria-label={`Service name ${s.name}`}
                       type="text"
                       value={s.name}
                       onChange={async e => {
@@ -1555,6 +1566,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                     <div className="flex items-center gap-2 bg-zinc-900 px-4 py-2 rounded-xl border border-zinc-800">
                       <span className="text-[10px] text-zinc-500 uppercase font-bold">Mins:</span>
                       <input
+                        aria-label={`Service duration minutes for ${s.name}`}
                         type="number"
                         step="15"
                         value={s.durationMinutes}
@@ -1569,6 +1581,8 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                         await handleMutation(store.deleteService(s.id), 'Failed to delete service.');
                       }}
                       className="text-zinc-800 hover:text-red-500 p-2"
+                      title="Delete service"
+                      aria-label={`Delete service ${s.name}`}
                     >
                       <i className="fa-solid fa-trash-can"></i>
                     </button>
@@ -1597,6 +1611,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                 <div key={e.id} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                   <div className="flex-1 space-y-2 w-full">
                     <input
+                      aria-label={`Extra name ${e.name}`}
                       type="text"
                       value={e.name}
                       onChange={async val => {
@@ -1610,6 +1625,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                         <span>{(e.infoText ?? '').length}/500</span>
                       </div>
                       <textarea
+                        aria-label={`Extra info for ${e.name}`}
                         rows={3}
                         maxLength={500}
                         value={e.infoText ?? ''}
@@ -1642,6 +1658,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                     <div className="flex items-center gap-2 bg-zinc-900 px-4 py-2 rounded-xl border border-zinc-800">
                       <span className="text-[10px] text-zinc-500 uppercase font-bold">£:</span>
                       <input
+                        aria-label={`Price for extra ${e.name}`}
                         type="number"
                         value={e.price}
                         onChange={async val => {
@@ -1655,6 +1672,8 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                         await handleMutation(store.updateExtra(e.id, { enabled: !e.enabled }), 'Failed to update extra visibility.');
                       }}
                       className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-all ${e.enabled ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-zinc-900 border-zinc-800 text-zinc-800'}`}
+                      title={e.enabled ? 'Disable extra' : 'Enable extra'}
+                      aria-label={e.enabled ? `Disable extra ${e.name}` : `Enable extra ${e.name}`}
                     >
                       <i className={`fa-solid ${e.enabled ? 'fa-eye' : 'fa-eye-slash'} text-[10px]`}></i>
                     </button>
@@ -1663,6 +1682,8 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                         await handleMutation(store.deleteExtra(e.id), 'Failed to delete extra.');
                       }}
                       className="text-zinc-800 hover:text-red-500 p-2"
+                      title="Delete extra"
+                      aria-label={`Delete extra ${e.name}`}
                     >
                       <i className="fa-solid fa-trash-can"></i>
                     </button>
@@ -1686,7 +1707,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
             <div className="p-8 bg-zinc-950 border border-zinc-900 rounded-[2rem] space-y-6">
               <div className="flex items-center justify-between p-4 bg-zinc-900/50 rounded-2xl border border-zinc-800">
                 <span className="text-xs font-bold uppercase tracking-widest">Enable Live iCal Feed</span>
-                <button onClick={() => store.setCalendarSyncConfig({ enabled: !store.getCalendarSyncConfig().enabled })} className={`w-12 h-6 rounded-full relative transition-all ${store.getCalendarSyncConfig().enabled ? 'bg-amber-500' : 'bg-zinc-800'}`}>
+                <button onClick={() => store.setCalendarSyncConfig({ enabled: !store.getCalendarSyncConfig().enabled })} className={`w-12 h-6 rounded-full relative transition-all ${store.getCalendarSyncConfig().enabled ? 'bg-amber-500' : 'bg-zinc-800'}`} title={store.getCalendarSyncConfig().enabled ? 'Disable iCal feed' : 'Enable iCal feed'} aria-label={store.getCalendarSyncConfig().enabled ? 'Disable iCal feed' : 'Enable iCal feed'}>
                   <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${store.getCalendarSyncConfig().enabled ? 'left-7' : 'left-1'}`}></div>
                 </button>
               </div>
@@ -1697,7 +1718,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                     <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Feed Subscription URL</label>
                     <div className="flex gap-2">
                       <input readOnly value={`${window.location.origin}/.netlify/functions/calendar-ics?token=${store.getCalendarSyncConfig().token}`} className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white font-mono text-xs select-all" />
-                      <button onClick={() => store.regenerateCalendarToken()} className="px-4 bg-zinc-800 rounded-xl text-zinc-400 hover:text-white"><i className="fa-solid fa-rotate"></i></button>
+                      <button onClick={() => store.regenerateCalendarToken()} className="px-4 bg-zinc-800 rounded-xl text-zinc-400 hover:text-white" title="Regenerate token" aria-label="Regenerate feed token"><i className="fa-solid fa-rotate"></i></button>
                     </div>
                   </div>
                 </div>
@@ -1777,6 +1798,8 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                         await handleMutation(store.deletePromoCode(p.id), 'Failed to delete promo code.');
                       }}
                       className="text-zinc-800 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                      title="Delete promo code"
+                      aria-label={`Delete promo code ${p.code}`}
                     >
                       <i className="fa-solid fa-trash-can"></i>
                     </button>
@@ -1934,53 +1957,53 @@ function BookingModal({ store, onClose, initialDate, booking, prefill }: { store
       <form onSubmit={handleSave} className="relative w-full max-w-lg glass-panel p-6 sm:p-10 rounded-[1.5rem] sm:rounded-[2.5rem] border-zinc-800 shadow-2xl animate-in zoom-in duration-300 space-y-6 overflow-y-auto max-h-[90vh] no-scrollbar">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-bold uppercase tracking-tight text-white">{booking ? 'Manage' : 'Add'} Session</h3>
-          <button type="button" onClick={onClose} className="text-zinc-600 hover:text-white p-2"><i className="fa-solid fa-x"></i></button>
+          <button type="button" onClick={onClose} className="text-zinc-600 hover:text-white p-2" title="Close" aria-label="Close"><i className="fa-solid fa-x"></i></button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">First Name</label>
-            <input type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
+            <input aria-label="First name" type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Surname</label>
-            <input type="text" value={formData.surname} onChange={e => setFormData({ ...formData, surname: e.target.value })} required className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
+            <input aria-label="Surname" type="text" value={formData.surname} onChange={e => setFormData({ ...formData, surname: e.target.value })} required className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Email</label>
-            <input type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} required className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
+            <input aria-label="Email address" type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} required className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Phone</label>
-            <input type="tel" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
+            <input aria-label="Phone number" type="tel" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Start Date</label>
-            <input type="date" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
+            <input aria-label="Start date" type="date" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Start Time</label>
-            <input type="time" step="900" value={formData.time} onChange={e => setFormData({ ...formData, time: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white font-mono text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
+            <input aria-label="Start time" type="time" step="900" value={formData.time} onChange={e => setFormData({ ...formData, time: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white font-mono text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Length (Hours)</label>
-            <select value={formData.duration} onChange={e => setFormData({ ...formData, duration: parseFloat(e.target.value) })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner">
+            <select aria-label="Session length hours" value={formData.duration} onChange={e => setFormData({ ...formData, duration: parseFloat(e.target.value) })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner">
               {[2, 3, 4, 5, 6].map(h => <option key={h} value={h}>{h} Hours</option>)}
             </select>
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Guests</label>
-            <input type="number" min="8" max="100" value={formData.guests} onChange={e => setFormData({ ...formData, guests: parseInt(e.target.value) })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
+            <input aria-label="Guests count" type="number" min="8" max="100" value={formData.guests} onChange={e => setFormData({ ...formData, guests: parseInt(e.target.value) })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Room Allocation</label>
-            <select value={formData.roomId} onChange={e => setFormData({ ...formData, roomId: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner">
+            <select aria-label="Room allocation" value={formData.roomId} onChange={e => setFormData({ ...formData, roomId: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner">
               {ROOMS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Status</label>
-            <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as BookingStatus })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner">
+            <select aria-label="Booking status" value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as BookingStatus })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner">
               <option value={BookingStatus.CONFIRMED}>Confirmed</option>
               <option value={BookingStatus.PENDING}>Pending Payment</option>
               <option value={BookingStatus.CANCELLED}>Cancelled</option>

@@ -85,7 +85,7 @@ export async function POST(request: Request) {
 
     const { data: settings, error: settingsError } = await supabase
       .from('venue_settings')
-      .select('deposit_enabled,deposit_amount,midweek_discount_percent')
+      .select('deposit_enabled,deposit_amount,midweek_discount_percent,offers')
       .maybeSingle();
 
     if (settingsError) {
@@ -96,12 +96,11 @@ export async function POST(request: Request) {
 
     const baseTotal = tier.price;
     const extrasPrice = extraOption.price;
-    const dayOfWeek = new Date(`${date}T00:00:00`).getDay();
-    const isMidweek = dayOfWeek >= 1 && dayOfWeek <= 3;
-    const discountPercent = isMidweek
-      ? Math.max(0, settings?.midweek_discount_percent ?? MIDWEEK_DISCOUNT_PERCENT)
-      : 0;
-    const discountAmount = Math.round((baseTotal + extrasPrice) * (discountPercent / 100));
+    const offerUtils = (await import('@/lib/offerUtils')) as any;
+    const offers = settings?.offers ?? [];
+    const offerRes = offerUtils.computeOfferDiscounts(offers, settings?.midweek_discount_percent, date, baseTotal, extrasPrice);
+    const discountPercent = offerRes.effectiveMidweekPercent;
+    const discountAmount = offerRes.midweekDiscountAmount;
 
     let promoDiscountAmount = 0;
     let promoCodeToStore: string | null = promo ? promo : null;
@@ -139,7 +138,11 @@ export async function POST(request: Request) {
       }
     }
 
-    const totalPrice = Math.max(0, baseTotal + extrasPrice - discountAmount - promoDiscountAmount);
+    const subtotal = Math.max(0, baseTotal + extrasPrice - discountAmount);
+    const afterPromo = Math.max(0, subtotal - promoDiscountAmount);
+    const offerPercentDiscount = offerRes.offerPercent > 0 ? Math.round(afterPromo * (offerRes.offerPercent / 100)) : 0;
+    const offerFixed = offerRes.offerFixed;
+    const totalPrice = Math.max(0, afterPromo - offerPercentDiscount - offerFixed);
     const depositEnabled = Boolean(settings?.deposit_enabled);
     const depositAmountSetting = settings?.deposit_amount ?? 0;
     const depositAmount = computeAmountDueNow({
