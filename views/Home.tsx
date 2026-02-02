@@ -56,7 +56,15 @@ export default function Home() {
     (store.settings.offers || [])
       .filter(offer => offer.enabled)
       .forEach(offer => {
-        items.push({ id: offer.id, title: offer.title, description: offer.description });
+        let desc = offer.description;
+        if (offer.woptions && offer.woptions.kind === 'percent' && typeof offer.woptions.value === 'number') {
+          desc = `Save ${offer.woptions.value}%` + (desc ? ` • ${desc}` : '');
+        } else if (offer.woptions && offer.woptions.kind === 'fixed' && typeof offer.woptions.value === 'number') {
+          desc = `Save £${offer.woptions.value}` + (desc ? ` • ${desc}` : '');
+        } else if (offer.woptions && offer.woptions.kind === 'midweek') {
+          desc = desc || `Midweek offer`;
+        }
+        items.push({ id: offer.id, title: offer.title, description: desc });
       });
     return items;
   }, [store.settings.midweekDiscountPercent, store.settings.offers]);

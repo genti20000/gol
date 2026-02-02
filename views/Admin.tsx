@@ -1416,7 +1416,7 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                       onClick={async () => {
                         const nextOffers = [
                           ...(store.settings.offers || []),
-                          { id: createOfferId(), title: 'New Offer', description: 'Limited time offer', enabled: true } as Offer
+                          { id: createOfferId(), title: 'New Offer', description: 'Limited time offer', enabled: true, woptions: { kind: 'percent', value: 10 } } as Offer
                         ];
                         await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to add offer.');
                       }}
@@ -1447,6 +1447,34 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
                             }}
                             className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white text-xs"
                           />
+                          <div className="flex items-center gap-2 mt-2">
+                            <select
+                              value={(offer.woptions && offer.woptions.kind) || 'none'}
+                              onChange={async e => {
+                                const kind = e.target.value === 'none' ? null : (e.target.value as 'percent'|'fixed'|'midweek');
+                                const nextOffers = (store.settings.offers || []).map((item: Offer) => item.id === offer.id ? { ...item, woptions: kind ? { kind, value: kind === 'percent' ? (item.woptions?.value ?? 10) : (item.woptions?.value ?? 0) } : null } : item);
+                                await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to update offer option.');
+                              }}
+                              className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-white text-xs"
+                            >
+                              <option value="none">No Option</option>
+                              <option value="percent">% Discount</option>
+                              <option value="fixed">Fixed Off</option>
+                              <option value="midweek">Midweek</option>
+                            </select>
+                            {(offer.woptions && offer.woptions.kind !== 'midweek') && (
+                              <input
+                                type="number"
+                                value={offer.woptions?.value ?? 0}
+                                onChange={async e => {
+                                  const val = Math.max(0, parseInt(e.target.value || '0'));
+                                  const nextOffers = (store.settings.offers || []).map((item: Offer) => item.id === offer.id ? { ...item, woptions: { ...(item.woptions || {}), value: val } } : item);
+                                  await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to update offer option value.');
+                                }}
+                                className="w-20 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-white text-xs"
+                              />
+                            )}
+                          </div>
                         </div>
                         <div className="flex items-center gap-3">
                           <button

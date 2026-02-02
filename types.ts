@@ -171,6 +171,11 @@ export interface Offer {
   title: string;
   description?: string;
   enabled: boolean;
+  // woptions allows offers to carry structured options, e.g. a percent discount
+  woptions?: {
+    kind: 'percent' | 'fixed' | 'midweek';
+    value?: number; // percent (e.g. 25) or fixed amount
+  } | null;
 }
 
 export interface Customer {
