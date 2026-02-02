@@ -180,7 +180,7 @@ export async function POST(request: Request) {
 
         const expiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString(); // 20 min TTL for PENDING
 
-        const { buildDraftBookingPayload } = await import('@/lib/bookingPayload');
+        const { buildDraftBookingPayload } = (await import('@/lib/bookingPayload')) as any;
         const bookingPayload = buildDraftBookingPayload({
             roomId: assignedRoom.id,
             roomName: assignedRoom.name,
