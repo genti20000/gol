@@ -60,12 +60,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
         }
 
         // 3. Confirm
+        const confirmPayload = { status: BookingStatus.CONFIRMED, confirmed_at: new Date().toISOString() };
+        console.log('confirming booking', { bookingId, payloadKeys: Object.keys(confirmPayload), computed_booking_date: booking.booking_date ?? booking.start_at?.split('T')[0] });
         const { data: confirmedBooking, error: confirmError } = await supabase
             .from('bookings')
-            .update({
-                status: BookingStatus.CONFIRMED,
-                confirmed_at: new Date().toISOString()
-            })
+            .update(confirmPayload)
             .eq('id', bookingId)
             .select('*')
             .single();

@@ -532,6 +532,9 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
       staff_id: normalizedStaffId,
       start_at: booking.start_at,
       end_at: booking.end_at,
+      // Ensure booking_date and start_time are always present for DB
+      booking_date: booking.booking_date ?? (typeof booking.start_at === 'string' ? booking.start_at.split('T')[0] : undefined),
+      start_time: booking.start_time ?? (typeof booking.start_at === 'string' ? (booking.start_at.split('T')[1] || '').substring(0,5) : undefined),
       status: booking.status,
       guests: booking.guests,
       customer_name: booking.customer_name,
@@ -555,10 +558,15 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
       extras_total: booking.extras_total,
       extras_snapshot: booking.extras
     };
+    console.log('store.addBooking insert payload keys', Object.keys(bookingPayload), 'booking_date', bookingPayload.booking_date);
     const { data, error } = await supabase.from('bookings').insert([bookingPayload]).select().single();
     if (error) {
       const message = error.message ? `Database Error: ${error.message}` : 'Database Error: Unable to create booking.';
-      console.error('BOOKING_CONFIRM_ERROR', { error, payload: bookingPayload });
+      console.error('BOOKING_CONFIRM_ERROR', {
+        error: { message: error.message, hint: (error as any).hint, code: (error as any).code },
+        payloadKeys: Object.keys(bookingPayload),
+        booking_date: bookingPayload.booking_date
+      });
       throw new Error(message);
     }
     if (!data) {
@@ -665,6 +673,16 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     assign('customer_phone', patch.customer_phone);
     assign('start_at', patch.start_at);
     assign('end_at', patch.end_at);
+    if (patch.start_at) {
+      try {
+        const datePart = (patch.start_at as string).split('T')[0];
+        const timePart = ((patch.start_at as string).split('T')[1] || '').substring(0,5);
+        payload.booking_date = datePart;
+        payload.start_time = timePart;
+      } catch (err) {
+        console.warn('Unable to compute booking_date/start_time from start_at in updateBooking', err, patch.start_at);
+      }
+    }
     assign('guests', patch.guests);
     assign('room_id', patch.room_id);
     assign('room_name', patch.room_name);
@@ -681,8 +699,12 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     assign('extras_total', patch.extras_total);
     assign('extras_snapshot', patch.extras);
 
+    console.log('store.updateBooking payload keys', Object.keys(payload), 'booking_date', payload.booking_date);
     const { error } = await supabase.from('bookings').update(payload).eq('id', id);
-    if (error) return { ok: false, error: error.message };
+    if (error) {
+      console.error('Failed to update booking.', { message: error.message, hint: (error as any).hint, code: (error as any).code, payloadKeys: Object.keys(payload), booking_date: payload.booking_date });
+      return { ok: false, error: error.message };
+    }
     const updatedPatch = resolvedConfirmedAt !== undefined
       ? { ...patch, confirmed_at: resolvedConfirmedAt }
       : patch;

@@ -119,6 +119,20 @@ export async function POST(request: Request, { params }: { params: { id: string 
             updates.total_price = newTotalPrice;
         }
 
+        // If start_at present, compute booking_date and start_time to keep DB consistent
+        if (updates.start_at) {
+            try {
+                const datePart = updates.start_at.split('T')[0];
+                const timePart = (updates.start_at.split('T')[1] || '').substring(0,5);
+                updates.booking_date = datePart;
+                updates.start_time = timePart;
+            } catch (err) {
+                console.warn('Unable to compute booking_date from start_at for update.', err, updates.start_at);
+            }
+        }
+
+        console.log('booking update payload keys', Object.keys(updates), 'computed_booking_date', updates.booking_date);
+
         // 4. Perform Update
         const { data: updatedBooking, error: updateError } = await supabase
             .from('bookings')

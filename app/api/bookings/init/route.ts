@@ -180,40 +180,36 @@ export async function POST(request: Request) {
 
         const expiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString(); // 20 min TTL for PENDING
 
-        const bookingPayload = {
-            room_id: assignedRoom.id,
-            room_name: assignedRoom.name,
-            service_id: serviceId || null,
-            staff_id: staffId || null,
-            booking_date: date,
-            start_time: time,
-            duration_hours: totalDurationHours,
-            start_at: startDate.toISOString(),
-            end_at: endDate.toISOString(),
-            status: BookingStatus.PENDING, // Changed from DRAFT to PENDING
-            expires_at: expiresAt,
-            guests,
-            base_total: baseTotal,
-            extras_hours: extraHours,
-            extras_price: extrasPrice,
-            discount_amount: discountAmount,
-            promo_code: promoCodeToStore,
-            promo_discount_amount: promoDiscountAmount,
-            total_price: totalPrice,
+        const { buildDraftBookingPayload } = await import('@/lib/bookingPayload');
+        const bookingPayload = buildDraftBookingPayload({
+            roomId: assignedRoom.id,
+            roomName: assignedRoom.name,
+            serviceId: serviceId || null,
+            staffId: staffId || null,
+            date,
+            time,
+            extraHours: extraHours,
+            baseDurationHours: BASE_DURATION_HOURS,
+            baseTotal,
+            extrasPrice,
+            discountAmount,
+            promoCode: promoCodeToStore,
+            promoDiscountAmount,
+            totalPrice,
             source: 'public',
-            deposit_amount: depositAmount,
-            deposit_paid: isZeroDeposit,
-            extras_total: 0,
-            extras_snapshot: [], // JSONB
-            // Customer details are NULL initially
-            customer_name: null,
-            customer_surname: null,
-            customer_email: null,
-            customer_phone: null,
+            depositAmount,
+            depositPaid: isZeroDeposit,
+            expiresAt,
+            firstName: '',
+            surname: '',
+            email: null,
+            phone: null,
             notes: null
-        };
+        });
+        bookingPayload.status = BookingStatus.PENDING;
+        bookingPayload.guests = guests;
 
-        console.log('booking init payload', bookingPayload);
+        console.log('booking init payload keys', Object.keys(bookingPayload), 'booking_date', bookingPayload.booking_date);
 
         const { data: insertedBooking, error: bookingError } = await supabase
             .from('bookings')
@@ -222,7 +218,11 @@ export async function POST(request: Request) {
             .maybeSingle();
 
         if (bookingError || !insertedBooking) {
-            console.error('Failed to create booking (init).', bookingError);
+            console.error('Failed to create booking (init).', {
+                error: { message: bookingError?.message, hint: bookingError?.hint, code: bookingError?.code },
+                payloadKeys: Object.keys(bookingPayload),
+                booking_date: bookingPayload.booking_date
+            });
             return NextResponse.json({ error: 'Unable to initialize booking.' }, { status: 500 });
         }
 

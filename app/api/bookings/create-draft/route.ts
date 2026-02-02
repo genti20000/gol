@@ -278,37 +278,33 @@ export async function POST(request: Request) {
 
     const expiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
 
-    const bookingPayload = {
-      room_id: assignedRoomId,
-      room_name: resolvedRoomName,
-      service_id: isNonEmptyString(payload.serviceId) ? payload.serviceId : null,
-      staff_id: isNonEmptyString(payload.staffId) ? payload.staffId : null,
-      booking_date: date,
-      start_time: time,
-      duration_hours: totalDurationHours,
-      start_at: startDate.toISOString(),
-      end_at: endDate.toISOString(),
-      status: BookingStatus.DRAFT,
-      expires_at: expiresAt,
-      guests,
-      customer_name: buildCustomerName(firstName, surname),
-      customer_surname: surname,
-      customer_email: email,
-      customer_phone: isNonEmptyString(payload.phone) ? payload.phone.trim() : null,
-      notes: isNonEmptyString(payload.notes) ? payload.notes.trim() : null,
-      base_total: baseTotal,
-      extras_hours: extraHours,
-      extras_price: extrasPrice,
-      discount_amount: discountAmount,
-      promo_code: promoCodeToStore,
-      promo_discount_amount: promoDiscountAmount,
-      total_price: totalPrice,
+    const { buildDraftBookingPayload } = await import('@/lib/bookingPayload');
+    const bookingPayload = buildDraftBookingPayload({
+      roomId: assignedRoomId,
+      roomName: resolvedRoomName,
+      serviceId: isNonEmptyString(payload.serviceId) ? payload.serviceId : null,
+      staffId: isNonEmptyString(payload.staffId) ? payload.staffId : null,
+      date,
+      time,
+      extraHours: extraHours,
+      baseDurationHours: BASE_DURATION_HOURS,
+      baseTotal,
+      extrasPrice,
+      discountAmount,
+      promoCode: promoCodeToStore,
+      promoDiscountAmount,
+      totalPrice,
       source: 'public',
-      deposit_amount: depositAmount,
-      deposit_paid: isZeroDeposit,
-      extras_total: 0,
-      extras_snapshot: []
-    };
+      depositAmount,
+      depositPaid: isZeroDeposit,
+      expiresAt,
+      firstName,
+      surname,
+      email,
+      phone: isNonEmptyString(payload.phone) ? payload.phone.trim() : null,
+      notes: isNonEmptyString(payload.notes) ? payload.notes.trim() : null
+    });
+    bookingPayload.guests = guests;
 
     const missingInsertFields = REQUIRED_BOOKING_INSERT_FIELDS.filter((field) => {
       const value = bookingPayload[field as keyof typeof bookingPayload];
@@ -326,7 +322,7 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log('booking insert payload', bookingPayload);
+    console.log('booking insert payload keys', Object.keys(bookingPayload), 'booking_date', bookingPayload.booking_date);
 
     const { data: insertedBooking, error: bookingError } = await supabase
       .from('bookings')
@@ -335,7 +331,11 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (bookingError || !insertedBooking) {
-      console.error('Failed to create booking draft.', { error: bookingError, payload: bookingPayload });
+      console.error('Failed to create booking draft.', {
+        error: { message: bookingError?.message, hint: bookingError?.hint, code: bookingError?.code },
+        payloadKeys: Object.keys(bookingPayload),
+        booking_date: bookingPayload.booking_date
+      });
       const errorMessage = bookingError?.message
         ? `Unable to create booking draft: ${bookingError.message}`
         : 'Unable to create booking draft.';
