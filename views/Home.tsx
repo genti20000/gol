@@ -143,8 +143,7 @@ export default function Home() {
             {offers.map((offer, index) => (
               <div
                 key={offer.id}
-                className="offer-pill bg-zinc-900/70 border border-zinc-800 text-white px-4 py-2 rounded-full text-[9px] md:text-[10px] font-bold uppercase tracking-[0.2em] shadow-lg shadow-amber-500/10"
-                style={{ animationDelay: `${index * 0.15}s` }}
+                className={`offer-pill bg-zinc-900/70 border border-zinc-800 text-white px-4 py-2 rounded-full text-[9px] md:text-[10px] font-bold uppercase tracking-[0.2em] shadow-lg shadow-amber-500/10 offer-delay-${index}`}
               >
                 <span className="text-amber-500 mr-2">★</span>
                 <span>{offer.title}</span>
@@ -153,6 +152,11 @@ export default function Home() {
             ))}
           </div>
         )}
+
+        {/* Inject animation delay CSS for offer pills to avoid inline styles */}
+        <style>{`
+          ${offers.map((_, i) => `.offer-delay-${i} { animation-delay: ${i * 0.15}s; }`).join('\n')}
+        `}</style>
 
         <form onSubmit={handleSearch} className="glass-panel p-6 sm:p-10 rounded-[2rem] md:rounded-[2.5rem] shadow-2xl space-y-6 md:space-y-10 text-sm">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
@@ -166,14 +170,14 @@ export default function Home() {
 
             <div className="flex flex-col text-left gap-2">
               <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 ml-1">Group Size</label>
-              <select value={guests} onChange={(e) => setGuests(parseInt(e.target.value))} className="bg-zinc-900/50 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 focus:ring-1 ring-amber-500 outline-none text-white w-full font-bold appearance-none shadow-inner min-h-[44px]">
+              <select aria-label="Group size" value={guests} onChange={(e) => setGuests(parseInt(e.target.value))} className="bg-zinc-900/50 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 focus:ring-1 ring-amber-500 outline-none text-white w-full font-bold appearance-none shadow-inner min-h-[44px]">
                 {PRICING_TIERS.map(tier => <option key={tier.min} value={tier.min} className="bg-zinc-950">{getGuestLabel(tier.min)}</option>)}
               </select>
             </div>
 
             <div className="flex flex-col text-left gap-2">
               <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 ml-1">Session Length</label>
-              <select value={extraHours} onChange={(e) => setExtraHours(parseInt(e.target.value))} className="bg-zinc-900/50 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 focus:ring-1 ring-amber-500 outline-none text-white w-full font-bold appearance-none shadow-inner min-h-[44px]">
+              <select aria-label="Session length" value={extraHours} onChange={(e) => setExtraHours(parseInt(e.target.value))} className="bg-zinc-900/50 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 focus:ring-1 ring-amber-500 outline-none text-white w-full font-bold appearance-none shadow-inner min-h-[44px]">
                 {EXTRAS.map(opt => <option key={opt.hours} value={opt.hours} className="bg-zinc-950">{2 + opt.hours} Hours {opt.price > 0 ? `(+£${opt.price})` : ''}</option>)}
               </select>
             </div>
@@ -231,9 +235,9 @@ function DatePickerModal({ selectedDate, onSelect, onClose, store }: { selectedD
       <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={onClose}></div>
       <div className="relative w-full max-w-sm md:max-w-md glass-panel rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-8 animate-in zoom-in duration-300">
         <div className="flex items-center justify-between mb-6 md:mb-8">
-          <button onClick={() => setCurrentView(new Date(currentView.setMonth(currentView.getMonth() - 1)))} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white p-2"><i className="fa-solid fa-chevron-left"></i></button>
+          <button aria-label="Previous month" onClick={() => setCurrentView(new Date(currentView.setMonth(currentView.getMonth() - 1)))} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white p-2"><i className="fa-solid fa-chevron-left"></i></button>
           <h3 className="text-lg md:text-xl font-bold uppercase tracking-tighter text-amber-500">{monthNames[currentView.getMonth()]} {currentView.getFullYear()}</h3>
-          <button onClick={() => setCurrentView(new Date(currentView.setMonth(currentView.getMonth() + 1)))} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white p-2"><i className="fa-solid fa-chevron-right"></i></button>
+          <button aria-label="Next month" onClick={() => setCurrentView(new Date(currentView.setMonth(currentView.getMonth() + 1)))} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white p-2"><i className="fa-solid fa-chevron-right"></i></button>
         </div>
         <div className="grid grid-cols-7 gap-1 mb-2">
           {daysOfWeek.map(d => <div key={d} className="text-[8px] font-bold text-zinc-600 text-center">{d}</div>)}
