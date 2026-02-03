@@ -477,7 +477,7 @@ function BookingsTab({ store, selectedDate, setSelectedDate }: { store: any, sel
 
       {viewMode === 'day' ? (
         <div className="space-y-12">
-          <div className="overflow-x-hidden -mx-4">
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
             <TimelineView
               store={store}
               date={selectedDate}
