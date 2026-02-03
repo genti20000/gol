@@ -4,8 +4,6 @@
 I have created a `.env.local` file in the project root. You need to fill in the following values:
 
 - `SUPABASE_SERVICE_ROLE_KEY`: Your Supabase Service Role Key (from Supabase Dashboard > Project Settings > API).
-- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: Your Stripe Publishable Key (starts with `pk_test_` or `pk_live_`).
-- `STRIPE_SECRET_KEY`: Your Stripe Secret Key (starts with `sk_test_` or `sk_live_`).
 
 **Note:** The `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are already filled in from your existing `.env`.
 
