@@ -65,7 +65,7 @@ export default function Admin() {
   const [credentials, setCredentials] = useState({ email: '', password: '' });
   const [localAllowlist, setLocalAllowlist] = useState<string[]>([]);
   const [localAllowlistInput, setLocalAllowlistInput] = useState('');
-  const calendarSyncConfig = store.calSync;
+  const calSyncConfig = store.calSync;
 
   const allowedEmails = useMemo(
     () => {
@@ -152,7 +152,7 @@ export default function Admin() {
   };
 
   useEffect(() => {
-    const config = calendarSyncConfig;
+    const config = calSyncConfig;
     if (!config.enabled || store.loading) return;
 
     const pushSnapshot = async () => {
@@ -184,7 +184,7 @@ export default function Admin() {
     };
     pushSnapshot();
   }, [
-    calendarSyncConfig,
+    calSyncConfig,
     store.bookings,
     store.blocks,
     store.recurringBlocks,
@@ -1758,17 +1758,17 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
             <div className="p-8 bg-zinc-950 border border-zinc-900 rounded-[2rem] space-y-6">
               <div className="flex items-center justify-between p-4 bg-zinc-900/50 rounded-2xl border border-zinc-800">
                 <span className="text-xs font-bold uppercase tracking-widest">Enable Live iCal Feed</span>
-                <button onClick={() => store.setCalendarSyncConfig({ enabled: !calendarSyncConfig.enabled })} className={`w-12 h-6 rounded-full relative transition-all ${calendarSyncConfig.enabled ? 'bg-amber-500' : 'bg-zinc-800'}`} title={calendarSyncConfig.enabled ? 'Disable iCal feed' : 'Enable iCal feed'} aria-label={calendarSyncConfig.enabled ? 'Disable iCal feed' : 'Enable iCal feed'}>
-                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${calendarSyncConfig.enabled ? 'left-7' : 'left-1'}`}></div>
+                <button onClick={() => store.setCalendarSyncConfig({ enabled: !calSyncConfig.enabled })} className={`w-12 h-6 rounded-full relative transition-all ${calSyncConfig.enabled ? 'bg-amber-500' : 'bg-zinc-800'}`} title={calSyncConfig.enabled ? 'Disable iCal feed' : 'Enable iCal feed'} aria-label={calSyncConfig.enabled ? 'Disable iCal feed' : 'Enable iCal feed'}>
+                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${calSyncConfig.enabled ? 'left-7' : 'left-1'}`}></div>
                 </button>
               </div>
 
-              {calendarSyncConfig.enabled && (
+              {calSyncConfig.enabled && (
                 <div className="space-y-6 animate-in slide-in-from-bottom-2">
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Feed Subscription URL</label>
                     <div className="flex gap-2">
-                      <input readOnly aria-label="Feed Subscription URL" value={`${window.location.origin}/.netlify/functions/calendar-ics?token=${calendarSyncConfig.token}`} className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white font-mono text-xs select-all" />
+                      <input readOnly aria-label="Feed Subscription URL" value={`${window.location.origin}/.netlify/functions/calendar-ics?token=${calSyncConfig.token}`} className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white font-mono text-xs select-all" />
                       <button onClick={() => store.regenerateCalendarToken()} className="px-4 bg-zinc-800 rounded-xl text-zinc-400 hover:text-white" title="Regenerate token" aria-label="Regenerate feed token"><i className="fa-solid fa-rotate"></i></button>
                     </div>
                   </div>
