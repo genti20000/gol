@@ -948,102 +948,118 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
         </div>
       </div>
 
-      <div className="relative border border-zinc-900 rounded-[2rem] overflow-hidden bg-zinc-950 flex shadow-2xl w-full">
-        {/* Time Column */}
-        <div className="w-16 shrink-0 border-r border-zinc-900 bg-zinc-900/40 z-20">
-          <div className="h-24 border-b border-zinc-900"></div>
-          {hours.map(h => (
-            <div key={h} className="relative border-b border-zinc-800/50 flex items-start justify-center pt-2 text-[9px] font-mono text-zinc-600 admin-row">
-              {(h % 24).toString().padStart(2, '0')}:00
-              {/* Half-hour marker line sidebar */}
-              <div className="absolute top-1/2 left-0 right-0 border-t border-zinc-800/10 pointer-events-none"></div>
-            </div>
-          ))}
+      <div className="relative border border-zinc-900 rounded-[2rem] overflow-hidden bg-zinc-950 flex flex-col shadow-2xl w-full">
+        <div className="flex bg-zinc-950/95">
+          <div className="w-16 shrink-0 border-r border-zinc-900 bg-zinc-900/40 z-30 sticky left-0">
+            <div className="h-24 border-b border-zinc-900"></div>
+          </div>
+
+          <div className="flex-1 flex min-w-0">
+            {store.rooms.map((r: Room) => (
+              <div
+                key={r.id}
+                className="flex-1 border-r border-zinc-900 relative min-w-0"
+              >
+                <div className="h-24 border-b border-zinc-900 flex flex-col items-center justify-center p-1 text-center bg-zinc-900/20 overflow-hidden">
+                  <span className="text-[9px] sm:text-[10px] font-bold uppercase text-white leading-tight break-words">
+                    {r.name.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Lanes Container - force 3 lanes on mobile via flex-1 min-w-0 */}
-        <div className="flex-1 flex min-w-0">
-          {store.rooms.map((r: Room) => (
-            <div
-              key={r.id}
-              className="flex-1 border-r border-zinc-900 relative min-w-0"
-            >
-              <div className="h-24 border-b border-zinc-900 flex flex-col items-center justify-center p-1 text-center bg-zinc-900/20 overflow-hidden">
-                <span className="text-[9px] sm:text-[10px] font-bold uppercase text-white leading-tight break-words">
-                  {r.name.toUpperCase()}
-                </span>
+        <div className="flex min-h-0 max-h-[calc(100vh-20rem)] max-h-[calc(100svh-20rem)] overflow-y-auto">
+          {/* Time Column */}
+          <div className="w-16 shrink-0 border-r border-zinc-900 bg-zinc-900/40 z-20 sticky left-0">
+            {hours.map(h => (
+              <div key={h} className="relative border-b border-zinc-800/50 flex items-start justify-center pt-2 text-[9px] font-mono text-zinc-600 admin-row">
+                {(h % 24).toString().padStart(2, '0')}:00
+                {/* Half-hour marker line sidebar */}
+                <div className="absolute top-1/2 left-0 right-0 border-t border-zinc-800/10 pointer-events-none"></div>
               </div>
+            ))}
+          </div>
 
-              <div className="relative admin-room-grid">
-                {hours.map(h => (
-                  <div key={h} className="relative border-b border-zinc-900/30 w-full admin-row">
-                    {/* 30-minute marker line */}
-                    <div className="absolute top-1/2 left-0 right-0 border-t border-zinc-800/40 h-0 pointer-events-none"></div>
-                  </div>
-                ))}
-
-                <div
-                  className="absolute inset-0 cursor-crosshair z-0"
-                  onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const y = e.clientY - rect.top;
-                    const hourOffset = y / rowHeight;
-                    const totalMins = Math.floor((startHour + hourOffset) * 60);
-                    const h = Math.floor(totalMins / 60);
-                    // Snap logic for 30-minute intervals
-                    const m = Math.floor((totalMins % 60) / 30) * 30;
-                    const timeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-                    onTapToCreate({ date, roomId: r.id, time: timeStr });
-                  }}
-                  onDragOver={(event) => {
-                    if (isPastDay) return;
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = 'move';
-                  }}
-                  onDrop={(event) => handleDrop(event, r.id)}
-                ></div>
-
-                {(busyIntervalsByRoom.get(r.id) ?? []).map((item: any) => {
-                  const dayStartTs = new Date(`${date}T${window.open}`).getTime();
-                  const startOffsetHrs = (item.start - dayStartTs) / 3600000;
-                  const durationHrs = (item.end - item.start) / 3600000;
-                  const indicators = item.type === 'booking' ? getBookingIndicators(item as Booking) : null;
-
-                  return (
-                    <div
-                      key={item.id}
-                      onClick={(e) => { e.stopPropagation(); if (item.type === 'booking') onSelectBooking(item.id); }}
-                      draggable={item.type === 'booking' && !isPastDay}
-                      onDragStart={(event) => {
-                        if (item.type !== 'booking' || isPastDay) return;
-                        event.dataTransfer.effectAllowed = 'move';
-                        event.dataTransfer.setData('text/plain', item.id);
-                        setDraggingId(item.id);
-                      }}
-                      onDragEnd={() => setDraggingId(null)}
-                      className={`absolute left-0.5 right-0.5 rounded-lg border flex flex-col justify-center items-center px-0.5 transition-all hover:scale-[1.02] active:scale-95 shadow-lg overflow-hidden z-10 ${item.type === 'booking'
-                        ? (item.status === 'CONFIRMED'
-                          ? 'bg-amber-500 text-black border-amber-400'
-                          : 'bg-zinc-800 text-zinc-400 border-zinc-700')
-                        : 'bg-red-500/20 text-red-500 border-red-500/20 cursor-default'
-                        } ${item.type === 'booking' ? (isPastDay ? 'cursor-pointer' : 'cursor-grab') : ''} ${draggingId === item.id ? 'opacity-70 cursor-grabbing' : ''} booking-${item.id}`}
-                    >
-                      <span className="text-[10px] font-bold uppercase text-center line-clamp-2 leading-none">
-                        {item.type === 'booking' ? `${item.customer_name} • ${item.guests} GUESTS` : (item.reason || 'Blocked')}
-                      </span>
-                      {item.type === 'booking' && indicators && (
-                        <div className="mt-1 flex items-center gap-1 text-[10px]">
-                          {indicators.hasSpecialRequests && <i className="fa-solid fa-note-sticky" title="Special requests"></i>}
-                          {indicators.hasFood && <i className="fa-solid fa-pizza-slice" title="Food extra"></i>}
-                          {indicators.hasDrink && <i className="fa-solid fa-martini-glass-citrus" title="Drink extra"></i>}
-                        </div>
-                      )}
+          {/* Lanes Container - force 3 lanes on mobile via flex-1 min-w-0 */}
+          <div className="flex-1 flex min-w-0">
+            {store.rooms.map((r: Room) => (
+              <div
+                key={r.id}
+                className="flex-1 border-r border-zinc-900 relative min-w-0"
+              >
+                <div className="relative admin-room-grid">
+                  {hours.map(h => (
+                    <div key={h} className="relative border-b border-zinc-900/30 w-full admin-row">
+                      {/* 30-minute marker line */}
+                      <div className="absolute top-1/2 left-0 right-0 border-t border-zinc-800/40 h-0 pointer-events-none"></div>
                     </div>
-                  );
-                })}
+                  ))}
+
+                  <div
+                    className="absolute inset-0 cursor-crosshair z-0"
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const y = e.clientY - rect.top;
+                      const hourOffset = y / rowHeight;
+                      const totalMins = Math.floor((startHour + hourOffset) * 60);
+                      const h = Math.floor(totalMins / 60);
+                      // Snap logic for 30-minute intervals
+                      const m = Math.floor((totalMins % 60) / 30) * 30;
+                      const timeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+                      onTapToCreate({ date, roomId: r.id, time: timeStr });
+                    }}
+                    onDragOver={(event) => {
+                      if (isPastDay) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = 'move';
+                    }}
+                    onDrop={(event) => handleDrop(event, r.id)}
+                  ></div>
+
+                  {(busyIntervalsByRoom.get(r.id) ?? []).map((item: any) => {
+                    const dayStartTs = new Date(`${date}T${window.open}`).getTime();
+                    const startOffsetHrs = (item.start - dayStartTs) / 3600000;
+                    const durationHrs = (item.end - item.start) / 3600000;
+                    const indicators = item.type === 'booking' ? getBookingIndicators(item as Booking) : null;
+
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={(e) => { e.stopPropagation(); if (item.type === 'booking') onSelectBooking(item.id); }}
+                        draggable={item.type === 'booking' && !isPastDay}
+                        onDragStart={(event) => {
+                          if (item.type !== 'booking' || isPastDay) return;
+                          event.dataTransfer.effectAllowed = 'move';
+                          event.dataTransfer.setData('text/plain', item.id);
+                          setDraggingId(item.id);
+                        }}
+                        onDragEnd={() => setDraggingId(null)}
+                        className={`absolute left-0.5 right-0.5 rounded-lg border flex flex-col justify-center items-center px-0.5 transition-all hover:scale-[1.02] active:scale-95 shadow-lg overflow-hidden z-10 ${item.type === 'booking'
+                          ? (item.status === 'CONFIRMED'
+                            ? 'bg-amber-500 text-black border-amber-400'
+                            : 'bg-zinc-800 text-zinc-400 border-zinc-700')
+                          : 'bg-red-500/20 text-red-500 border-red-500/20 cursor-default'
+                          } ${item.type === 'booking' ? (isPastDay ? 'cursor-pointer' : 'cursor-grab') : ''} ${draggingId === item.id ? 'opacity-70 cursor-grabbing' : ''} booking-${item.id}`}
+                      >
+                        <span className="text-[10px] font-bold uppercase text-center line-clamp-2 leading-none">
+                          {item.type === 'booking' ? `${item.customer_name} • ${item.guests} GUESTS` : (item.reason || 'Blocked')}
+                        </span>
+                        {item.type === 'booking' && indicators && (
+                          <div className="mt-1 flex items-center gap-1 text-[10px]">
+                            {indicators.hasSpecialRequests && <i className="fa-solid fa-note-sticky" title="Special requests"></i>}
+                            {indicators.hasFood && <i className="fa-solid fa-pizza-slice" title="Food extra"></i>}
+                            {indicators.hasDrink && <i className="fa-solid fa-martini-glass-citrus" title="Drink extra"></i>}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
     </div>
