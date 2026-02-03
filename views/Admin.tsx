@@ -705,17 +705,17 @@ function CompactBookingList({ store, date, onSelect }: { store: any, date: strin
           </div>
 
           <div className="flex flex-wrap items-center gap-4 md:gap-10 w-full md:w-auto border-t md:border-t-0 border-zinc-800 md:pt-0 pt-4">
-            <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-400 font-mono">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 font-mono">
               {new Date(b.start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — {new Date(b.end_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </div>
-            <div className={`text-[8px] font-bold uppercase px-3 py-1 rounded-full border ${b.status === BookingStatus.CONFIRMED ? 'bg-green-500/10 text-green-500 border-green-500/20' :
+            <div className={`text-[10px] font-bold uppercase px-3 py-1 rounded-full border ${b.status === BookingStatus.CONFIRMED ? 'bg-green-500/10 text-green-500 border-green-500/20' :
               b.status === BookingStatus.CANCELLED ? 'bg-red-500/10 text-red-500 border-red-500/20' :
                 'bg-zinc-800 text-zinc-500 border-zinc-700'
               }`}>
               {b.status}
             </div>
             {(b.deposit_amount > 0 || (b.extras_total || 0) > 0) && (
-              <div className={`text-[8px] font-bold uppercase px-3 py-1 rounded-full border border-zinc-700 text-zinc-500`}>
+              <div className={`text-[10px] font-bold uppercase px-3 py-1 rounded-full border border-zinc-700 text-zinc-500`}>
                 {b.deposit_amount > 0 && `DEP: ${b.deposit_paid ? 'PAID' : 'PEND'}`}
                 {b.extras_total ? ` • EXT: £${b.extras_total}` : ''}
               </div>
@@ -1025,11 +1025,11 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                         : 'bg-red-500/20 text-red-500 border-red-500/20 cursor-default'
                         } ${item.type === 'booking' ? (isPastDay ? 'cursor-pointer' : 'cursor-grab') : ''} ${draggingId === item.id ? 'opacity-70 cursor-grabbing' : ''} booking-${item.id}`}
                     >
-                      <span className="text-[7px] font-bold uppercase text-center line-clamp-2 leading-none">
+                      <span className="text-[10px] font-bold uppercase text-center line-clamp-2 leading-none">
                         {item.type === 'booking' ? `${item.customer_name} • ${item.guests} GUESTS` : (item.reason || 'Blocked')}
                       </span>
                       {item.type === 'booking' && indicators && (
-                        <div className="mt-1 flex items-center gap-1 text-[9px]">
+                        <div className="mt-1 flex items-center gap-1 text-[10px]">
                           {indicators.hasSpecialRequests && <i className="fa-solid fa-note-sticky" title="Special requests"></i>}
                           {indicators.hasFood && <i className="fa-solid fa-pizza-slice" title="Food extra"></i>}
                           {indicators.hasDrink && <i className="fa-solid fa-martini-glass-citrus" title="Drink extra"></i>}
