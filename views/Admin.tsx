@@ -1197,7 +1197,8 @@ function CustomerModal({ store, onClose, customer }: { store: any, onClose: () =
     surname: customer?.surname || '',
     email: customer?.email || '',
     phone: customer?.phone || '',
-    notes: customer?.notes || ''
+    notes: customer?.notes || '',
+    specialRequests: customer?.notes || ''
   });
 
   const handleSave = async (e: React.FormEvent) => {
