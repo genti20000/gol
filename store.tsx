@@ -57,7 +57,29 @@ const DEFAULT_CAL_SYNC: CalendarSyncConfig = {
 };
 
 const DEFAULT_SERVICES: Service[] = [
-  { id: 'srv-1', name: 'Standard Karaoke Session', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-8', name: '8 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-9', name: '9 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-10', name: '10 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-11', name: '11 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-12', name: '12 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-13', name: '13 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-14', name: '14 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-15', name: '15 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-16', name: '16 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-17', name: '17 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-18', name: '18 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-19', name: '19 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-20', name: '20 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-21', name: '21 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-22', name: '22 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-23', name: '23 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-24', name: '24 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-25', name: '25 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-26', name: '26 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-27', name: '27 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-28', name: '28 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-29', name: '29 People', durationMinutes: 120, basePrice: 0, enabled: true },
+  { id: 'srv-30', name: '30 People', durationMinutes: 120, basePrice: 0, enabled: true },
 ];
 
 const DEFAULT_EXTRAS: Extra[] = [
@@ -283,7 +305,14 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
           deposit_forfeited: b.deposit_forfeited ?? false
         })));
         if (roomsData) setRooms(roomsData as Room[]);
-        if (servicesData) setServices(servicesData as Service[]);
+        if (servicesData) setServices(servicesData.map(s => ({
+          id: s.id,
+          name: s.name,
+          durationMinutes: s.duration_minutes,
+          basePrice: s.base_price,
+          description: s.description,
+          enabled: s.enabled
+        })));
         if (blocksData) setBlocks(blocksData.map(b => ({
           ...b,
           roomId: b.room_id,
@@ -931,14 +960,37 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
   }, []);
 
   const addService = useCallback(async (service: Partial<Service>): Promise<MutationResult> => {
-    const { data, error } = await supabase.from('services').insert([service]).select().single();
+    const dbPayload: Record<string, any> = {
+      id: service.id,
+      name: service.name,
+      duration_minutes: service.durationMinutes,
+      base_price: service.basePrice,
+      description: service.description,
+      enabled: service.enabled
+    };
+    const { data, error } = await supabase.from('services').insert([dbPayload]).select().single();
     if (error) return { ok: false, error: error.message };
     if (!data) return { ok: false, error: 'No data returned from service insert.' };
-    setServices(prev => [...prev, data]);
+    const mapped: Service = {
+      id: data.id,
+      name: data.name,
+      durationMinutes: data.duration_minutes,
+      basePrice: data.base_price,
+      description: data.description,
+      enabled: data.enabled
+    };
+    setServices(prev => [...prev, mapped]);
     return { ok: true };
   }, []);
   const updateService = useCallback(async (id: string, patch: Partial<Service>): Promise<MutationResult> => {
-    const { error } = await supabase.from('services').update(patch).eq('id', id);
+    const dbPatch: Record<string, any> = {};
+    if (patch.name !== undefined) dbPatch.name = patch.name;
+    if (patch.durationMinutes !== undefined) dbPatch.duration_minutes = patch.durationMinutes;
+    if (patch.basePrice !== undefined) dbPatch.base_price = patch.basePrice;
+    if (patch.description !== undefined) dbPatch.description = patch.description;
+    if (patch.enabled !== undefined) dbPatch.enabled = patch.enabled;
+    
+    const { error } = await supabase.from('services').update(dbPatch).eq('id', id);
     if (error) return { ok: false, error: error.message };
     setServices(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
     return { ok: true };
