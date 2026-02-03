@@ -229,7 +229,12 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO extras (id, name, price, pricing_mode, sort_order) VALUES
 ('ext-1', 'Pizza Party Platter', 45, 'flat', 1),
 ('ext-2', 'Bottle of Prosecco', 35, 'flat', 2),
-('ext-3', 'Unlimited Soft Drinks', 5, 'per_person', 3)
+('ext-3', 'Unlimited Soft Drinks', 5, 'per_person', 3),
+('ext-4', 'Assorted Sandwich Tray', 30, 'flat', 4),
+('ext-5', 'Fruit & Veggie Platter', 28, 'flat', 5),
+('ext-6', 'Mini Dessert Bites', 4, 'per_person', 6),
+('ext-7', 'Specialty Mocktail Pitcher', 18, 'flat', 7),
+('ext-8', 'Special Requests', 0, 'flat', 8)
 ON CONFLICT (id) DO NOTHING;
 
 -- RLS Policies
