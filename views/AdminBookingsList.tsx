@@ -8,6 +8,37 @@ const PAGE_SIZE = 25;
 
 type DateRangePreset = 'all' | 'today' | 'week' | 'custom';
 
+// Toast notification component
+const Toast: React.FC<{ message: string; type: 'success' | 'error'; onClose: () => void }> = ({
+  message,
+  type,
+  onClose
+}) => {
+  React.useEffect(() => {
+    const timer = setTimeout(onClose, 4000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div
+      className={`fixed bottom-4 right-4 px-4 py-3 rounded-lg text-sm font-bold uppercase tracking-widest z-50 ${
+        type === 'success'
+          ? 'bg-green-500/10 border border-green-500/30 text-green-400'
+          : 'bg-red-500/10 border border-red-500/30 text-red-400'
+      }`}
+    >
+      {message}
+    </div>
+  );
+};
+
+// Truncate notes to show snippet
+const getNotesSnippet = (notes: string | undefined, maxLength: number = 60): string => {
+  if (!notes || !notes.trim()) return '—';
+  if (notes.length > maxLength) return notes.substring(0, maxLength) + '…';
+  return notes;
+};
+
 const getStatusBadgeClass = (status: BookingStatus) => {
   if (status === BookingStatus.CONFIRMED) return 'bg-green-500/10 text-green-500 border-green-500/20';
   if (status === BookingStatus.CANCELLED) return 'bg-red-500/10 text-red-500 border-red-500/20';
@@ -36,6 +67,120 @@ export default function AdminBookingsList({
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Modal states
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
+  const [editNotes, setEditNotes] = useState('');
+  const [editLoading, setEditLoading] = useState(false);
+
+  const [deletingBooking, setDeletingBooking] = useState<Booking | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  // Handler: Open edit notes modal
+  const handleEditNotesClick = (booking: Booking) => {
+    setEditingBooking(booking);
+    setEditNotes(booking.notes || '');
+  };
+
+  // Handler: Save notes
+  const handleSaveNotes = async () => {
+    if (!editingBooking) return;
+    setEditLoading(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) {
+        setToast({ message: 'Authentication error. Please refresh.', type: 'error' });
+        setEditLoading(false);
+        return;
+      }
+
+      const response = await fetch(`/api/admin/bookings/${editingBooking.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ notes: editNotes })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update notes');
+      }
+
+      const result = await response.json();
+      
+      // Update the booking in the local state
+      setBookings(prevBookings =>
+        prevBookings.map(b =>
+          b.id === editingBooking.id ? { ...b, notes: editNotes } : b
+        )
+      );
+
+      setToast({ message: 'Notes updated successfully', type: 'success' });
+      setEditingBooking(null);
+      setEditNotes('');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update notes';
+      setToast({ message, type: 'error' });
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  // Handler: Open delete confirmation modal
+  const handleDeleteClick = (booking: Booking) => {
+    setDeletingBooking(booking);
+    setDeleteConfirmText('');
+  };
+
+  // Handler: Confirm delete
+  const handleConfirmDelete = async () => {
+    if (!deletingBooking) return;
+    if (deleteConfirmText.toUpperCase() !== 'DELETE') return;
+
+    setDeleteLoading(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) {
+        setToast({ message: 'Authentication error. Please refresh.', type: 'error' });
+        setDeleteLoading(false);
+        return;
+      }
+
+      const response = await fetch(`/api/admin/bookings/${deletingBooking.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete booking');
+      }
+
+      // Remove the booking from the local state
+      setBookings(prevBookings =>
+        prevBookings.filter(b => b.id !== deletingBooking.id)
+      );
+      setTotalCount(prev => prev - 1);
+
+      setToast({ message: 'Booking deleted successfully', type: 'success' });
+      setDeletingBooking(null);
+      setDeleteConfirmText('');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete booking';
+      setToast({ message, type: 'error' });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   const queryWindow = useMemo(() => {
     const now = new Date();
@@ -258,13 +403,27 @@ export default function AdminBookingsList({
                     <td className="px-4 py-4 whitespace-nowrap text-[9px] text-zinc-500">
                       {b.created_at ? new Date(b.created_at).toLocaleDateString() : '—'}
                     </td>
-                    <td className="px-4 py-4">
-                      <button
-                        onClick={() => onViewBooking(b)}
-                        className="text-amber-500 hover:text-amber-400 transition-colors text-[9px] font-bold uppercase tracking-widest"
-                      >
-                        View
-                      </button>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => onViewBooking(b)}
+                          className="text-amber-500 hover:text-amber-400 transition-colors text-[9px] font-bold uppercase tracking-widest"
+                        >
+                          View
+                        </button>
+                        <button
+                          onClick={() => handleEditNotesClick(b)}
+                          className="text-blue-400 hover:text-blue-300 transition-colors text-[9px] font-bold uppercase tracking-widest"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteClick(b)}
+                          className="text-red-400 hover:text-red-300 transition-colors text-[9px] font-bold uppercase tracking-widest"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -294,6 +453,112 @@ export default function AdminBookingsList({
           </button>
         </div>
       </div>
+
+      {/* Edit Notes Modal */}
+      {editingBooking && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-40">
+          <div className="bg-zinc-900 rounded-2xl border border-zinc-800 max-w-lg w-full mx-4 p-6 space-y-6">
+            <div>
+              <h3 className="text-lg font-bold uppercase tracking-tighter text-white mb-2">Edit Notes</h3>
+              <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 space-y-1">
+                <div>{editingBooking.customer_name} {editingBooking.customer_surname || ''}</div>
+                <div>{new Date(editingBooking.start_at).toLocaleDateString()} at {new Date(editingBooking.start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                <div>Room: {editingBooking.room_name}</div>
+              </div>
+            </div>
+            <textarea
+              value={editNotes}
+              onChange={(e) => setEditNotes(e.target.value)}
+              maxLength={2000}
+              placeholder="Add notes here..."
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white outline-none focus:ring-1 ring-amber-500 resize-none"
+              rows={5}
+            />
+            <div className="text-[8px] text-zinc-600 font-bold uppercase tracking-widest">
+              {editNotes.length} / 2000 characters
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setEditingBooking(null);
+                  setEditNotes('');
+                }}
+                disabled={editLoading}
+                className="flex-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white rounded-xl px-4 py-3 text-[9px] font-bold uppercase tracking-widest transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveNotes}
+                disabled={editLoading}
+                className="flex-1 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-black rounded-xl px-4 py-3 text-[9px] font-bold uppercase tracking-widest transition-colors"
+              >
+                {editLoading ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingBooking && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-40">
+          <div className="bg-zinc-900 rounded-2xl border border-zinc-800 max-w-lg w-full mx-4 p-6 space-y-6">
+            <div>
+              <h3 className="text-lg font-bold uppercase tracking-tighter text-white mb-2">Delete Booking</h3>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-red-400 mb-4">
+                This cannot be undone.
+              </p>
+              <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 space-y-1">
+                <div>{deletingBooking.customer_name} {deletingBooking.customer_surname || ''}</div>
+                <div>{new Date(deletingBooking.start_at).toLocaleDateString()} at {new Date(deletingBooking.start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                <div>Room: {deletingBooking.room_name}</div>
+                <div>Ref: {deletingBooking.booking_ref}</div>
+              </div>
+            </div>
+            <div>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-white block mb-2">
+                Type "DELETE" to confirm:
+              </label>
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder="DELETE"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white outline-none focus:ring-1 ring-red-500"
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setDeletingBooking(null);
+                  setDeleteConfirmText('');
+                }}
+                disabled={deleteLoading}
+                className="flex-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white rounded-xl px-4 py-3 text-[9px] font-bold uppercase tracking-widest transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={deleteLoading || deleteConfirmText.toUpperCase() !== 'DELETE'}
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl px-4 py-3 text-[9px] font-bold uppercase tracking-widest transition-colors"
+              >
+                {deleteLoading ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }
