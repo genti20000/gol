@@ -856,8 +856,11 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
   }
 
   const busyIntervalsByRoom = useMemo(() => {
-    const entries = store.rooms.map((room: Room) => [room.id, store.getBusyIntervals(date, room.id)] as const);
-    return new Map(entries);
+    const entries: Array<[string, any[]]> = store.rooms.map((room: Room) => [
+      room.id,
+      store.getBusyIntervals(date, room.id),
+    ]);
+    return new Map<string, any[]>(entries);
   }, [store.rooms, store.getBusyIntervals, date]);
 
   // Inject dynamic CSS for schedule heights/top positions to avoid inline styles
