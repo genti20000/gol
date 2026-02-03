@@ -6,6 +6,7 @@ import type { Session } from '@supabase/supabase-js';
 import { useStore, type MutationResult } from '../store';
 import { supabase, supabaseConfigured } from '../lib/supabase';
 import { OperatingHourRow } from './OperatingHourRow';
+import AdminBookingsList from './AdminBookingsList';
 import {
   Booking,
   BookingStatus,
@@ -23,7 +24,7 @@ import {
 } from '../types';
 import { ROOMS, LOGO_URL, PRICING_TIERS, EXTRAS, SLOT_MINUTES, BUFFER_MINUTES, getGuestLabel, LS_ADMIN_USERS } from '../constants';
 
-type Tab = 'bookings' | 'customers' | 'blocks' | 'settings' | 'reports';
+type Tab = 'bookings' | 'bookings-list' | 'customers' | 'blocks' | 'settings' | 'reports';
 type ViewMode = 'day' | 'week' | 'month';
 
 const FOOD_EXTRA_MATCHERS = [/pizza/i, /platter/i, /food/i, /meal/i, /buffet/i, /catering/i, /snack/i, /dessert/i];
@@ -65,6 +66,8 @@ export default function Admin() {
   const [credentials, setCredentials] = useState({ email: '', password: '' });
   const [localAllowlist, setLocalAllowlist] = useState<string[]>([]);
   const [localAllowlistInput, setLocalAllowlistInput] = useState('');
+  const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
+  const [showBookingModal, setShowBookingModal] = useState(false);
   const calSyncConfig = store.calSync;
 
   const allowedEmails = useMemo(
@@ -136,6 +139,11 @@ export default function Admin() {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     setSession(null);
+  };
+
+  const handleViewBooking = (booking: Booking) => {
+    setViewingBooking(booking);
+    setShowBookingModal(true);
   };
 
   const handleLocalAllowlistSave = (event: React.FormEvent) => {
@@ -333,13 +341,20 @@ export default function Admin() {
 
         <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 w-full lg:w-auto">
           <nav className="flex bg-zinc-900/50 p-1.5 rounded-2xl border border-zinc-800 w-full lg:w-auto overflow-x-auto no-scrollbar shadow-2xl">
-            {(['bookings', 'customers', 'blocks', 'settings', 'reports'] as Tab[]).map(t => (
+            {([
+              { id: 'bookings', label: 'Bookings' },
+              { id: 'bookings-list', label: 'Bookings List' },
+              { id: 'customers', label: 'Customers' },
+              { id: 'blocks', label: 'Blocks' },
+              { id: 'settings', label: 'Settings' },
+              { id: 'reports', label: 'Reports' }
+            ] as Array<{ id: Tab; label: string }>).map(t => (
               <button
-                key={t}
-                onClick={() => setActiveTab(t)}
-                className={`flex-1 lg:flex-none px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all whitespace-nowrap min-h-[44px] ${activeTab === t ? 'bg-amber-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                className={`flex-1 lg:flex-none px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all whitespace-nowrap min-h-[44px] ${activeTab === t.id ? 'bg-amber-500 text-black' : 'text-zinc-500 hover:text-white'}`}
               >
-                {t}
+                {t.label}
               </button>
             ))}
           </nav>
@@ -357,11 +372,23 @@ export default function Admin() {
 
       <div className="animate-in fade-in duration-500">
         {activeTab === 'bookings' && <BookingsTab store={store} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />}
+        {activeTab === 'bookings-list' && (
+          <AdminBookingsList rooms={store.rooms} onViewBooking={handleViewBooking} />
+        )}
         {activeTab === 'customers' && <CustomersTab store={store} />}
         {activeTab === 'blocks' && <BlocksTab store={store} selectedDate={selectedDate} />}
         {activeTab === 'settings' && <SettingsTab store={store} lastSyncTime={lastSyncTime} />}
         {activeTab === 'reports' && <ReportsTab store={store} />}
       </div>
+
+      {showBookingModal && viewingBooking && (
+        <BookingModal
+          store={store}
+          onClose={() => { setShowBookingModal(false); setViewingBooking(null); }}
+          initialDate={selectedDate}
+          booking={viewingBooking}
+        />
+      )}
     </div>
   );
 }

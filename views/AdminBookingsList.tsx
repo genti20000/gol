@@ -1,0 +1,299 @@
+"use client";
+
+import React, { useEffect, useMemo, useState } from 'react';
+import { supabase } from '../lib/supabase';
+import { Booking, BookingStatus, Room } from '../types';
+
+const PAGE_SIZE = 25;
+
+type DateRangePreset = 'all' | 'today' | 'week' | 'custom';
+
+const getStatusBadgeClass = (status: BookingStatus) => {
+  if (status === BookingStatus.CONFIRMED) return 'bg-green-500/10 text-green-500 border-green-500/20';
+  if (status === BookingStatus.CANCELLED) return 'bg-red-500/10 text-red-500 border-red-500/20';
+  if (status === BookingStatus.NO_SHOW) return 'bg-red-500/10 text-red-500 border-red-500/20';
+  if (status === BookingStatus.PENDING) return 'bg-amber-500/10 text-amber-500 border-amber-500/20';
+  return 'bg-zinc-800 text-zinc-500 border-zinc-700';
+};
+
+const toStartOfDayIso = (date: string) => new Date(`${date}T00:00:00`).toISOString();
+const toEndOfDayIso = (date: string) => new Date(`${date}T23:59:59`).toISOString();
+
+export default function AdminBookingsList({
+  rooms,
+  onViewBooking
+}: {
+  rooms: Room[];
+  onViewBooking: (booking: Booking) => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [selectedRoom, setSelectedRoom] = useState('');
+  const [rangePreset, setRangePreset] = useState<DateRangePreset>('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [page, setPage] = useState(1);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const queryWindow = useMemo(() => {
+    const now = new Date();
+    if (rangePreset === 'today') {
+      const today = now.toISOString().split('T')[0];
+      return { start: toStartOfDayIso(today), end: toEndOfDayIso(today) };
+    }
+    if (rangePreset === 'week') {
+      const today = now.toISOString().split('T')[0];
+      const weekEnd = new Date(now);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      const endLabel = weekEnd.toISOString().split('T')[0];
+      return { start: toStartOfDayIso(today), end: toEndOfDayIso(endLabel) };
+    }
+    if (rangePreset === 'custom' && startDate) {
+      return {
+        start: toStartOfDayIso(startDate),
+        end: endDate ? toEndOfDayIso(endDate) : undefined
+      };
+    }
+    return { start: now.toISOString(), end: undefined };
+  }, [rangePreset, startDate, endDate]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, selectedRoom, rangePreset, startDate, endDate]);
+
+  useEffect(() => {
+    const fetchBookings = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const offset = (page - 1) * PAGE_SIZE;
+
+        let query = supabase
+          .from('bookings')
+          .select('*', { count: 'exact' })
+          .gte('start_at', queryWindow.start)
+          .order('start_at', { ascending: true })
+          .range(offset, offset + PAGE_SIZE - 1);
+
+        if (queryWindow.end) {
+          query = query.lte('start_at', queryWindow.end);
+        }
+        if (selectedRoom) {
+          query = query.eq('room_id', selectedRoom);
+        }
+        const term = search.trim();
+        if (term) {
+          const escaped = term.replace(/%/g, '\\%');
+          query = query.or(
+            `customer_name.ilike.%${escaped}%,customer_surname.ilike.%${escaped}%,customer_email.ilike.%${escaped}%,customer_phone.ilike.%${escaped}%,booking_ref.ilike.%${escaped}%`
+          );
+        }
+
+        const { data, error: queryError, count } = await query;
+        if (queryError) {
+          setError(queryError.message);
+          setBookings([]);
+          setTotalCount(0);
+          return;
+        }
+
+        const normalized = (data ?? []).map((b: any) => ({
+          ...b,
+          status: b.status as BookingStatus
+        })) as Booking[];
+        setBookings(normalized);
+        setTotalCount(count ?? 0);
+      } catch (err) {
+        console.error('Failed to load upcoming bookings', err);
+        setError('Failed to load bookings. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchBookings();
+  }, [page, queryWindow, search, selectedRoom]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  return (
+    <div className="glass-panel p-6 sm:p-8 rounded-[2.5rem] border-zinc-800 shadow-2xl space-y-6">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+        <div className="space-y-1">
+          <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Bookings List</h3>
+          <p className="text-zinc-600 text-[9px] font-bold uppercase tracking-widest">All upcoming sessions across rooms</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-[9px] font-bold uppercase tracking-widest">
+          {(['all', 'today', 'week', 'custom'] as DateRangePreset[]).map(preset => (
+            <button
+              key={preset}
+              onClick={() => setRangePreset(preset)}
+              className={`px-4 py-2 rounded-full border transition-all ${rangePreset === preset ? 'bg-amber-500 text-black border-amber-500' : 'bg-zinc-900 text-zinc-500 border-zinc-800 hover:text-white'}`}
+            >
+              {preset === 'all' ? 'All Upcoming' : preset === 'today' ? 'Today' : preset === 'week' ? 'This Week' : 'Custom'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4">
+        <input
+          type="text"
+          placeholder="Search name, email, phone, ref..."
+          value={search}
+          onChange={event => setSearch(event.target.value)}
+          className="bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-3 text-sm text-white w-full lg:max-w-sm outline-none focus:ring-1 ring-amber-500"
+        />
+        <select
+          value={selectedRoom}
+          onChange={event => setSelectedRoom(event.target.value)}
+          className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white w-full lg:w-auto"
+        >
+          <option value="">All Rooms</option>
+          {rooms.map(room => (
+            <option key={room.id} value={room.id}>{room.name}</option>
+          ))}
+        </select>
+        {rangePreset === 'custom' && (
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="date"
+              value={startDate}
+              onChange={event => setStartDate(event.target.value)}
+              className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white"
+            />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-600">to</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={event => setEndDate(event.target.value)}
+              className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white"
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="border border-zinc-900 rounded-2xl overflow-hidden bg-zinc-950">
+        <div className="max-h-[60vh] overflow-auto">
+          <table className="min-w-full text-left text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+            <thead className="sticky top-0 bg-zinc-950 z-10">
+              <tr className="border-b border-zinc-900">
+                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Time</th>
+                <th className="px-4 py-3">Room</th>
+                <th className="px-4 py-3">Guest</th>
+                <th className="px-4 py-3">Party</th>
+                <th className="px-4 py-3">Total</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Notes</th>
+                <th className="px-4 py-3">Created</th>
+                <th className="px-4 py-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="text-[11px] font-medium uppercase tracking-tight text-white">
+              {loading && (
+                <tr>
+                  <td colSpan={10} className="px-6 py-10 text-center text-[10px] text-zinc-500 font-bold uppercase tracking-widest">
+                    Loading upcoming bookings...
+                  </td>
+                </tr>
+              )}
+              {!loading && error && (
+                <tr>
+                  <td colSpan={10} className="px-6 py-10 text-center text-[10px] text-red-400 font-bold uppercase tracking-widest">
+                    {error}
+                  </td>
+                </tr>
+              )}
+              {!loading && !error && bookings.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="px-6 py-10 text-center text-[10px] text-zinc-600 font-bold uppercase tracking-widest">
+                    No upcoming bookings found.
+                  </td>
+                </tr>
+              )}
+              {!loading && !error && bookings.map((b: Booking) => {
+                const start = new Date(b.start_at);
+                const end = new Date(b.end_at);
+                return (
+                  <tr key={b.id} className="border-b border-zinc-900/60 last:border-b-0">
+                    <td className="px-4 py-4 whitespace-nowrap text-zinc-200">{start.toLocaleDateString()}</td>
+                    <td className="px-4 py-4 whitespace-nowrap text-zinc-200 font-mono text-[10px]">
+                      {start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — {end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-zinc-300">{b.room_name}</td>
+                    <td className="px-4 py-4 min-w-[160px]">
+                      <div className="text-[11px] font-bold uppercase text-white truncate" title={b.customer_name}>
+                        {b.customer_name} {b.customer_surname || ''}
+                      </div>
+                      <div className="text-[9px] text-zinc-500 font-bold lowercase tracking-tight truncate" title={b.customer_email}>
+                        {b.customer_email}
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-center text-zinc-200">{b.guests}</td>
+                    <td className="px-4 py-4 whitespace-nowrap text-zinc-200">
+                      £{(b.total_price || 0).toLocaleString()}
+                      {b.deposit_amount > 0 && (
+                        <div className="text-[8px] text-zinc-600 font-bold uppercase tracking-widest">
+                          Dep £{b.deposit_amount} • {b.deposit_paid ? 'Paid' : 'Pend'}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className={`text-[8px] font-bold uppercase px-2 py-1 rounded-full border ${getStatusBadgeClass(b.status)}`}>
+                        {b.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 max-w-[200px]">
+                      {b.notes ? (
+                        <span className="text-[9px] text-zinc-400 line-clamp-2" title={b.notes}>
+                          {b.notes}
+                        </span>
+                      ) : (
+                        <span className="text-[9px] text-zinc-700">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-[9px] text-zinc-500">
+                      {b.created_at ? new Date(b.created_at).toLocaleDateString() : '—'}
+                    </td>
+                    <td className="px-4 py-4">
+                      <button
+                        onClick={() => onViewBooking(b)}
+                        className="text-amber-500 hover:text-amber-400 transition-colors text-[9px] font-bold uppercase tracking-widest"
+                      >
+                        View
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-[9px] font-bold uppercase tracking-widest text-zinc-500">
+        <span>Showing {bookings.length} of {totalCount} bookings</span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-full disabled:opacity-40"
+          >
+            Prev
+          </button>
+          <span className="text-zinc-600">Page {page} of {totalPages}</span>
+          <button
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            className="bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-full disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
