@@ -86,6 +86,7 @@ export interface Booking {
   customer_email: string;
   customer_phone?: string;
   notes?: string;
+  special_requests?: string; // Customer-provided special requests
   base_total: number;
   extras_hours: number;
   extras_price: number;

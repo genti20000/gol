@@ -9,6 +9,7 @@ type UpdateRequest = {
     email?: string;
     phone?: string;
     notes?: string;
+    specialRequests?: string;
     extras?: Record<string, number>; // extraId -> quantity
 };
 
@@ -56,6 +57,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
         if (payload.email !== undefined) updates.customer_email = payload.email;
         if (payload.phone !== undefined) updates.customer_phone = payload.phone;
         if (payload.notes !== undefined) updates.notes = payload.notes;
+        if (payload.specialRequests !== undefined) updates.special_requests = payload.specialRequests;
 
         // 3. Update Extras & Recalculate Price
         if (payload.extras) {

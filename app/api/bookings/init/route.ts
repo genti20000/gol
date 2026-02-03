@@ -207,7 +207,8 @@ export async function POST(request: Request) {
             surname: '',
             email: null,
             phone: null,
-            notes: null
+            notes: null,
+            specialRequests: null
         });
         bookingPayload.status = BookingStatus.PENDING;
         bookingPayload.guests = guests;

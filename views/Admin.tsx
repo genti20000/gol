@@ -1247,6 +1247,10 @@ function CustomerModal({ store, onClose, customer }: { store: any, onClose: () =
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Internal Notes</label>
             <textarea aria-label="Internal notes" rows={3} value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500 resize-none" />
           </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Special Requests (Customer)</label>
+            <textarea aria-label="Special requests" rows={3} value={formData.specialRequests} onChange={e => setFormData({ ...formData, specialRequests: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500 resize-none" />
+          </div>
         </div>
 
         <div className="flex gap-4 pt-2">
@@ -2000,6 +2004,7 @@ function BookingModal({ store, onClose, initialDate, booking, prefill }: { store
     serviceId: booking?.service_id || (store.services[0]?.id || ''),
     status: booking?.status || BookingStatus.CONFIRMED,
     notes: booking?.notes || '',
+    specialRequests: booking?.special_requests || '',
     deposit_paid: booking?.deposit_paid || false,
     deposit_forfeited: booking?.deposit_forfeited || false,
     deposit_amount: booking?.deposit_amount || (store.settings.deposit_enabled ? store.settings.deposit_amount : 0)
@@ -2045,6 +2050,7 @@ function BookingModal({ store, onClose, initialDate, booking, prefill }: { store
       promo_discount_amount: pricing.promoDiscountAmount,
       total_price: pricing.totalPrice + (booking?.extras_total || 0),
       notes: formData.notes,
+      special_requests: formData.specialRequests,
       deposit_paid: formData.deposit_paid,
       deposit_forfeited: formData.deposit_forfeited,
       deposit_amount: formData.deposit_amount

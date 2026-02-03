@@ -24,6 +24,7 @@ type DraftRequest = {
   email?: string | null;
   phone?: string | null;
   notes?: string | null;
+  specialRequests?: string | null;
 };
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -305,7 +306,8 @@ export async function POST(request: Request) {
       surname,
       email,
       phone: isNonEmptyString(payload.phone) ? payload.phone.trim() : null,
-      notes: isNonEmptyString(payload.notes) ? payload.notes.trim() : null
+      notes: isNonEmptyString(payload.notes) ? payload.notes.trim() : null,
+      specialRequests: isNonEmptyString(payload.specialRequests) ? payload.specialRequests.trim() : null
     });
     bookingPayload.guests = guests;
 

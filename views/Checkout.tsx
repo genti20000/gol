@@ -164,6 +164,7 @@ export default function Checkout() {
         customer_email: formData.email,
         customer_phone: formData.phone,
         notes: formData.notes,
+        special_requests: formData.notes,
         base_total: pricing.baseTotal,
         extras_hours: checkoutSummary.extraHours,
         extras_price: pricing.extrasPrice,

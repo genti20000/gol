@@ -114,8 +114,8 @@ const Confirmation: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="text-center space-y-8 animate-in fade-in zoom-in duration-700">
         <div className="space-y-4">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-500/10 border-2 border-green-500/30 mb-4">
-            <i className="fa-solid fa-check text-3xl text-green-500"></i>
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-500/10 border-2 border-green-500/30 mb-4" aria-hidden="true">
+            <i className="fa-solid fa-check text-3xl text-green-500" aria-hidden="true"></i>
           </div>
           <h1 className="text-4xl md:text-6xl font-bold uppercase tracking-tighter text-white">
             Confirmed
