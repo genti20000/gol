@@ -1318,6 +1318,7 @@ function BlocksTab({ store, selectedDate }: { store: any, selectedDate: string }
 function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string | null }) {
   const [activeSub, setActiveSub] = useState('venue');
   const [showSaved, setShowSaved] = useState(false);
+  const calSyncConfig = store.calSync;
 
   const handleSettingChange = async (updateFn: () => Promise<MutationResult>, errorMessage: string) => {
     const ok = await handleMutation(updateFn(), errorMessage);
