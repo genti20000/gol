@@ -13,6 +13,14 @@ export enum BookingStatus {
   NO_SHOW = 'NO_SHOW'
 }
 
+
+export enum PaymentState {
+  NONE = 'NONE',
+  DEPOSIT_HELD = 'DEPOSIT_HELD',
+  PAID = 'PAID',
+  REFUNDED = 'REFUNDED'
+}
+
 export interface Room {
   id: string;
   code: 'A' | 'B' | 'C';
@@ -84,6 +92,7 @@ export interface Booking {
   start_at: string; // ISO
   end_at: string; // ISO
   status: BookingStatus;
+  payment_state?: PaymentState;
   guests: number;
   customer_name: string;
   customer_surname?: string;

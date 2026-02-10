@@ -2,185 +2,47 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Booking, BookingStatus, Room } from '../types';
+import { Booking, BookingStatus, PaymentState, Room } from '../types';
+import { hasConflict, hasMissingCustomerDetails, NOTES_MAX_LENGTH, validateNotesInput } from '../lib/adminBookingOps';
 
 const PAGE_SIZE = 25;
 
 type DateRangePreset = 'all' | 'today' | 'week' | 'custom';
 
-// Toast notification component
-const Toast: React.FC<{ message: string; type: 'success' | 'error'; onClose: () => void }> = ({
-  message,
-  type,
-  onClose
-}) => {
-  React.useEffect(() => {
-    const timer = setTimeout(onClose, 4000);
-    return () => clearTimeout(timer);
-  }, [onClose]);
-
-  return (
-    <div
-      className={`fixed bottom-4 right-4 px-4 py-3 rounded-lg text-sm font-bold uppercase tracking-widest z-50 ${
-        type === 'success'
-          ? 'bg-green-500/10 border border-green-500/30 text-green-400'
-          : 'bg-red-500/10 border border-red-500/30 text-red-400'
-      }`}
-    >
-      {message}
-    </div>
-  );
-};
-
-// Truncate notes to show snippet
-const getNotesSnippet = (notes: string | undefined, maxLength: number = 60): string => {
-  if (!notes || !notes.trim()) return '—';
-  if (notes.length > maxLength) return notes.substring(0, maxLength) + '…';
-  return notes;
-};
-
-const getStatusBadgeClass = (status: BookingStatus) => {
-  if (status === BookingStatus.CONFIRMED) return 'bg-green-500/10 text-green-500 border-green-500/20';
-  if (status === BookingStatus.CANCELLED) return 'bg-red-500/10 text-red-500 border-red-500/20';
-  if (status === BookingStatus.NO_SHOW) return 'bg-red-500/10 text-red-500 border-red-500/20';
-  if (status === BookingStatus.PENDING) return 'bg-amber-500/10 text-amber-500 border-amber-500/20';
-  return 'bg-zinc-800 text-zinc-500 border-zinc-700';
-};
+const STATUS_OPTIONS: BookingStatus[] = [BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CANCELLED];
+const PAYMENT_OPTIONS: PaymentState[] = [PaymentState.NONE, PaymentState.DEPOSIT_HELD, PaymentState.PAID, PaymentState.REFUNDED];
 
 const toStartOfDayIso = (date: string) => new Date(`${date}T00:00:00`).toISOString();
 const toEndOfDayIso = (date: string) => new Date(`${date}T23:59:59`).toISOString();
 
-export default function AdminBookingsList({
-  rooms,
-  onViewBooking
-}: {
-  rooms: Room[];
-  onViewBooking: (booking: Booking) => void;
-}) {
+const asMoney = (value: number) => `£${Number(value ?? 0).toFixed(2)}`;
+
+const getStatusBadgeClass = (status: BookingStatus) => {
+  if (status === BookingStatus.CONFIRMED) return 'bg-green-500/10 text-green-500 border-green-500/20';
+  if (status === BookingStatus.CANCELLED) return 'bg-red-500/10 text-red-500 border-red-500/20';
+  if (status === BookingStatus.PENDING) return 'bg-amber-500/10 text-amber-500 border-amber-500/20';
+  return 'bg-zinc-800 text-zinc-500 border-zinc-700';
+};
+
+export default function AdminBookingsList({ rooms, onViewBooking }: { rooms: Room[]; onViewBooking: (booking: Booking) => void }) {
   const [search, setSearch] = useState('');
   const [selectedRoom, setSelectedRoom] = useState('');
   const [rangePreset, setRangePreset] = useState<DateRangePreset>('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [paymentFilter, setPaymentFilter] = useState('');
+  const [missingOnly, setMissingOnly] = useState(false);
+  const [highValueOnly, setHighValueOnly] = useState(false);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [allScopedBookings, setAllScopedBookings] = useState<Booking[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Modal states
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
-  const [editNotes, setEditNotes] = useState('');
-  const [editLoading, setEditLoading] = useState(false);
-
-  const [deletingBooking, setDeletingBooking] = useState<Booking | null>(null);
-  const [deleteConfirmText, setDeleteConfirmText] = useState('');
-  const [deleteLoading, setDeleteLoading] = useState(false);
-
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-
-  // Handler: Open edit notes modal
-  const handleEditNotesClick = (booking: Booking) => {
-    setEditingBooking(booking);
-    setEditNotes(booking.notes || '');
-  };
-
-  // Handler: Save notes
-  const handleSaveNotes = async () => {
-    if (!editingBooking) return;
-    setEditLoading(true);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) {
-        setToast({ message: 'Authentication error. Please refresh.', type: 'error' });
-        setEditLoading(false);
-        return;
-      }
-
-      const response = await fetch(`/api/admin/bookings/${editingBooking.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ notes: editNotes })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to update notes');
-      }
-
-      const result = await response.json();
-      
-      // Update the booking in the local state
-      setBookings(prevBookings =>
-        prevBookings.map(b =>
-          b.id === editingBooking.id ? { ...b, notes: editNotes } : b
-        )
-      );
-
-      setToast({ message: 'Notes updated successfully', type: 'success' });
-      setEditingBooking(null);
-      setEditNotes('');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update notes';
-      setToast({ message, type: 'error' });
-    } finally {
-      setEditLoading(false);
-    }
-  };
-
-  // Handler: Open delete confirmation modal
-  const handleDeleteClick = (booking: Booking) => {
-    setDeletingBooking(booking);
-    setDeleteConfirmText('');
-  };
-
-  // Handler: Confirm delete
-  const handleConfirmDelete = async () => {
-    if (!deletingBooking) return;
-    if (deleteConfirmText.toUpperCase() !== 'DELETE') return;
-
-    setDeleteLoading(true);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) {
-        setToast({ message: 'Authentication error. Please refresh.', type: 'error' });
-        setDeleteLoading(false);
-        return;
-      }
-
-      const response = await fetch(`/api/admin/bookings/${deletingBooking.id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete booking');
-      }
-
-      // Remove the booking from the local state
-      setBookings(prevBookings =>
-        prevBookings.filter(b => b.id !== deletingBooking.id)
-      );
-      setTotalCount(prev => prev - 1);
-
-      setToast({ message: 'Booking deleted successfully', type: 'success' });
-      setDeletingBooking(null);
-      setDeleteConfirmText('');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to delete booking';
-      setToast({ message, type: 'error' });
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
+  const [notes, setNotes] = useState('');
 
   const queryWindow = useMemo(() => {
     const now = new Date();
@@ -192,373 +54,188 @@ export default function AdminBookingsList({
       const today = now.toISOString().split('T')[0];
       const weekEnd = new Date(now);
       weekEnd.setDate(weekEnd.getDate() + 6);
-      const endLabel = weekEnd.toISOString().split('T')[0];
-      return { start: toStartOfDayIso(today), end: toEndOfDayIso(endLabel) };
+      return { start: toStartOfDayIso(today), end: toEndOfDayIso(weekEnd.toISOString().split('T')[0]) };
     }
     if (rangePreset === 'custom' && startDate) {
-      return {
-        start: toStartOfDayIso(startDate),
-        end: endDate ? toEndOfDayIso(endDate) : undefined
-      };
+      return { start: toStartOfDayIso(startDate), end: endDate ? toEndOfDayIso(endDate) : undefined };
     }
     return { start: now.toISOString(), end: undefined };
   }, [rangePreset, startDate, endDate]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [search, selectedRoom, rangePreset, startDate, endDate]);
+  const applyFilters = (query: any) => {
+    let q = query.gte('start_at', queryWindow.start);
+    if (queryWindow.end) q = q.lte('start_at', queryWindow.end);
+    if (selectedRoom) q = q.eq('room_id', selectedRoom);
+    if (statusFilter) q = q.eq('status', statusFilter);
+    if (paymentFilter) q = q.eq('payment_state', paymentFilter);
+    if (highValueOnly) q = q.gte('total_price', 500);
+    const term = search.trim();
+    if (term) {
+      const escaped = term.replace(/%/g, '\\%');
+      q = q.or(`customer_name.ilike.%${escaped}%,customer_email.ilike.%${escaped}%,booking_ref.ilike.%${escaped}%`);
+    }
+    return q;
+  };
 
-  useEffect(() => {
-    const fetchBookings = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const offset = (page - 1) * PAGE_SIZE;
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    const offset = (page - 1) * PAGE_SIZE;
+    try {
+      let pageQuery = applyFilters(supabase.from('bookings').select('*', { count: 'exact' }).order('start_at').range(offset, offset + PAGE_SIZE - 1));
+      const { data, error: pageError, count } = await pageQuery;
+      if (pageError) throw pageError;
 
-        let query = supabase
-          .from('bookings')
-          .select('*', { count: 'exact' })
-          .gte('start_at', queryWindow.start)
-          .order('start_at', { ascending: true })
-          .range(offset, offset + PAGE_SIZE - 1);
+      let scopeQuery = applyFilters(supabase.from('bookings').select('*').order('start_at'));
+      const { data: scoped, error: scopedError } = await scopeQuery;
+      if (scopedError) throw scopedError;
 
-        if (queryWindow.end) {
-          query = query.lte('start_at', queryWindow.end);
-        }
-        if (selectedRoom) {
-          query = query.eq('room_id', selectedRoom);
-        }
-        const term = search.trim();
-        if (term) {
-          const escaped = term.replace(/%/g, '\\%');
-          query = query.or(
-            `customer_name.ilike.%${escaped}%,customer_surname.ilike.%${escaped}%,customer_email.ilike.%${escaped}%,customer_phone.ilike.%${escaped}%,booking_ref.ilike.%${escaped}%`
-          );
-        }
-
-        const { data, error: queryError, count } = await query;
-        if (queryError) {
-          setError(queryError.message);
-          setBookings([]);
-          setTotalCount(0);
-          return;
-        }
-
-        const normalized = (data ?? []).map((b: any) => ({
-          ...b,
-          status: b.status as BookingStatus
-        })) as Booking[];
-        setBookings(normalized);
-        setTotalCount(count ?? 0);
-      } catch (err) {
-        console.error('Failed to load upcoming bookings', err);
-        setError('Failed to load bookings. Please try again.');
-      } finally {
-        setLoading(false);
+      let normalized = (data ?? []) as Booking[];
+      let normalizedScoped = (scoped ?? []) as Booking[];
+      if (missingOnly) {
+        normalized = normalized.filter(hasMissingCustomerDetails);
+        normalizedScoped = normalizedScoped.filter(hasMissingCustomerDetails);
       }
-    };
 
-    fetchBookings();
-  }, [page, queryWindow, search, selectedRoom]);
+      setBookings(normalized);
+      setAllScopedBookings(normalizedScoped);
+      setTotalCount(count ?? normalized.length);
+    } catch (err: any) {
+      setError(err?.message ?? 'Failed loading bookings.');
+      setBookings([]);
+      setAllScopedBookings([]);
+      setTotalCount(0);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { setPage(1); }, [search, selectedRoom, rangePreset, startDate, endDate, statusFilter, paymentFilter, missingOnly, highValueOnly]);
+  useEffect(() => { loadData(); }, [page, queryWindow, selectedRoom, search, statusFilter, paymentFilter, missingOnly, highValueOnly]);
+
+  const metrics = useMemo(() => {
+    const confirmedRevenue = allScopedBookings.filter(b => b.status === BookingStatus.CONFIRMED).reduce((acc, b) => acc + Number(b.total_price || 0), 0);
+    const pendingRevenue = allScopedBookings.filter(b => b.status === BookingStatus.PENDING).reduce((acc, b) => acc + Number(b.total_price || 0), 0);
+    const counts = allScopedBookings.reduce((acc: Record<string, number>, b) => {
+      acc[b.status] = (acc[b.status] || 0) + 1;
+      return acc;
+    }, {});
+    const utilisationByRoom = rooms.map(room => ({ room: room.name, bookings: allScopedBookings.filter(b => b.room_id === room.id && b.status !== BookingStatus.CANCELLED).length }));
+    return { confirmedRevenue, pendingRevenue, counts, utilisationByRoom };
+  }, [allScopedBookings, rooms]);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const patchBooking = async (bookingId: string, action: string, extra: any = {}) => {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+    await fetch(`/api/admin/bookings/${bookingId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action, ...extra })
+    });
+    await loadData();
+  };
+
+  const runBulk = async (action: 'cancel' | 'mark_paid') => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+    await fetch('/api/admin/bookings/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action, ids })
+    });
+    setSelectedIds(new Set());
+    await loadData();
+  };
+
+  const exportCsv = () => {
+    const headers = ['booking_ref', 'customer_name', 'customer_email', 'room_name', 'start_at', 'status', 'payment_state', 'total_price'];
+    const rows = [headers.join(','), ...allScopedBookings.map((b) => headers.map((h) => `"${String((b as any)[h] ?? '')}"`).join(','))];
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'bookings-export.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
-  return (
-    <div className="glass-panel p-6 sm:p-8 rounded-[2.5rem] border-zinc-800 shadow-2xl space-y-6">
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
-        <div className="space-y-1">
-          <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Bookings List</h3>
-          <p className="text-zinc-600 text-[9px] font-bold uppercase tracking-widest">All upcoming sessions across rooms</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3 text-[9px] font-bold uppercase tracking-widest">
-          {(['all', 'today', 'week', 'custom'] as DateRangePreset[]).map(preset => (
-            <button
-              key={preset}
-              onClick={() => setRangePreset(preset)}
-              className={`px-4 py-2 rounded-full border transition-all ${rangePreset === preset ? 'bg-amber-500 text-black border-amber-500' : 'bg-zinc-900 text-zinc-500 border-zinc-800 hover:text-white'}`}
-            >
-              {preset === 'all' ? 'All Upcoming' : preset === 'today' ? 'Today' : preset === 'week' ? 'This Week' : 'Custom'}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4">
-        <input
-          type="text"
-          placeholder="Search name, email, phone, ref..."
-          value={search}
-          onChange={event => setSearch(event.target.value)}
-          className="bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-3 text-sm text-white w-full lg:max-w-sm outline-none focus:ring-1 ring-amber-500"
-        />
-        <select
-          value={selectedRoom}
-          onChange={event => setSelectedRoom(event.target.value)}
-          className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white w-full lg:w-auto"
-        >
-          <option value="">All Rooms</option>
-          {rooms.map(room => (
-            <option key={room.id} value={room.id}>{room.name}</option>
-          ))}
-        </select>
-        {rangePreset === 'custom' && (
-          <div className="flex flex-wrap items-center gap-3">
-            <input
-              type="date"
-              value={startDate}
-              onChange={event => setStartDate(event.target.value)}
-              className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white"
-            />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-600">to</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={event => setEndDate(event.target.value)}
-              className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white"
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="border border-zinc-900 rounded-2xl overflow-hidden bg-zinc-950">
-        <div className="max-h-[60vh] overflow-auto">
-          <table className="min-w-full text-left text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-            <thead className="sticky top-0 bg-zinc-950 z-10">
-              <tr className="border-b border-zinc-900">
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Time</th>
-                <th className="px-4 py-3">Room</th>
-                <th className="px-4 py-3">Guest</th>
-                <th className="px-4 py-3">Party</th>
-                <th className="px-4 py-3">Total</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Notes</th>
-                <th className="px-4 py-3">Created</th>
-                <th className="px-4 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="text-[11px] font-medium uppercase tracking-tight text-white">
-              {loading && (
-                <tr>
-                  <td colSpan={10} className="px-6 py-10 text-center text-[10px] text-zinc-500 font-bold uppercase tracking-widest">
-                    Loading upcoming bookings...
-                  </td>
-                </tr>
-              )}
-              {!loading && error && (
-                <tr>
-                  <td colSpan={10} className="px-6 py-10 text-center text-[10px] text-red-400 font-bold uppercase tracking-widest">
-                    {error}
-                  </td>
-                </tr>
-              )}
-              {!loading && !error && bookings.length === 0 && (
-                <tr>
-                  <td colSpan={10} className="px-6 py-10 text-center text-[10px] text-zinc-600 font-bold uppercase tracking-widest">
-                    No upcoming bookings found.
-                  </td>
-                </tr>
-              )}
-              {!loading && !error && bookings.map((b: Booking) => {
-                const start = new Date(b.start_at);
-                const end = new Date(b.end_at);
-                return (
-                  <tr key={b.id} className="border-b border-zinc-900/60 last:border-b-0">
-                    <td className="px-4 py-4 whitespace-nowrap text-zinc-200">{start.toLocaleDateString()}</td>
-                    <td className="px-4 py-4 whitespace-nowrap text-zinc-200 font-mono text-[10px]">
-                      {start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — {end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-zinc-300">{b.room_name}</td>
-                    <td className="px-4 py-4 min-w-[160px]">
-                      <div className="text-[11px] font-bold uppercase text-white truncate" title={b.customer_name}>
-                        {b.customer_name} {b.customer_surname || ''}
-                      </div>
-                      <div className="text-[9px] text-zinc-500 font-bold lowercase tracking-tight truncate" title={b.customer_email}>
-                        {b.customer_email}
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 text-center text-zinc-200">{b.guests}</td>
-                    <td className="px-4 py-4 whitespace-nowrap text-zinc-200">
-                      £{(b.total_price || 0).toLocaleString()}
-                      {b.deposit_amount > 0 && (
-                        <div className="text-[8px] text-zinc-600 font-bold uppercase tracking-widest">
-                          Dep £{b.deposit_amount} • {b.deposit_paid ? 'Paid' : 'Pend'}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-4">
-                      <span className={`text-[8px] font-bold uppercase px-2 py-1 rounded-full border ${getStatusBadgeClass(b.status)}`}>
-                        {b.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 max-w-[200px]">
-                      {b.notes ? (
-                        <span className="text-[9px] text-zinc-400 line-clamp-2" title={b.notes}>
-                          {b.notes}
-                        </span>
-                      ) : (
-                        <span className="text-[9px] text-zinc-700">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-[9px] text-zinc-500">
-                      {b.created_at ? new Date(b.created_at).toLocaleDateString() : '—'}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => onViewBooking(b)}
-                          className="text-amber-500 hover:text-amber-400 transition-colors text-[9px] font-bold uppercase tracking-widest"
-                        >
-                          View
-                        </button>
-                        <button
-                          onClick={() => handleEditNotesClick(b)}
-                          className="text-blue-400 hover:text-blue-300 transition-colors text-[9px] font-bold uppercase tracking-widest"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeleteClick(b)}
-                          className="text-red-400 hover:text-red-300 transition-colors text-[9px] font-bold uppercase tracking-widest"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-[9px] font-bold uppercase tracking-widest text-zinc-500">
-        <span>Showing {bookings.length} of {totalCount} bookings</span>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-            disabled={page <= 1}
-            className="bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-full disabled:opacity-40"
-          >
-            Prev
-          </button>
-          <span className="text-zinc-600">Page {page} of {totalPages}</span>
-          <button
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages}
-            className="bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-full disabled:opacity-40"
-          >
-            Next
-          </button>
-        </div>
-      </div>
-
-      {/* Edit Notes Modal */}
-      {editingBooking && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-40">
-          <div className="bg-zinc-900 rounded-2xl border border-zinc-800 max-w-lg w-full mx-4 p-6 space-y-6">
-            <div>
-              <h3 className="text-lg font-bold uppercase tracking-tighter text-white mb-2">Edit Notes</h3>
-              <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 space-y-1">
-                <div>{editingBooking.customer_name} {editingBooking.customer_surname || ''}</div>
-                <div>{new Date(editingBooking.start_at).toLocaleDateString()} at {new Date(editingBooking.start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                <div>Room: {editingBooking.room_name}</div>
-              </div>
-            </div>
-            <textarea
-              value={editNotes}
-              onChange={(e) => setEditNotes(e.target.value)}
-              maxLength={2000}
-              placeholder="Add notes here..."
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white outline-none focus:ring-1 ring-amber-500 resize-none"
-              rows={5}
-            />
-            <div className="text-[8px] text-zinc-600 font-bold uppercase tracking-widest">
-              {editNotes.length} / 2000 characters
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setEditingBooking(null);
-                  setEditNotes('');
-                }}
-                disabled={editLoading}
-                className="flex-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white rounded-xl px-4 py-3 text-[9px] font-bold uppercase tracking-widest transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveNotes}
-                disabled={editLoading}
-                className="flex-1 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-black rounded-xl px-4 py-3 text-[9px] font-bold uppercase tracking-widest transition-colors"
-              >
-                {editLoading ? 'Saving...' : 'Save'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {deletingBooking && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-40">
-          <div className="bg-zinc-900 rounded-2xl border border-zinc-800 max-w-lg w-full mx-4 p-6 space-y-6">
-            <div>
-              <h3 className="text-lg font-bold uppercase tracking-tighter text-white mb-2">Delete Booking</h3>
-              <p className="text-[9px] font-bold uppercase tracking-widest text-red-400 mb-4">
-                This cannot be undone.
-              </p>
-              <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 space-y-1">
-                <div>{deletingBooking.customer_name} {deletingBooking.customer_surname || ''}</div>
-                <div>{new Date(deletingBooking.start_at).toLocaleDateString()} at {new Date(deletingBooking.start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                <div>Room: {deletingBooking.room_name}</div>
-                <div>Ref: {deletingBooking.booking_ref}</div>
-              </div>
-            </div>
-            <div>
-              <label className="text-[9px] font-bold uppercase tracking-widest text-white block mb-2">
-                Type "DELETE" to confirm:
-              </label>
-              <input
-                type="text"
-                value={deleteConfirmText}
-                onChange={(e) => setDeleteConfirmText(e.target.value)}
-                placeholder="DELETE"
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white outline-none focus:ring-1 ring-red-500"
-              />
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setDeletingBooking(null);
-                  setDeleteConfirmText('');
-                }}
-                disabled={deleteLoading}
-                className="flex-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white rounded-xl px-4 py-3 text-[9px] font-bold uppercase tracking-widest transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmDelete}
-                disabled={deleteLoading || deleteConfirmText.toUpperCase() !== 'DELETE'}
-                className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl px-4 py-3 text-[9px] font-bold uppercase tracking-widest transition-colors"
-              >
-                {deleteLoading ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Toast Notification */}
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
+  return <div className="glass-panel p-6 sm:p-8 rounded-[2.5rem] border-zinc-800 shadow-2xl space-y-6">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[10px] font-bold uppercase tracking-widest">
+      <div className="bg-zinc-900 rounded-xl p-3">Confirmed £<div className="text-white text-lg">{metrics.confirmedRevenue.toFixed(0)}</div></div>
+      <div className="bg-zinc-900 rounded-xl p-3">Pending £<div className="text-white text-lg">{metrics.pendingRevenue.toFixed(0)}</div></div>
+      <div className="bg-zinc-900 rounded-xl p-3">By status<div className="text-white">P:{metrics.counts.PENDING || 0} C:{metrics.counts.CONFIRMED || 0} X:{metrics.counts.CANCELLED || 0}</div></div>
+      <div className="bg-zinc-900 rounded-xl p-3">Utilisation<div className="text-white">{metrics.utilisationByRoom.map(r => `${r.room}:${r.bookings}`).join(' · ')}</div></div>
     </div>
-  );
+
+    <div className="flex flex-wrap gap-3 items-center">
+      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search" className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-sm" />
+      <select value={selectedRoom} onChange={(e) => setSelectedRoom(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-sm"><option value="">All rooms</option>{rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+      <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-sm"><option value="">All status</option>{STATUS_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}</select>
+      <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-sm"><option value="">All payment</option>{PAYMENT_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}</select>
+      <label className="text-xs"><input type="checkbox" checked={missingOnly} onChange={(e) => setMissingOnly(e.target.checked)} /> Missing details</label>
+      <label className="text-xs"><input type="checkbox" checked={highValueOnly} onChange={(e) => setHighValueOnly(e.target.checked)} /> High value (£500+)</label>
+      <button onClick={() => runBulk('cancel')} className="px-3 py-2 text-xs rounded bg-red-900">Bulk Cancel</button>
+      <button onClick={() => runBulk('mark_paid')} className="px-3 py-2 text-xs rounded bg-green-900">Bulk Mark Paid</button>
+      <button onClick={exportCsv} className="px-3 py-2 text-xs rounded bg-zinc-800">Export CSV</button>
+    </div>
+
+    <div className="border border-zinc-900 rounded-2xl overflow-hidden bg-zinc-950">
+      <table className="min-w-full text-left text-[10px] uppercase tracking-widest">
+        <thead><tr className="border-b border-zinc-900"><th></th><th>Date</th><th>Guest</th><th>Room</th><th>Total</th><th>Status</th><th>Payment</th><th>Badges</th><th>Actions</th></tr></thead>
+        <tbody>
+          {loading && <tr><td colSpan={9} className="px-4 py-6">Loading…</td></tr>}
+          {!!error && <tr><td colSpan={9} className="px-4 py-6 text-red-400">{error}</td></tr>}
+          {!loading && !error && bookings.map((b) => {
+            const missing = hasMissingCustomerDetails(b);
+            const conflict = hasConflict(b, allScopedBookings);
+            return <tr key={b.id} className="border-b border-zinc-900 text-white text-[11px]">
+              <td className="px-2"><input type="checkbox" checked={selectedIds.has(b.id)} onChange={() => toggleSelect(b.id)} /></td>
+              <td className="px-2">{new Date(b.start_at).toLocaleString()}</td>
+              <td className="px-2">{b.customer_name || '—'}<div className="text-zinc-400">{b.customer_email || '—'}</div></td>
+              <td className="px-2">{b.room_name}</td>
+              <td className="px-2">{asMoney(Number(b.total_price || 0))}</td>
+              <td className="px-2"><span className={`inline-flex px-2 py-1 rounded border ${getStatusBadgeClass(b.status)}`}>{b.status}</span></td>
+              <td className="px-2">{b.payment_state || PaymentState.NONE}</td>
+              <td className="px-2 space-x-1">
+                {missing && <span className="px-2 py-1 rounded border border-amber-500/30 text-amber-400">Missing customer details</span>}
+                {conflict && <span className="px-2 py-1 rounded border border-red-500/30 text-red-400">Conflict</span>}
+              </td>
+              <td className="px-2 py-2">
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => onViewBooking(b)} className="text-amber-400">View</button>
+                  <button onClick={() => { setEditingBooking(b); setNotes(b.notes || ''); }} className="text-blue-400">Notes</button>
+                  <button onClick={() => patchBooking(b.id, 'send_payment_link')} className="text-purple-400">Send payment link</button>
+                  <button onClick={() => patchBooking(b.id, 'mark_paid')} className="text-green-400">Mark paid</button>
+                  <button onClick={() => patchBooking(b.id, 'cancel')} className="text-red-400">Cancel booking</button>
+                  {missing && <a href={`mailto:${b.customer_email || ''}?subject=Please%20confirm%20your%20booking%20details`} className="text-cyan-400">Request details (email)</a>}
+                </div>
+              </td>
+            </tr>;
+          })}
+        </tbody>
+      </table>
+    </div>
+    <div className="flex justify-between text-xs"><span>Showing {bookings.length} of {totalCount}</span><span>Page {page}/{totalPages} <button disabled={page<=1} onClick={()=>setPage(page-1)}>Prev</button> <button disabled={page>=totalPages} onClick={()=>setPage(page+1)}>Next</button></span></div>
+
+    {editingBooking && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-40"><div className="bg-zinc-900 rounded-xl p-6 w-[500px] max-w-[95vw]"><h3 className="font-bold mb-2">Edit notes</h3><textarea value={notes} onChange={(e)=>setNotes(e.target.value)} maxLength={NOTES_MAX_LENGTH} className="w-full h-36 bg-zinc-950 border border-zinc-800 p-3 rounded" /><div className="text-xs text-zinc-400 mt-1">{notes.length}/{NOTES_MAX_LENGTH}</div><div className="flex gap-2 mt-3"><button onClick={()=>setEditingBooking(null)} className="px-3 py-2 bg-zinc-800 rounded">Close</button><button onClick={()=>{
+      const v=validateNotesInput(notes);
+      if(!v.ok){ alert(v.error); return; }
+      patchBooking(editingBooking.id,'update_notes',{notes});
+      setEditingBooking(null);
+    }} className="px-3 py-2 bg-amber-500 text-black rounded">Save</button></div></div></div>}
+  </div>;
 }

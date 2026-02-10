@@ -1,12 +1,28 @@
 import { NextResponse } from 'next/server';
 import { ServerAdminAuthError, requireServerAdminAuth } from '@/lib/serverAdminAuth';
+import { deriveStatusFromPaymentState, PAYMENT_STATES, validateNotesInput } from '@/lib/adminBookingOps';
 
-/**
- * PATCH /api/admin/bookings/:id
- * Admin-only endpoint to update booking notes.
- * Requires Authorization header with Bearer token from Supabase session.
- * Body: { notes: string } (max 2000 chars, trimmed)
- */
+type BookingAction = 'update_notes' | 'mark_paid' | 'cancel' | 'send_payment_link';
+
+const upsertAuditLog = async (
+  supabase: any,
+  bookingId: string,
+  actorEmail: string,
+  action: string,
+  oldValues: Record<string, unknown>,
+  newValues: Record<string, unknown>,
+  metadata?: Record<string, unknown>
+) => {
+  await supabase.from('booking_audit_log').insert({
+    booking_id: bookingId,
+    actor_email: actorEmail,
+    action,
+    old_values: oldValues,
+    new_values: newValues,
+    metadata: metadata ?? null
+  });
+};
+
 export async function PATCH(
   request: Request,
   { params }: { params: { id: string } }
@@ -17,7 +33,6 @@ export async function PATCH(
       return NextResponse.json({ error: 'Missing booking id.' }, { status: 400 });
     }
 
-    // Parse request body
     let payload;
     try {
       payload = await request.json();
@@ -25,28 +40,12 @@ export async function PATCH(
       return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
     }
 
-    if (typeof payload.notes !== 'string') {
-      return NextResponse.json({ error: 'Missing or invalid notes field.' }, { status: 400 });
-    }
-
-    // Trim and validate notes length
-    let notes = payload.notes.trim();
-    if (notes.length > 2000) {
-      return NextResponse.json(
-        { error: 'Notes must be 2000 characters or less.' },
-        { status: 400 }
-      );
-    }
-
-    // Convert empty string to null for cleaner database storage
-    notes = notes.length === 0 ? null : notes;
-
+    const action = (payload?.action ?? 'update_notes') as BookingAction;
     const { supabase, adminEmail } = await requireServerAdminAuth(request);
 
-    // Fetch the booking to confirm it exists
     const { data: booking, error: bookingError } = await supabase
       .from('bookings')
-      .select('id, booking_ref, customer_name, notes')
+      .select('*')
       .eq('id', bookingId)
       .maybeSingle();
 
@@ -55,37 +54,112 @@ export async function PATCH(
       return NextResponse.json({ error: 'Booking not found.' }, { status: 404 });
     }
 
-    // Update the booking notes
-    const { data: updated, error: updateError } = await supabase
-      .from('bookings')
-      .update({ notes })
-      .eq('id', bookingId)
-      .select('*')
-      .maybeSingle();
-
-    if (updateError || !updated) {
-      console.error('[ADMIN PATCH] Update failed', updateError);
-      return NextResponse.json(
-        { error: 'Failed to update booking.' },
-        { status: 500 }
+    if (action === 'send_payment_link') {
+      const paymentLink = `https://payments.example.com/booking/${bookingId}`;
+      await upsertAuditLog(
+        supabase,
+        bookingId,
+        adminEmail,
+        'send_payment_link',
+        { payment_state: booking.payment_state ?? PAYMENT_STATES.NONE },
+        { payment_state: booking.payment_state ?? PAYMENT_STATES.NONE },
+        { paymentLink, todo: 'Integrate Stripe/SumUp payment-link generation.' }
       );
+      return NextResponse.json({ ok: true, paymentLink, todo: 'Integrate Stripe/SumUp' });
     }
 
-    // Log the action server-side
-    console.log(
-      `[ADMIN PATCH] Admin ${adminEmail} updated notes on booking ${bookingId} (ref: ${booking.booking_ref}, customer: ${booking.customer_name}) at ${new Date().toISOString()}. Old: "${booking.notes}" → New: "${notes}"`
-    );
+    if (action === 'update_notes') {
+      const noteResult = validateNotesInput(payload?.notes);
+      if (!noteResult.ok) {
+        return NextResponse.json({ error: noteResult.error }, { status: 400 });
+      }
 
-    return NextResponse.json({ ok: true, booking: updated });
+      const notes = noteResult.normalized;
+      const { data: updated, error: updateError } = await supabase
+        .from('bookings')
+        .update({ notes })
+        .eq('id', bookingId)
+        .select('*')
+        .maybeSingle();
+
+      if (updateError || !updated) {
+        console.error('[ADMIN PATCH] Update failed', updateError);
+        return NextResponse.json({ error: 'Failed to update booking.' }, { status: 500 });
+      }
+
+      await upsertAuditLog(supabase, bookingId, adminEmail, 'update_notes', { notes: booking.notes ?? null }, { notes });
+      return NextResponse.json({ ok: true, booking: updated });
+    }
+
+    if (action === 'mark_paid') {
+      if (!String(booking.customer_name ?? '').trim() || !String(booking.customer_email ?? '').trim()) {
+        return NextResponse.json({ error: 'Missing customer details.' }, { status: 400 });
+      }
+
+      const paymentState = PAYMENT_STATES.PAID;
+      const status = deriveStatusFromPaymentState({ ...booking, payment_state: paymentState });
+      const { data: updated, error: updateError } = await supabase
+        .from('bookings')
+        .update({
+          payment_state: paymentState,
+          status,
+          deposit_paid: true,
+          amount_paid: booking.total_price,
+          confirmed_at: status === 'CONFIRMED' ? new Date().toISOString() : booking.confirmed_at
+        })
+        .eq('id', bookingId)
+        .select('*')
+        .maybeSingle();
+
+      if (updateError || !updated) {
+        console.error('[ADMIN PATCH] Mark paid failed', updateError);
+        return NextResponse.json({ error: 'Failed to mark booking paid.' }, { status: 500 });
+      }
+
+      await upsertAuditLog(
+        supabase,
+        bookingId,
+        adminEmail,
+        'mark_paid',
+        { status: booking.status, payment_state: booking.payment_state ?? PAYMENT_STATES.NONE },
+        { status: updated.status, payment_state: updated.payment_state }
+      );
+
+      return NextResponse.json({ ok: true, booking: updated });
+    }
+
+    if (action === 'cancel') {
+      const reason = payload?.reason === 'auto_expired' ? 'auto_expired' : 'admin_cancelled';
+      const { data: updated, error: updateError } = await supabase
+        .from('bookings')
+        .update({ status: 'CANCELLED' })
+        .eq('id', bookingId)
+        .select('*')
+        .maybeSingle();
+
+      if (updateError || !updated) {
+        console.error('[ADMIN PATCH] Cancel failed', updateError);
+        return NextResponse.json({ error: 'Failed to cancel booking.' }, { status: 500 });
+      }
+
+      await upsertAuditLog(
+        supabase,
+        bookingId,
+        adminEmail,
+        reason,
+        { status: booking.status, payment_state: booking.payment_state ?? PAYMENT_STATES.NONE },
+        { status: updated.status, payment_state: updated.payment_state }
+      );
+      return NextResponse.json({ ok: true, booking: updated });
+    }
+
+    return NextResponse.json({ error: 'Unsupported action.' }, { status: 400 });
   } catch (error) {
     if (error instanceof ServerAdminAuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
 
     console.error('[ADMIN PATCH] Unexpected error', error);
-    return NextResponse.json(
-      { error: 'An unexpected error occurred.' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'An unexpected error occurred.' }, { status: 500 });
   }
 }
