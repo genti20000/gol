@@ -1,5 +1,6 @@
-const assert = require('node:assert/strict');
-const { computeAmountDueNow, getPaymentDecision } = require('../lib/paymentLogic.js');
+import assert from 'node:assert/strict';
+
+import { computeAmountDueNow, getPaymentDecision } from '../lib/paymentLogic';
 
 assert.equal(
   computeAmountDueNow({ totalPrice: 120, depositEnabled: false, depositAmount: 50 }),
@@ -16,4 +17,4 @@ const paidDecision = getPaymentDecision({ totalPrice: 120, depositEnabled: true,
 assert.equal(paidDecision.requiresPayment, true, 'Positive deposit should require payment.');
 assert.equal(paidDecision.status, 'PENDING', 'Positive deposit should keep booking pending.');
 
-console.log('payment-logic.test.js passed');
+console.log('payment-logic.test.ts passed');

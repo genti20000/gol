@@ -6,6 +6,8 @@ import {
     REQUIRED_BOOKING_INSERT_FIELDS,
     validateBookingInitInput
 } from '@/lib/bookingValidation';
+import { buildDraftBookingPayload } from '@/lib/bookingPayload';
+import { computeOfferDiscounts } from '@/lib/offerUtils';
 import { computeAmountDueNow } from '@/lib/paymentLogic';
 import { BookingStatus } from '@/types';
 
@@ -100,9 +102,8 @@ export async function POST(request: Request) {
         // Pricing Calculation
         const baseTotal = Number(((selectedService.price_per_person_pence * guests) / 100).toFixed(2));
         const extrasPrice = extraOption.price; // This is the session extension price, not "extras" items
-        const offerUtils = (await import('@/lib/offerUtils')) as any;
         const offers = settings?.offers ?? [];
-        const offerRes = offerUtils.computeOfferDiscounts(offers, settings?.midweek_discount_percent, date, baseTotal, extrasPrice);
+        const offerRes = computeOfferDiscounts(offers, settings?.midweek_discount_percent, date, baseTotal, extrasPrice);
         const discountPercent = offerRes.effectiveMidweekPercent;
         const discountAmount = offerRes.midweekDiscountAmount;
 
@@ -195,7 +196,6 @@ export async function POST(request: Request) {
 
         const expiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString(); // 20 min TTL for PENDING
 
-        const { buildDraftBookingPayload } = (await import('@/lib/bookingPayload')) as any;
         const bookingPayload = buildDraftBookingPayload({
             roomId: assignedRoom.id,
             roomName: assignedRoom.name,

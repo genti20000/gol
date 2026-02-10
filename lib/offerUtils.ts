@@ -1,5 +1,31 @@
-export function computeOfferDiscounts(offers: any[] | null | undefined, settingsMidweekPercent: number | null | undefined, date: string, baseTotal: number, extraPrice: number) {
-  const day = new Date(date + 'T00:00:00').getDay();
+export type OfferKind = 'midweek' | 'percent' | 'fixed';
+
+export type OfferInput = {
+  enabled?: boolean | null;
+  woptions?: {
+    kind?: OfferKind | null;
+    value?: number | string | null;
+  } | null;
+} | null;
+
+export type OfferDiscountResult = {
+  isMidweek: boolean;
+  effectiveMidweekPercent: number;
+  midweekDiscountAmount: number;
+  offerPercent: number;
+  offerFixed: number;
+  offerPercentDiscountAmount: number;
+  totalOfferDiscount: number;
+};
+
+export function computeOfferDiscounts(
+  offers: OfferInput[] | null | undefined,
+  settingsMidweekPercent: number | null | undefined,
+  date: string,
+  baseTotal: number,
+  extraPrice: number
+): OfferDiscountResult {
+  const day = new Date(`${date}T00:00:00`).getDay();
   const isMidweek = day >= 1 && day <= 3;
   const midweekSetting = settingsMidweekPercent ?? 0;
 
@@ -7,16 +33,17 @@ export function computeOfferDiscounts(offers: any[] | null | undefined, settings
   let offerPercent = 0;
   let offerFixed = 0;
 
-  (offers || []).forEach((o: any) => {
-    if (!o || !o.enabled) return;
-    const kind = o.woptions?.kind;
-    const val = Number(o.woptions?.value ?? 0);
-    if (kind === 'midweek' && val > 0) {
-      midweekOfferPercent = Math.max(midweekOfferPercent, val);
-    } else if (kind === 'percent' && val > 0) {
-      offerPercent = Math.max(offerPercent, val);
-    } else if (kind === 'fixed' && val > 0) {
-      offerFixed += val;
+  (offers || []).forEach((offer) => {
+    if (!offer || !offer.enabled) return;
+    const kind = offer.woptions?.kind;
+    const value = Number(offer.woptions?.value ?? 0);
+
+    if (kind === 'midweek' && value > 0) {
+      midweekOfferPercent = Math.max(midweekOfferPercent, value);
+    } else if (kind === 'percent' && value > 0) {
+      offerPercent = Math.max(offerPercent, value);
+    } else if (kind === 'fixed' && value > 0) {
+      offerFixed += value;
     }
   });
 
@@ -26,8 +53,6 @@ export function computeOfferDiscounts(offers: any[] | null | undefined, settings
   const afterMidweek = Math.max(0, baseTotal + extraPrice - midweekDiscountAmount);
   const offerPercentDiscountAmount = Math.round(afterMidweek * (offerPercent / 100));
 
-  const totalOfferDiscount = offerPercentDiscountAmount + offerFixed;
-
   return {
     isMidweek,
     effectiveMidweekPercent,
@@ -35,6 +60,6 @@ export function computeOfferDiscounts(offers: any[] | null | undefined, settings
     offerPercent,
     offerFixed,
     offerPercentDiscountAmount,
-    totalOfferDiscount
+    totalOfferDiscount: offerPercentDiscountAmount + offerFixed
   };
 }
