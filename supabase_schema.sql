@@ -82,6 +82,7 @@ CREATE TABLE bookings (
   start_at TIMESTAMPTZ NOT NULL,
   end_at TIMESTAMPTZ NOT NULL,
   status TEXT NOT NULL DEFAULT 'PENDING',
+  payment_state TEXT NOT NULL DEFAULT 'NONE',
   guests INTEGER NOT NULL,
   customer_name TEXT NOT NULL,
   customer_surname TEXT,
@@ -106,6 +107,19 @@ CREATE TABLE bookings (
   extras_snapshot JSONB DEFAULT '[]',
   created_at TIMESTAMPTZ DEFAULT now(),
   confirmed_at TIMESTAMPTZ
+);
+
+
+
+CREATE TABLE booking_audit_log (
+  id BIGSERIAL PRIMARY KEY,
+  booking_id TEXT NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+  actor_email TEXT,
+  action TEXT NOT NULL,
+  old_values JSONB,
+  new_values JSONB,
+  metadata JSONB,
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- Waitlist Table
