@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { BookingStatus, BookingExtraSelection } from '@/types';
 import { isBookingTokenValid } from '@/lib/bookingAccessToken';
+import { validateBookingDraftInput } from '@/lib/bookingValidation';
+import { getExtraMaxQuantity, validateBookingUpdateInput } from '@/lib/bookingUpdateValidation';
 
 type UpdateRequest = {
     bookingToken?: string;
@@ -48,7 +50,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
             );
         }
 
-        const payload = payloadValidation.normalized as any;
+        const payload = payloadValidation.normalized as UpdateRequest;
 
         // Reuse draft validation logic for shared contact rules where applicable.
         if (payload.firstName !== undefined || payload.surname !== undefined || payload.email !== undefined) {
@@ -119,7 +121,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
         // 3. Update Extras & Recalculate Price
         if (payload.extras) {
-            const extrasSelection = payload.extras;
+            const extrasSelection: Record<string, number> = payload.extras;
             const guests = Number(booking.guests) || 0;
 
             // Fetch available extras from DB
