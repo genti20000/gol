@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { User } from '@supabase/supabase-js';
+import type { SupabaseClient, User } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -14,14 +14,16 @@ export class ServerAdminAuthError extends Error {
   }
 }
 
+type SupabaseServiceClient = SupabaseClient<any, 'public', any>;
+
 export type ServerAdminAuthContext = {
-  supabase: ReturnType<typeof createClient>;
+  supabase: SupabaseServiceClient;
   token: string;
   user: User;
   adminEmail: string;
 };
 
-const getSupabaseServiceClient = () => {
+const getSupabaseServiceClient = (): SupabaseServiceClient => {
   if (!supabaseUrl || !supabaseServiceKey) {
     throw new ServerAdminAuthError(500, 'Supabase credentials are not configured.');
   }
