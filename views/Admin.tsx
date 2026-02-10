@@ -613,7 +613,7 @@ function BookingsTab({ store, selectedDate, setSelectedDate }: { store: any, sel
       ) : viewMode === 'week' ? (
         <WeekView store={store} selectedDate={selectedDate} onSelectDay={setSelectedDate} onTapEmpty={handleTapToCreate} />
       ) : (
-        <MonthView store={store} selectedDate={selectedDate} onSelectDay={(d) => { setSelectedDate(d); setViewMode('day'); }} />
+        <MonthCalendar store={store} onSelectDay={(d) => { setSelectedDate(d); setViewMode('day'); }} />
       )}
 
       {showManualModal && (
