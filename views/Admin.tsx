@@ -417,14 +417,69 @@ function BookingsTab({ store, selectedDate, setSelectedDate }: { store: any, sel
   const [showManualModal, setShowManualModal] = useState(false);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [prefill, setPrefill] = useState<any>(null);
+  const [inspectorBooking, setInspectorBooking] = useState<Booking | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [rowHeight, setRowHeight] = useState(48);
+  const [activeRooms, setActiveRooms] = useState<Record<string, boolean>>({});
   const [confirmModal, setConfirmModal] = useState<{ open: boolean, title: string, body: string, canApply: boolean, onApply: () => void } | null>(null);
 
   const isClosed = !store.getOperatingWindow(selectedDate);
   const isPastDay = new Date(selectedDate).getTime() < new Date().setHours(0, 0, 0, 0);
 
+  useEffect(() => {
+    setActiveRooms((current) => {
+      const next = { ...current };
+      store.rooms.forEach((room: Room) => {
+        if (typeof next[room.id] === 'undefined') {
+          next[room.id] = true;
+        }
+      });
+      return next;
+    });
+  }, [store.rooms]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const persisted = Number(window.localStorage.getItem('lkc-admin-vertical-zoom') ?? '48');
+    if (!Number.isNaN(persisted)) {
+      setRowHeight(Math.min(96, Math.max(24, persisted)));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('lkc-admin-vertical-zoom', String(rowHeight));
+  }, [rowHeight]);
+
+  useEffect(() => {
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setInspectorBooking(null);
+      }
+      if (event.key.toLowerCase() === 'n' && viewMode === 'day' && !isClosed && !isPastDay) {
+        event.preventDefault();
+        setEditingBooking(null);
+        setPrefill(null);
+        setShowManualModal(true);
+      }
+      if (event.key === '+' || event.key === '=') {
+        event.preventDefault();
+        setRowHeight((h) => Math.min(96, h + 4));
+      }
+      if (event.key === '-') {
+        event.preventDefault();
+        setRowHeight((h) => Math.max(24, h - 4));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeydown);
+    return () => window.removeEventListener('keydown', handleKeydown);
+  }, [isClosed, isPastDay, viewMode]);
+
   const handleEdit = (id: string) => {
-    const b = store.bookings.find((b: Booking) => b.id === id);
+    const b = store.bookings.find((booking: Booking) => booking.id === id);
     if (b) {
+      setInspectorBooking(b);
       setEditingBooking(b);
       setPrefill(null);
       setShowManualModal(true);
@@ -470,66 +525,95 @@ function BookingsTab({ store, selectedDate, setSelectedDate }: { store: any, sel
   };
 
   return (
-    <div className="glass-panel p-4 sm:p-10 rounded-[1.5rem] sm:rounded-[2.5rem] border-zinc-800 shadow-2xl overflow-hidden">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 md:mb-10 gap-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 w-full md:w-auto">
-          <div className="flex items-center gap-2 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800 w-full md:w-auto overflow-x-auto no-scrollbar">
-            <button onClick={() => setViewMode('day')} className={`flex-1 md:flex-none px-5 py-2.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all min-h-[40px] ${viewMode === 'day' ? 'bg-amber-500 text-black' : 'text-zinc-500'}`}>Day</button>
-            <button onClick={() => setViewMode('week')} className={`flex-1 md:flex-none px-5 py-2.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all min-h-[40px] ${viewMode === 'week' ? 'bg-amber-500 text-black' : 'text-zinc-500'}`}>Week</button>
-            <button onClick={() => setViewMode('month')} className={`flex-1 md:flex-none px-5 py-2.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all min-h-[40px] ${viewMode === 'month' ? 'bg-amber-500 text-black' : 'text-zinc-500'}`}>Month</button>
-          </div>
-          {(viewMode === 'day' || viewMode === 'week') && (
-            <div className="flex items-center gap-4">
-              <input
-                type="date"
-                value={selectedDate}
-                title="Select Date"
-                aria-label="Select view date"
-                onChange={e => setSelectedDate(e.target.value)}
-                className="bg-transparent text-amber-500 font-bold text-xl outline-none cursor-pointer focus:ring-1 ring-amber-500/20 rounded-lg px-2 min-h-[44px]"
-              />
-              {isClosed && viewMode === 'day' && <span className="text-[9px] bg-red-500/10 text-red-500 px-3 py-1 rounded-full font-bold uppercase tracking-widest border border-red-500/20">Closed</span>}
+    <div className="glass-panel rounded-[1.5rem] sm:rounded-[2.5rem] border-zinc-800 shadow-2xl overflow-hidden">
+      <div className="sticky top-0 z-40 border-b border-zinc-900 bg-zinc-950/95 backdrop-blur px-4 py-3 sm:px-6 sm:py-4">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2 min-h-[64px]">
+            <button onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])} className="bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2 text-[10px] font-bold uppercase tracking-widest">Today</button>
+            <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-[11px] font-bold" />
+            <div className="flex items-center gap-1 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800">
+              <button onClick={() => setViewMode('day')} className={`px-4 py-2 rounded-lg text-[9px] font-bold uppercase tracking-widest ${viewMode === 'day' ? 'bg-amber-500 text-black' : 'text-zinc-500'}`}>Day</button>
+              <button onClick={() => setViewMode('week')} className={`px-4 py-2 rounded-lg text-[9px] font-bold uppercase tracking-widest ${viewMode === 'week' ? 'bg-amber-500 text-black' : 'text-zinc-500'}`}>Week</button>
+              <button onClick={() => setViewMode('month')} className={`px-4 py-2 rounded-lg text-[9px] font-bold uppercase tracking-widest ${viewMode === 'month' ? 'bg-amber-500 text-black' : 'text-zinc-500'}`}>Month</button>
             </div>
-          )}
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Vertical Zoom</span>
+              <button onClick={() => setRowHeight(h => Math.max(24, h - 4))} className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800">-</button>
+              <input type="range" min={24} max={96} step={4} value={rowHeight} onChange={e => setRowHeight(Number(e.target.value))} aria-label="Vertical Zoom" className="w-28 accent-amber-500" />
+              <button onClick={() => setRowHeight(h => Math.min(96, h + 4))} className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800">+</button>
+              {viewMode === 'day' && !isClosed && !isPastDay && (
+                <button onClick={() => { setEditingBooking(null); setPrefill(null); setShowManualModal(true); }} className="gold-gradient text-black px-5 py-2 rounded-lg text-[9px] font-bold uppercase tracking-widest">
+                  Add Booking
+                </button>
+              )}
+              <button className="w-8 h-8 rounded-lg border border-zinc-800 bg-zinc-900" aria-label="More"><i className="fa-solid fa-ellipsis-vertical"></i></button>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {store.rooms.map((room: Room) => (
+              <button
+                key={room.id}
+                onClick={() => setActiveRooms(prev => ({ ...prev, [room.id]: !prev[room.id] }))}
+                className={`px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest border ${activeRooms[room.id] !== false ? 'border-amber-500/50 text-amber-300 bg-amber-500/10' : 'border-zinc-800 text-zinc-500 bg-zinc-900'}`}
+              >
+                {room.name}
+              </button>
+            ))}
+            <input
+              type="search"
+              placeholder="Search name/email"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="ml-auto bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-[11px] min-w-[220px]"
+            />
+          </div>
         </div>
-        {viewMode === 'day' && !isClosed && !isPastDay && (
-          <button
-            onClick={() => { setEditingBooking(null); setPrefill(null); setShowManualModal(true); }}
-            className="gold-gradient text-black w-full sm:w-auto px-8 py-4 rounded-xl text-[9px] font-bold uppercase tracking-widest shadow-xl shadow-amber-500/10 active:scale-95 transition-transform min-h-[48px]"
-          >
-            Add Booking
-          </button>
-        )}
       </div>
 
       {viewMode === 'day' ? (
-        <div className="space-y-12">
-          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] min-h-[calc(100vh-19rem)]">
+          <div className="min-w-0 p-4 sm:p-6">
             <TimelineView
               store={store}
               date={selectedDate}
-              onSelectBooking={handleEdit}
+              onSelectBooking={(id: string) => {
+                const booking = store.bookings.find((item: Booking) => item.id === id) || null;
+                setInspectorBooking(booking);
+              }}
               onTapToCreate={handleTapToCreate}
               onCommitChange={handleCommitChange}
               onValidationFailure={onValidationFailure}
+              rowHeight={rowHeight}
+              roomFilters={activeRooms}
+              searchQuery={searchQuery}
             />
           </div>
-
-          <div className="border-t border-zinc-900 pt-10 grid grid-cols-1 lg:grid-cols-2 gap-10">
-            <div>
-              <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-500 mb-6 px-2">Booking Registry</h3>
-              <CompactBookingList store={store} date={selectedDate} onSelect={handleEdit} />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-500 mb-6 px-2">Waitlist</h3>
-              <WaitlistListing store={store} date={selectedDate} />
-            </div>
-          </div>
+          <aside className="border-l border-zinc-900 bg-zinc-950">
+            <BookingInspector
+              booking={inspectorBooking}
+              onClose={() => setInspectorBooking(null)}
+              onToggleStatus={async () => {
+                if (!inspectorBooking) return;
+                const nextStatus = inspectorBooking.status === BookingStatus.CONFIRMED ? BookingStatus.PENDING : BookingStatus.CONFIRMED;
+                const ok = await handleMutation(store.updateBooking(inspectorBooking.id, { status: nextStatus }), 'Failed to update status.');
+                if (ok) {
+                  setInspectorBooking({ ...inspectorBooking, status: nextStatus });
+                }
+              }}
+              onEdit={() => inspectorBooking && handleEdit(inspectorBooking.id)}
+              onCancel={async () => {
+                if (!inspectorBooking) return;
+                if (!confirm('Cancel this booking?')) return;
+                const ok = await handleMutation(store.updateBooking(inspectorBooking.id, { status: BookingStatus.CANCELLED }), 'Failed to cancel booking.');
+                if (ok) setInspectorBooking(null);
+              }}
+            />
+          </aside>
         </div>
       ) : viewMode === 'week' ? (
-        <WeekView store={store} selectedDate={selectedDate} onSelectDay={(d) => { setSelectedDate(d); setViewMode('day'); }} onTapEmpty={handleTapToCreate} />
+        <WeekView store={store} selectedDate={selectedDate} onSelectDay={setSelectedDate} onTapEmpty={handleTapToCreate} />
       ) : (
-        <MonthCalendar store={store} onSelectDay={(d) => { setSelectedDate(d); setViewMode('day'); }} />
+        <MonthView store={store} selectedDate={selectedDate} onSelectDay={(d) => { setSelectedDate(d); setViewMode('day'); }} />
       )}
 
       {showManualModal && (
@@ -538,21 +622,52 @@ function BookingsTab({ store, selectedDate, setSelectedDate }: { store: any, sel
           onClose={() => { setShowManualModal(false); setEditingBooking(null); setPrefill(null); }}
           initialDate={selectedDate}
           booking={editingBooking || undefined}
-          prefill={prefill}
+          prefill={prefill || undefined}
         />
       )}
 
-      {confirmModal && (
-        <AdminModal
-          open={confirmModal.open}
-          title={confirmModal.title}
-          body={confirmModal.body}
-          canApply={confirmModal.canApply}
-          onApply={confirmModal.onApply}
-          onCancel={() => setConfirmModal(null)}
-          applyLabel="Confirm"
-        />
-      )}
+      <AdminModal
+        open={!!confirmModal?.open}
+        title={confirmModal?.title || ''}
+        body={confirmModal?.body || ''}
+        canApply={!!confirmModal?.canApply}
+        onApply={() => confirmModal?.onApply()}
+        onCancel={() => setConfirmModal(null)}
+        applyLabel={confirmModal?.title.includes('Reschedule') ? 'Yes, Update' : 'OK'}
+      />
+    </div>
+  );
+}
+
+function BookingInspector({ booking, onClose, onToggleStatus, onEdit, onCancel }: { booking: Booking | null, onClose: () => void, onToggleStatus: () => void, onEdit: () => void, onCancel: () => void }) {
+  if (!booking) {
+    return <div className="h-full p-6 text-[10px] font-bold uppercase tracking-widest text-zinc-600">Select a booking to inspect details.</div>;
+  }
+
+  return (
+    <div className="h-full p-5 space-y-5">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-xs text-zinc-500 uppercase tracking-widest">Inspector</p>
+          <h3 className="text-lg font-bold text-white">{booking.customer_name}</h3>
+          <p className="text-xs text-zinc-400">{booking.customer_email}</p>
+        </div>
+        <button onClick={onClose} className="text-zinc-500 hover:text-white"><i className="fa-solid fa-xmark"></i></button>
+      </div>
+      <div className="space-y-2 text-xs">
+        <p><span className="text-zinc-500">Time:</span> {new Date(booking.start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {new Date(booking.end_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+        <p><span className="text-zinc-500">Room:</span> {booking.room_name}</p>
+        <p><span className="text-zinc-500">Guests:</span> {booking.guests}</p>
+        <p><span className="text-zinc-500">Status:</span> {booking.status}</p>
+        <p><span className="text-zinc-500">Extras:</span> £{booking.extras_price || 0}</p>
+        <p><span className="text-zinc-500">Notes:</span> {booking.notes || '—'}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={onToggleStatus} className="bg-zinc-900 border border-zinc-800 py-2 rounded-lg text-[10px] font-bold uppercase">{booking.status === BookingStatus.CONFIRMED ? 'Unconfirm' : 'Confirm'}</button>
+        <button onClick={onEdit} className="bg-zinc-900 border border-zinc-800 py-2 rounded-lg text-[10px] font-bold uppercase">Edit</button>
+        <button onClick={onCancel} className="bg-red-500/20 border border-red-500/30 py-2 rounded-lg text-[10px] font-bold uppercase text-red-300">Cancel</button>
+        <a href={booking.customer_phone ? `https://wa.me/${booking.customer_phone.replace(/\D/g, '')}` : '#'} target="_blank" rel="noreferrer" className="bg-zinc-900 border border-zinc-800 py-2 rounded-lg text-[10px] font-bold uppercase text-center">WhatsApp</a>
+      </div>
     </div>
   );
 }
@@ -863,56 +978,58 @@ function MonthCalendar({ store, onSelectDay }: { store: any, onSelectDay: (d: st
   );
 }
 
-function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitChange, onValidationFailure }: any) {
-  const [rowHeight, setRowHeight] = useState(60);
+function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitChange, onValidationFailure, rowHeight, roomFilters, searchQuery }: any) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
   const window = store.getOperatingWindow(date);
   if (!window) return <div className="p-10 text-center text-zinc-600 uppercase font-bold tracking-widest">Venue Closed</div>;
 
   const isPastDay = new Date(date).getTime() < new Date().setHours(0, 0, 0, 0);
-  const startHour = parseInt(window.open.split(':')[0]);
-  let endHour = parseInt(window.close.split(':')[0]);
-  if (endHour <= startHour) endHour += 24;
-  const startMinutes = startHour * 60;
-  const endMinutes = endHour * 60;
+  const [startHour, startMinute] = window.open.split(':').map(Number);
+  const [closeHourRaw, closeMinuteRaw] = window.close.split(':').map(Number);
+  let closeHour = closeHourRaw;
+  if (closeHour < startHour || (closeHour === startHour && closeMinuteRaw <= startMinute)) closeHour += 24;
+  const startMinutes = startHour * 60 + startMinute;
+  const endMinutes = closeHour * 60 + closeMinuteRaw;
 
-  const hours: number[] = [];
-  for (let h = startHour; h < endHour; h++) {
-    hours.push(h);
+  const slots: number[] = [];
+  for (let minute = startMinutes; minute < endMinutes; minute += SLOT_MINUTES) {
+    slots.push(minute);
   }
 
+  const visibleRooms = store.rooms.filter((room: Room) => roomFilters[room.id] !== false);
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+
   const busyIntervalsByRoom = useMemo(() => {
-    const entries: Array<[string, any[]]> = store.rooms.map((room: Room) => [
+    const entries: Array<[string, any[]]> = visibleRooms.map((room: Room) => [
       room.id,
       store.getBusyIntervals(date, room.id),
     ]);
     return new Map<string, any[]>(entries);
-  }, [store.rooms, store.getBusyIntervals, date]);
+  }, [visibleRooms, store.getBusyIntervals, date]);
 
-  // Inject dynamic CSS for schedule heights/top positions to avoid inline styles
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const styleId = 'admin-schedule-styles';
     let styleEl = document.getElementById(styleId) as HTMLStyleElement | null;
-    const maxRows = hours.length;
     let css = '';
-    // root var for row height
-    css += `.admin-schedule { --row-height: ${rowHeight}px; }\n`;
-    css += `.admin-row { height: var(--row-height); }\n`;
-    css += `.admin-room-grid { height: calc(var(--row-height) * ${maxRows}); }\n`;
+    css += `.admin-schedule { --row-height: ${rowHeight}px; }
+`;
+    css += `.admin-row { height: var(--row-height); }
+`;
+    css += `.admin-room-grid { height: calc(var(--row-height) * ${slots.length}); }
+`;
 
-    // booking positions
-    store.rooms.forEach((r: Room) => {
-      const items = busyIntervalsByRoom.get(r.id) ?? [];
+    visibleRooms.forEach((room: Room) => {
+      const items = busyIntervalsByRoom.get(room.id) ?? [];
       items.forEach((item: any) => {
         const dayStartTs = new Date(`${date}T${window.open}`).getTime();
-        const startOffsetHrs = (item.start - dayStartTs) / 3600000;
-        const durationHrs = (item.end - item.start) / 3600000;
-        const topPx = Math.round(startOffsetHrs * rowHeight);
-        const heightPx = Math.round(durationHrs * rowHeight);
-        const slug = `booking-${item.id}`;
-        css += `.${slug} { top: ${topPx}px; height: ${heightPx}px; }\n`;
+        const startOffsetSlots = (item.start - dayStartTs) / (SLOT_MINUTES * 60000);
+        const durationSlots = Math.max(1, (item.end - item.start) / (SLOT_MINUTES * 60000));
+        const topPx = Math.round(startOffsetSlots * rowHeight);
+        const heightPx = Math.max(rowHeight, Math.round(durationSlots * rowHeight));
+        css += `.booking-${item.id} { top: ${topPx}px; height: ${heightPx}px; }
+`;
       });
     });
 
@@ -922,20 +1039,20 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
       document.head.appendChild(styleEl);
     }
     styleEl.innerHTML = css;
-  }, [rowHeight, hours.length, date, store.rooms, busyIntervalsByRoom, window.open]);
+  }, [rowHeight, slots.length, date, visibleRooms, busyIntervalsByRoom, window.open]);
 
   const handleDrop = (event: React.DragEvent<HTMLDivElement>, roomId: string) => {
     if (isPastDay) return;
     event.preventDefault();
     const bookingId = event.dataTransfer.getData('text/plain');
     if (!bookingId) return;
-    const booking = store.bookings.find((b: Booking) => b.id === bookingId);
+    const booking = store.bookings.find((item: Booking) => item.id === bookingId);
     if (!booking) return;
 
     const rect = event.currentTarget.getBoundingClientRect();
     const y = event.clientY - rect.top;
-    const hourOffset = y / rowHeight;
-    const rawMinutes = Math.round((startMinutes + hourOffset * 60) / SLOT_MINUTES) * SLOT_MINUTES;
+    const slotOffset = y / rowHeight;
+    const rawMinutes = Math.round((startMinutes + slotOffset * SLOT_MINUTES) / SLOT_MINUTES) * SLOT_MINUTES;
     const durationMinutes = Math.max(0, Math.round((new Date(booking.end_at).getTime() - new Date(booking.start_at).getTime()) / 60000));
     const maxStartMinutes = endMinutes - durationMinutes;
     const clampedMinutes = Math.min(Math.max(rawMinutes, startMinutes), maxStartMinutes);
@@ -953,7 +1070,7 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
       return;
     }
 
-    const roomName = store.rooms.find((r: Room) => r.id === roomId)?.name || booking.room_name;
+    const roomName = store.rooms.find((item: Room) => item.id === roomId)?.name || booking.room_name;
     onCommitChange(booking, {
       start_at: startAt,
       end_at: endAt,
@@ -963,98 +1080,73 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between px-2">
-        <h3 className="text-2xl font-bold uppercase tracking-tighter text-amber-500">{date}</h3>
-        <div className="flex items-center gap-4 bg-zinc-900/50 p-2 rounded-xl border border-zinc-800">
-          <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Vertical Zoom</span>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setRowHeight(h => Math.max(30, h - 10))} className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 hover:text-white">-</button>
-            <button onClick={() => setRowHeight(h => Math.min(200, h + 10))} className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 hover:text-white">+</button>
-          </div>
-        </div>
-      </div>
-
+    <div className="admin-schedule">
       <div className="relative border border-zinc-900 rounded-[2rem] overflow-hidden bg-zinc-950 flex flex-col shadow-2xl w-full">
         <div className="flex bg-zinc-950/95">
           <div className="w-16 shrink-0 border-r border-zinc-900 bg-zinc-900/40 z-30 sticky left-0">
-            <div className="h-24 border-b border-zinc-900"></div>
+            <div className="h-20 border-b border-zinc-900"></div>
           </div>
 
           <div className="flex-1 flex min-w-0">
-            {store.rooms.map((r: Room) => (
-              <div
-                key={r.id}
-                className="flex-1 border-r border-zinc-900 relative min-w-0"
-              >
-                <div className="h-24 border-b border-zinc-900 flex flex-col items-center justify-center p-1 text-center bg-zinc-900/20 overflow-hidden">
-                  <span className="text-[9px] sm:text-[10px] font-bold uppercase text-white leading-tight break-words">
-                    {r.name.toUpperCase()}
-                  </span>
+            {visibleRooms.map((room: Room) => (
+              <div key={room.id} className="flex-1 border-r border-zinc-900 relative min-w-0">
+                <div className="h-20 border-b border-zinc-900 flex flex-col items-center justify-center p-1 text-center bg-zinc-900/20 overflow-hidden">
+                  <span className="text-[9px] sm:text-[10px] font-bold uppercase text-white leading-tight break-words">{room.name.toUpperCase()}</span>
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="flex min-h-0 max-h-[calc(100vh-20rem)] max-h-[calc(100svh-20rem)] overflow-y-auto">
-          {/* Time Column */}
+        <div className="flex min-h-0 max-h-[calc(100vh-20rem)] overflow-y-auto">
           <div className="w-16 shrink-0 border-r border-zinc-900 bg-zinc-900/40 z-20 sticky left-0">
-            {hours.map(h => (
-              <div key={h} className="relative border-b border-zinc-800/50 flex items-start justify-center pt-2 text-[9px] font-mono text-zinc-600 admin-row">
-                {(h % 24).toString().padStart(2, '0')}:00
-                {/* Half-hour marker line sidebar */}
-                <div className="absolute top-1/2 left-0 right-0 border-t border-zinc-800/10 pointer-events-none"></div>
+            {slots.map(slotMinute => (
+              <div key={slotMinute} className="relative border-b border-zinc-800/50 flex items-start justify-center pt-1 text-[9px] font-mono text-zinc-600 admin-row">
+                {slotMinute % 60 === 0 ? `${Math.floor((slotMinute / 60) % 24).toString().padStart(2, '0')}:00` : ''}
               </div>
             ))}
           </div>
 
-          {/* Lanes Container - force 3 lanes on mobile via flex-1 min-w-0 */}
           <div className="flex-1 flex min-w-0">
-            {store.rooms.map((r: Room) => (
-              <div
-                key={r.id}
-                className="flex-1 border-r border-zinc-900 relative min-w-0"
-              >
+            {visibleRooms.map((room: Room) => (
+              <div key={room.id} className="flex-1 border-r border-zinc-900 relative min-w-0">
                 <div className="relative admin-room-grid">
-                  {hours.map(h => (
-                    <div key={h} className="relative border-b border-zinc-900/30 w-full admin-row">
-                      {/* 30-minute marker line */}
-                      <div className="absolute top-1/2 left-0 right-0 border-t border-zinc-800/40 h-0 pointer-events-none"></div>
-                    </div>
+                  {slots.map(slotMinute => (
+                    <div key={slotMinute} className="relative border-b border-zinc-900/30 w-full admin-row"></div>
                   ))}
 
                   <div
                     className="absolute inset-0 cursor-crosshair z-0"
-                    onClick={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const y = e.clientY - rect.top;
-                      const hourOffset = y / rowHeight;
-                      const totalMins = Math.floor((startHour + hourOffset) * 60);
+                    onClick={(event) => {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      const y = event.clientY - rect.top;
+                      const slotOffset = y / rowHeight;
+                      const totalMins = Math.floor(startMinutes + slotOffset * SLOT_MINUTES);
                       const h = Math.floor(totalMins / 60);
-                      // Snap logic for 30-minute intervals
-                      const m = Math.floor((totalMins % 60) / 30) * 30;
+                      const m = Math.floor((totalMins % 60) / SLOT_MINUTES) * SLOT_MINUTES;
                       const timeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-                      onTapToCreate({ date, roomId: r.id, time: timeStr });
+                      onTapToCreate({ date, roomId: room.id, time: timeStr });
                     }}
                     onDragOver={(event) => {
                       if (isPastDay) return;
                       event.preventDefault();
                       event.dataTransfer.dropEffect = 'move';
                     }}
-                    onDrop={(event) => handleDrop(event, r.id)}
+                    onDrop={(event) => handleDrop(event, room.id)}
                   ></div>
 
-                  {(busyIntervalsByRoom.get(r.id) ?? []).map((item: any) => {
-                    const dayStartTs = new Date(`${date}T${window.open}`).getTime();
-                    const startOffsetHrs = (item.start - dayStartTs) / 3600000;
-                    const durationHrs = (item.end - item.start) / 3600000;
+                  {(busyIntervalsByRoom.get(room.id) ?? []).filter((item: any) => {
+                    if (item.type !== 'booking') return true;
+                    if (!normalizedSearch) return true;
+                    return `${item.customer_name} ${item.customer_email}`.toLowerCase().includes(normalizedSearch);
+                  }).map((item: any) => {
                     const indicators = item.type === 'booking' ? getBookingIndicators(item as Booking) : null;
+                    const extrasText = item.type === 'booking' && item.extras_price ? `EXT: £${item.extras_price}` : null;
 
                     return (
                       <div
                         key={item.id}
-                        onClick={(e) => { e.stopPropagation(); if (item.type === 'booking') onSelectBooking(item.id); }}
+                        onClick={(event) => { event.stopPropagation(); if (item.type === 'booking') onSelectBooking(item.id); }}
                         draggable={item.type === 'booking' && !isPastDay}
                         onDragStart={(event) => {
                           if (item.type !== 'booking' || isPastDay) return;
@@ -1063,10 +1155,10 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                           setDraggingId(item.id);
                         }}
                         onDragEnd={() => setDraggingId(null)}
-                        className={`absolute left-0.5 right-0.5 rounded-lg border flex flex-col justify-center items-center px-0.5 transition-all hover:scale-[1.02] active:scale-95 shadow-lg overflow-hidden z-10 ${item.type === 'booking'
+                        className={`absolute left-0.5 right-0.5 rounded-lg border flex flex-col justify-center items-center px-1 transition-all hover:scale-[1.02] active:scale-95 shadow-lg overflow-hidden z-10 ${item.type === 'booking'
                           ? (item.status === 'CONFIRMED'
-                            ? 'bg-amber-500 text-black border-amber-400'
-                            : 'bg-zinc-800 text-zinc-400 border-zinc-700')
+                            ? 'bg-amber-500 text-black border-amber-400 ring-1 ring-black/20'
+                            : 'bg-zinc-800 text-zinc-200 border-zinc-500 border-dashed')
                           : 'bg-red-500/20 text-red-500 border-red-500/20 cursor-default'
                           } ${item.type === 'booking' ? (isPastDay ? 'cursor-pointer' : 'cursor-grab') : ''} ${draggingId === item.id ? 'opacity-70 cursor-grabbing' : ''} booking-${item.id}`}
                       >
@@ -1080,6 +1172,7 @@ function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitCha
                             {indicators.hasDrink && <i className="fa-solid fa-martini-glass-citrus" title="Drink extra"></i>}
                           </div>
                         )}
+                        {extrasText && <span className="text-[9px] font-bold uppercase">{extrasText}</span>}
                       </div>
                     );
                   })}
