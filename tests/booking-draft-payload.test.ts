@@ -1,7 +1,7 @@
-const assert = require('node:assert/strict');
-const { buildDraftBookingPayload } = require('../lib/bookingPayload');
+import assert from 'node:assert/strict';
 
-// Basic scenario: build a draft payload and ensure booking_date is set correctly
+import { buildDraftBookingPayload } from '../lib/bookingPayload';
+
 const payload = buildDraftBookingPayload({
   roomId: 'room-1',
   roomName: 'Room 1',
@@ -26,4 +26,4 @@ assert.equal(typeof payload.start_time, 'string', 'start_time should be set');
 assert.equal(payload.start_time, '19:30', 'start_time should match input time');
 assert.ok(payload.start_at && payload.end_at, 'start_at and end_at should be present');
 
-console.log('booking-draft-payload.test.js passed');
+console.log('booking-draft-payload.test.ts passed');
