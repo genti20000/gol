@@ -10,6 +10,7 @@ const MAX_POLLS = 60;
 export default function Processing() {
   const { route, navigate } = useRouterShim();
   const bookingId = route.params.get('id') || '';
+  const bookingToken = route.params.get('token') || '';
   const [message, setMessage] = useState('Processing payment…');
   const [status, setStatus] = useState<BookingStatus | null>(null);
 
@@ -23,7 +24,7 @@ export default function Processing() {
       tries += 1;
 
       try {
-        const response = await fetch(`/api/bookings/${bookingId}`);
+        const response = await fetch(`/api/bookings/${bookingId}?token=${encodeURIComponent(bookingToken)}`);
         const payload = await response.json();
 
         if (!alive) return;
@@ -38,12 +39,12 @@ export default function Processing() {
         }
 
         if (nextStatus === BookingStatus.CONFIRMED) {
-          navigate(`/booking/confirmed?id=${bookingId}`);
+          navigate(`/booking/confirmed?id=${bookingId}&token=${encodeURIComponent(bookingToken)}`);
           return;
         }
 
         if (nextStatus === BookingStatus.FAILED || nextStatus === BookingStatus.CANCELLED || nextStatus === BookingStatus.NO_SHOW) {
-          navigate(`/booking/failed?id=${bookingId}`);
+          navigate(`/booking/failed?id=${bookingId}&token=${encodeURIComponent(bookingToken)}`);
           return;
         }
 
@@ -68,7 +69,7 @@ export default function Processing() {
     return () => {
       alive = false;
     };
-  }, [bookingId, navigate]);
+  }, [bookingId, bookingToken, navigate]);
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4">

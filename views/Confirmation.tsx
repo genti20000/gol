@@ -16,6 +16,7 @@ type ConfirmationBooking = {
 const Confirmation: React.FC = () => {
   const { route } = useRouterShim();
   const id = route.params.get('id');
+  const bookingToken = route.params.get('token') || '';
   const [booking, setBooking] = useState<ConfirmationBooking | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -33,7 +34,7 @@ const Confirmation: React.FC = () => {
       try {
         setLoading(true);
         setLoadError(null);
-        const response = await fetch(`/api/bookings/${id}`);
+        const response = await fetch(`/api/bookings/${id}?token=${encodeURIComponent(bookingToken)}`);
         const payload = await response.json().catch(() => ({}));
 
         if (!isMounted) return;
@@ -59,7 +60,7 @@ const Confirmation: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [id]);
+  }, [id, bookingToken]);
 
   if (loading) {
     return (

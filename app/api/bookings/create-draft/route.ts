@@ -218,7 +218,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Unable to update booking draft.' }, { status: 500 });
       }
 
-      return NextResponse.json({ bookingId: existingDraft.id, booking: refreshedDraft ?? existingDraft });
+      const draftRecord = refreshedDraft ?? existingDraft;
+      return NextResponse.json({ bookingId: existingDraft.id, bookingToken: draftRecord?.booking_access_token, booking: draftRecord });
     }
 
     const { data: rooms, error: roomsError } = await supabase
@@ -371,7 +372,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unable to load booking draft.' }, { status: 500 });
     }
 
-    return NextResponse.json({ bookingId: booking.id, booking });
+    return NextResponse.json({ bookingId: booking.id, bookingToken: booking.booking_access_token, booking });
   } catch (error) {
     console.error('Unexpected error creating booking draft.', error);
     return NextResponse.json({ error: 'Unable to create booking draft.' }, { status: 500 });

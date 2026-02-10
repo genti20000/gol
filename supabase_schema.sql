@@ -96,6 +96,7 @@ CREATE TABLE bookings (
   promo_discount_amount NUMERIC DEFAULT 0,
   total_price NUMERIC NOT NULL DEFAULT 0,
   magic_token TEXT UNIQUE,
+  booking_access_token TEXT UNIQUE NOT NULL DEFAULT uuid_generate_v4()::text,
   source TEXT DEFAULT 'public',
   deposit_amount NUMERIC NOT NULL DEFAULT 0,
   deposit_paid BOOLEAN DEFAULT false,

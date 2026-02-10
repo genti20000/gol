@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateBookingDraftInput } from '@/lib/bookingValidation'; // Reuse draft validation for full details
 import { BookingStatus, BookingExtraSelection } from '@/types';
+import { isBookingTokenValid } from '@/lib/bookingAccessToken';
 
 type UpdateRequest = {
+    bookingToken?: string;
+    token?: string;
     firstName?: string;
     surname?: string;
     email?: string;
@@ -32,6 +34,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
             return NextResponse.json({ error: 'Invalid request payload.' }, { status: 400 });
         }
 
+        const bookingToken = ((payload.bookingToken || payload.token || '').trim() || (new URL(request.url).searchParams.get('bookingToken') || '').trim() || (request.headers.get('x-booking-token') || '').trim());
+        if (!bookingToken) {
+            return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
+        }
+
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
         // 1. Fetch current booking
@@ -43,6 +50,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
         if (fetchError || !booking) {
             return NextResponse.json({ error: 'Booking not found.' }, { status: 404 });
+        }
+
+        if (!isBookingTokenValid(bookingToken, booking.booking_access_token)) {
+            return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
         }
 
         if (booking.status !== BookingStatus.PENDING) {

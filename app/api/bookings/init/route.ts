@@ -230,7 +230,7 @@ export async function POST(request: Request) {
         const { data: insertedBooking, error: bookingError } = await supabase
             .from('bookings')
             .insert([bookingPayload])
-            .select('id')
+            .select('id,booking_access_token')
             .maybeSingle();
 
         if (bookingError || !insertedBooking) {
@@ -242,7 +242,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Unable to initialize booking.' }, { status: 500 });
         }
 
-        return NextResponse.json({ bookingId: insertedBooking.id });
+        return NextResponse.json({ bookingId: insertedBooking.id, bookingToken: insertedBooking.booking_access_token });
 
     } catch (error) {
         console.error('Unexpected error in booking init.', error);

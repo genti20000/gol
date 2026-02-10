@@ -67,9 +67,9 @@ export default function Results() {
         return;
       }
 
-      const { bookingId } = await response.json();
-      if (bookingId) {
-        navigate(`/checkout?bookingId=${bookingId}`);
+      const { bookingId, bookingToken } = await response.json();
+      if (bookingId && bookingToken) {
+        navigate(`/checkout?bookingId=${bookingId}&token=${encodeURIComponent(bookingToken)}`);
       } else {
         setError('Unexpected server response. Please try again.');
         setIsProcessing(false);
