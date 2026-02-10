@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import { ServerAdminAuthError, requireServerAdminAuth } from '@/lib/serverAdminAuth';
 
+type BookingForDeleteLog = {
+  id: string;
+  booking_ref: string;
+  customer_name: string;
+};
+
 /**
  * DELETE /api/admin/bookings/:id
  * Admin-only endpoint to delete a booking.
@@ -23,7 +29,7 @@ export async function DELETE(
       .from('bookings')
       .select('id, booking_ref, customer_name')
       .eq('id', bookingId)
-      .maybeSingle();
+      .maybeSingle<BookingForDeleteLog>();
 
     if (bookingError || !booking) {
       console.error('[ADMIN DELETE] Booking fetch failed', bookingError);
