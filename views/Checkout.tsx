@@ -23,6 +23,7 @@ export default function Checkout() {
   const [loadingDraft, setLoadingDraft] = useState(false);
 
   const bookingId = route.params.get('bookingId') || '';
+  const bookingToken = route.params.get('token') || '';
   const date = route.params.get('date') || '';
   const time = route.params.get('time') || '';
   const guests = parseInt(route.params.get('guests') || '8');
@@ -84,7 +85,7 @@ export default function Checkout() {
 
     const loadDraft = async () => {
       try {
-        const response = await fetch(`/api/bookings/${bookingId}`);
+        const response = await fetch(`/api/bookings/${bookingId}?token=${encodeURIComponent(bookingToken)}`);
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
           throw new Error(payload?.error || 'Unable to load booking.');
@@ -120,7 +121,7 @@ export default function Checkout() {
     return () => {
       isMounted = false;
     };
-  }, [bookingId]);
+  }, [bookingId, bookingToken]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -187,7 +188,8 @@ export default function Checkout() {
       if (!finalBooking) {
         throw new Error('Unable to create booking. Please try again.');
       }
-      navigate(`/confirmation?id=${finalBooking.id}`);
+      const resolvedToken = finalBooking.booking_access_token || finalBooking.magic_token || bookingToken;
+      navigate(`/confirmation?id=${finalBooking.id}&token=${encodeURIComponent(resolvedToken || '')}`);
     } catch (error) {
       console.error('BOOKING_CONFIRM_ERROR', {
         error,

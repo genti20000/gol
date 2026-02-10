@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { BookingStatus } from '@/types';
 import { validateBookingDraftInput } from '@/lib/bookingValidation';
+import { extractBookingToken, isBookingTokenValid } from '@/lib/bookingAccessToken';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -17,6 +18,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
             return NextResponse.json({ error: 'Server configuration error.' }, { status: 500 });
         }
 
+        const bookingToken = await extractBookingToken(request);
+        if (!bookingToken) {
+            return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
+        }
+
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
         // 1. Fetch booking
@@ -28,6 +34,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
         if (fetchError || !booking) {
             return NextResponse.json({ error: 'Booking not found.' }, { status: 404 });
+        }
+
+        if (!isBookingTokenValid(bookingToken, booking.booking_access_token)) {
+            return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
         }
 
         if (booking.status !== BookingStatus.PENDING) {

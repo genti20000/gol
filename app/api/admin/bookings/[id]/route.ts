@@ -1,8 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+import { ServerAdminAuthError, requireServerAdminAuth } from '@/lib/serverAdminAuth';
 
 /**
  * PATCH /api/admin/bookings/:id
@@ -15,13 +12,6 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    if (!supabaseUrl || !supabaseServiceKey) {
-      return NextResponse.json(
-        { error: 'Supabase credentials are not configured.' },
-        { status: 500 }
-      );
-    }
-
     const bookingId = params.id;
     if (!bookingId) {
       return NextResponse.json({ error: 'Missing booking id.' }, { status: 400 });
@@ -51,30 +41,7 @@ export async function PATCH(
     // Convert empty string to null for cleaner database storage
     notes = notes.length === 0 ? null : notes;
 
-    // Verify admin access via Bearer token
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'Unauthorized: missing or invalid token' },
-        { status: 401 }
-      );
-    }
-
-    const token = authHeader.slice(7);
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Verify the token is valid and belongs to an admin user
-    const { data: userData, error: userError } = await supabase.auth.getUser(token);
-
-    if (userError || !userData?.user?.email) {
-      console.warn('[ADMIN PATCH] Auth verification failed', userError);
-      return NextResponse.json(
-        { error: 'Unauthorized: invalid token' },
-        { status: 401 }
-      );
-    }
-
-    const adminEmail = userData.user.email;
+    const { supabase, adminEmail } = await requireServerAdminAuth(request);
 
     // Fetch the booking to confirm it exists
     const { data: booking, error: bookingError } = await supabase
@@ -111,6 +78,10 @@ export async function PATCH(
 
     return NextResponse.json({ ok: true, booking: updated });
   } catch (error) {
+    if (error instanceof ServerAdminAuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
     console.error('[ADMIN PATCH] Unexpected error', error);
     return NextResponse.json(
       { error: 'An unexpected error occurred.' },

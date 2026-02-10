@@ -1,10 +1,19 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { validateBookingDraftInput } from '@/lib/bookingValidation'; // Reuse draft validation for shared contact validation rules
-import bookingUpdateValidation from '@/lib/bookingUpdateValidation';
 import { BookingStatus, BookingExtraSelection } from '@/types';
+import { isBookingTokenValid } from '@/lib/bookingAccessToken';
 
-const { getExtraMaxQuantity, validateBookingUpdateInput } = bookingUpdateValidation;
+type UpdateRequest = {
+    bookingToken?: string;
+    token?: string;
+    firstName?: string;
+    surname?: string;
+    email?: string;
+    phone?: string;
+    notes?: string;
+    specialRequests?: string;
+    extras?: Record<string, number>; // extraId -> quantity
+};
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -72,6 +81,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
             }
         }
 
+        const bookingToken = ((payload.bookingToken || payload.token || '').trim() || (new URL(request.url).searchParams.get('bookingToken') || '').trim() || (request.headers.get('x-booking-token') || '').trim());
+        if (!bookingToken) {
+            return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
+        }
+
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
         // 1. Fetch current booking
@@ -83,6 +97,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
         if (fetchError || !booking) {
             return NextResponse.json({ error: 'Booking not found.' }, { status: 404 });
+        }
+
+        if (!isBookingTokenValid(bookingToken, booking.booking_access_token)) {
+            return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
         }
 
         if (booking.status !== BookingStatus.PENDING) {
