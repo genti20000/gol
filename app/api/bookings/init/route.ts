@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-import { BASE_DURATION_HOURS, EXTRAS, MIDWEEK_DISCOUNT_PERCENT, PRICING_TIERS } from '@/constants';
+import { BASE_DURATION_HOURS, EXTRAS, MIDWEEK_DISCOUNT_PERCENT } from '@/constants';
 import {
     REQUIRED_BOOKING_INSERT_FIELDS,
     validateBookingInitInput
@@ -50,13 +50,27 @@ export async function POST(request: Request) {
         const { date, time, guests, extraHours } = validation.normalized;
         const promo = payload.promo?.trim() ?? '';
         const serviceId = payload.serviceId;
+        if (!serviceId) {
+            return NextResponse.json({ error: "Service is required." }, { status: 400 });
+        }
         const staffId = payload.staffId;
+
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
         // --- Availability & Pricing Logic (Reuse from create-draft) ---
 
-        const tier = PRICING_TIERS.find((t) => guests >= t.min && guests <= t.max);
-        if (!tier) {
-            return NextResponse.json({ error: 'Guest count is out of range.' }, { status: 400 });
+        const { data: selectedService, error: serviceError } = await supabase
+            .from('services')
+            .select('id,min_people,max_people,price_per_person_pence,is_active')
+            .eq('id', serviceId)
+            .maybeSingle();
+
+        if (serviceError || !selectedService || !selectedService.is_active) {
+            return NextResponse.json({ error: 'Selected service is unavailable.' }, { status: 400 });
+        }
+
+        if (guests < selectedService.min_people || guests > selectedService.max_people) {
+            return NextResponse.json({ error: 'Guest count is outside the selected service range.' }, { status: 400 });
         }
 
         const extraOption = EXTRAS.find((extra) => extra.hours === extraHours);
@@ -73,8 +87,6 @@ export async function POST(request: Request) {
         const totalDurationHours = BASE_DURATION_HOURS + extraHours;
         const endDate = new Date(startDate.getTime() + totalDurationHours * 3600000);
 
-        const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
         // Fetch Venue Settings
         const { data: settings, error: settingsError } = await supabase
             .from('venue_settings')
@@ -86,7 +98,7 @@ export async function POST(request: Request) {
         }
 
         // Pricing Calculation
-        const baseTotal = tier.price;
+        const baseTotal = Number(((selectedService.price_per_person_pence * guests) / 100).toFixed(2));
         const extrasPrice = extraOption.price; // This is the session extension price, not "extras" items
         const offerUtils = (await import('@/lib/offerUtils')) as any;
         const offers = settings?.offers ?? [];

@@ -23,6 +23,7 @@ import {
   Offer
 } from '../types';
 import { ROOMS, LOGO_URL, PRICING_TIERS, EXTRAS, SLOT_MINUTES, BUFFER_MINUTES, getGuestLabel, LS_ADMIN_USERS } from '../constants';
+import { formatPounds, getServicePreviewTotal, poundsToPence, penceToPounds } from '../lib/servicePricing';
 
 type Tab = 'bookings' | 'bookings-list' | 'customers' | 'blocks' | 'settings' | 'reports';
 type ViewMode = 'day' | 'week' | 'month';
@@ -49,6 +50,41 @@ const handleMutation = async (action: Promise<MutationResult>, fallbackMessage: 
   return true;
 };
 
+
+
+interface ServiceDraft {
+  id: string;
+  name: string;
+  minPeople: number;
+  maxPeople: number;
+  durationMinutes: number;
+  pricePerPerson: string;
+  isActive: boolean;
+  sortOrder: number;
+  isNew?: boolean;
+}
+
+const toServiceDraft = (service: Service): ServiceDraft => ({
+  id: service.id,
+  name: service.name,
+  minPeople: service.minPeople,
+  maxPeople: service.maxPeople,
+  durationMinutes: service.durationMinutes,
+  pricePerPerson: formatPounds(penceToPounds(service.pricePerPersonPence)),
+  isActive: service.isActive,
+  sortOrder: service.sortOrder
+});
+
+const validateServiceDraft = (draft: ServiceDraft) => {
+  const errors: Partial<Record<keyof ServiceDraft, string>> = {};
+  if (!draft.name.trim()) errors.name = 'Name is required.';
+  if (!Number.isInteger(draft.minPeople) || draft.minPeople < 1) errors.minPeople = 'Min must be at least 1.';
+  if (!Number.isInteger(draft.maxPeople) || draft.maxPeople < draft.minPeople) errors.maxPeople = 'Max must be greater than or equal to Min.';
+  if (!Number.isInteger(draft.durationMinutes) || draft.durationMinutes < 30 || draft.durationMinutes > 600) errors.durationMinutes = 'Duration must be between 30 and 600.';
+  if (!/^\d+(\.\d{0,2})?$/.test(draft.pricePerPerson) || Number(draft.pricePerPerson) < 0) errors.pricePerPerson = '£/pp must be 0 or higher.';
+  return errors;
+};
+
 const parseAllowlist = (value: string) =>
   value
     .split(',')
@@ -69,6 +105,9 @@ export default function Admin() {
   const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const calSyncConfig = store.calSync;
+  const [serviceDrafts, setServiceDrafts] = useState<Record<string, ServiceDraft>>({});
+  const [newServiceDraft, setNewServiceDraft] = useState<ServiceDraft | null>(null);
+
 
   const allowedEmails = useMemo(
     () => {
@@ -117,6 +156,16 @@ export default function Admin() {
     setLocalAllowlistInput(storedAllowlist);
     setLocalAllowlist(parseAllowlist(storedAllowlist));
   }, []);
+
+  useEffect(() => {
+    setServiceDrafts(prev => {
+      const next: Record<string, ServiceDraft> = { ...prev };
+      store.services.forEach(service => {
+        if (!next[service.id]) next[service.id] = toServiceDraft(service);
+      });
+      return next;
+    });
+  }, [store.services]);
 
   useEffect(() => {
     if (!session?.user?.email) return;
@@ -1460,6 +1509,9 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
   const [activeSub, setActiveSub] = useState('venue');
   const [showSaved, setShowSaved] = useState(false);
   const calSyncConfig = store.calSync;
+  const [serviceDrafts, setServiceDrafts] = useState<Record<string, ServiceDraft>>({});
+  const [newServiceDraft, setNewServiceDraft] = useState<ServiceDraft | null>(null);
+
 
   const handleSettingChange = async (updateFn: () => Promise<MutationResult>, errorMessage: string) => {
     const ok = await handleMutation(updateFn(), errorMessage);
@@ -1730,58 +1782,41 @@ function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string
         {activeSub === 'services' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-right-2 duration-300">
             <div className="flex justify-between items-center">
-              <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Booking Services</h3>
+              <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Services Configuration</h3>
               <button
-                onClick={async () => {
-                  await handleMutation(store.addService({ name: 'New Service', durationMinutes: 120, basePrice: 0 }), 'Failed to add service.');
-                }}
+                onClick={() => setNewServiceDraft({ id: `new-${Date.now()}`, name: '', minPeople: 8, maxPeople: 8, durationMinutes: 120, pricePerPerson: '0.00', isActive: true, sortOrder: 1, isNew: true })}
                 className="bg-zinc-900 border border-zinc-800 text-amber-500 px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest"
               >
                 Add Service
               </button>
             </div>
-            <div className="grid grid-cols-1 gap-4">
-              {store.services.map((s: Service) => (
-                <div key={s.id} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                  <div className="space-y-1 flex-1 w-full">
-                    <input
-                      aria-label={`Service name ${s.name}`}
-                      type="text"
-                      value={s.name}
-                      onChange={async e => {
-                        await handleMutation(store.updateService(s.id, { name: e.target.value }), 'Failed to update service name.');
-                      }}
-                      className="w-full bg-transparent border-none text-white font-bold uppercase text-sm outline-none focus:text-amber-500"
-                    />
-                    <p className="text-[9px] text-zinc-600 font-bold uppercase tracking-widest">{s.durationMinutes} Minutes Experience</p>
-                  </div>
-                  <div className="flex items-center gap-4 w-full md:w-auto">
-                    <div className="flex items-center gap-2 bg-zinc-900 px-4 py-2 rounded-xl border border-zinc-800">
-                      <span className="text-[10px] text-zinc-500 uppercase font-bold">Mins:</span>
-                      <input
-                        aria-label={`Service duration minutes for ${s.name}`}
-                        type="number"
-                        step="15"
-                        value={s.durationMinutes}
-                        onChange={async e => {
-                          await handleMutation(store.updateService(s.id, { durationMinutes: parseInt(e.target.value) }), 'Failed to update service duration.');
-                        }}
-                        className="bg-transparent border-none text-white font-mono text-xs w-16 outline-none"
-                      />
-                    </div>
-                    <button
-                      onClick={async () => {
-                        await handleMutation(store.deleteService(s.id), 'Failed to delete service.');
-                      }}
-                      className="text-zinc-800 hover:text-red-500 p-2"
-                      title="Delete service"
-                      aria-label={`Delete service ${s.name}`}
-                    >
-                      <i className="fa-solid fa-trash-can"></i>
-                    </button>
-                  </div>
-                </div>
-              ))}
+            <div className="overflow-x-auto rounded-2xl border border-zinc-900">
+              <table className="min-w-full text-left text-[11px]">
+                <thead className="bg-zinc-950 text-zinc-500 uppercase tracking-widest">
+                  <tr>
+                    <th className="px-4 py-3">Name</th><th className="px-4 py-3">Min</th><th className="px-4 py-3">Max</th><th className="px-4 py-3">Duration</th><th className="px-4 py-3">£/pp</th><th className="px-4 py-3">Preview total</th><th className="px-4 py-3">Active</th><th className="px-4 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {newServiceDraft && <ServiceConfigRow draft={newServiceDraft} onChange={next => setNewServiceDraft(next)} onCancel={() => setNewServiceDraft(null)} onSave={async () => {
+                    const errors = validateServiceDraft(newServiceDraft);
+                    if (Object.keys(errors).length) return;
+                    await handleMutation(store.addService({ name: newServiceDraft.name.trim(), minPeople: newServiceDraft.minPeople, maxPeople: newServiceDraft.maxPeople, durationMinutes: newServiceDraft.durationMinutes, pricePerPersonPence: poundsToPence(Number(newServiceDraft.pricePerPerson)), isActive: newServiceDraft.isActive, sortOrder: newServiceDraft.sortOrder }), 'Failed to add service.');
+                    setNewServiceDraft(null);
+                  }} />}
+                  {store.services.slice().sort((a, b) => a.sortOrder - b.sortOrder).map((service: Service) => {
+                    const draft = serviceDrafts[service.id] || toServiceDraft(service);
+                    return <ServiceConfigRow key={service.id} draft={draft} persistedService={service} onChange={next => setServiceDrafts(prev => ({ ...prev, [service.id]: next }))} onCancel={() => setServiceDrafts(prev => ({ ...prev, [service.id]: toServiceDraft(service) }))} onSave={async () => {
+                      const errors = validateServiceDraft(draft);
+                      if (Object.keys(errors).length) return;
+                      await handleMutation(store.updateService(service.id, { name: draft.name.trim(), minPeople: draft.minPeople, maxPeople: draft.maxPeople, durationMinutes: draft.durationMinutes, pricePerPersonPence: poundsToPence(Number(draft.pricePerPerson)), isActive: draft.isActive, sortOrder: draft.sortOrder }), 'Failed to update service.');
+                    }} onDelete={async () => {
+                      if (!confirm(`Hide service "${service.name}"?`)) return;
+                      await handleMutation(store.deleteService(service.id), 'Failed to hide service.');
+                    }} />;
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -2083,6 +2118,33 @@ function ReportsTab({ store }: { store: any }) {
   );
 }
 
+
+function ServiceConfigRow({ draft, persistedService, onChange, onSave, onCancel, onDelete }: {
+  draft: ServiceDraft;
+  persistedService?: Service;
+  onChange: (next: ServiceDraft) => void;
+  onSave: () => Promise<void>;
+  onCancel: () => void;
+  onDelete?: () => Promise<void>;
+}) {
+  const errors = validateServiceDraft(draft);
+  const isDirty = !persistedService || JSON.stringify(toServiceDraft(persistedService)) !== JSON.stringify(draft);
+  const onKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && isDirty && Object.keys(errors).length === 0) await onSave();
+    if (e.key === 'Escape') onCancel();
+  };
+  return <tr className="border-t border-zinc-900 align-top">
+    <td className="px-4 py-3"><input value={draft.name} onKeyDown={onKeyDown} onChange={e => onChange({ ...draft, name: e.target.value })} className="w-44 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-white" />{errors.name && <p className="text-red-400 text-[10px]">{errors.name}</p>}</td>
+    <td className="px-4 py-3"><input type="number" value={draft.minPeople} onKeyDown={onKeyDown} onChange={e => onChange({ ...draft, minPeople: Number(e.target.value) })} className="w-16 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-white" />{errors.minPeople && <p className="text-red-400 text-[10px]">{errors.minPeople}</p>}</td>
+    <td className="px-4 py-3"><input type="number" value={draft.maxPeople} onKeyDown={onKeyDown} onChange={e => onChange({ ...draft, maxPeople: Number(e.target.value) })} className="w-16 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-white" />{errors.maxPeople && <p className="text-red-400 text-[10px]">{errors.maxPeople}</p>}</td>
+    <td className="px-4 py-3"><input type="number" value={draft.durationMinutes} onKeyDown={onKeyDown} onChange={e => onChange({ ...draft, durationMinutes: Number(e.target.value) })} className="w-20 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-white" />{errors.durationMinutes && <p className="text-red-400 text-[10px]">{errors.durationMinutes}</p>}</td>
+    <td className="px-4 py-3"><input type="text" value={draft.pricePerPerson} onKeyDown={onKeyDown} onChange={e => onChange({ ...draft, pricePerPerson: e.target.value })} className="w-20 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-white" />{errors.pricePerPerson && <p className="text-red-400 text-[10px]">{errors.pricePerPerson}</p>}</td>
+    <td className="px-4 py-3 text-zinc-200">{getServicePreviewTotal({ minPeople: draft.minPeople, maxPeople: draft.maxPeople, pricePerPersonPence: poundsToPence(Number(draft.pricePerPerson || 0)) })}</td>
+    <td className="px-4 py-3"><input type="checkbox" checked={draft.isActive} onChange={e => onChange({ ...draft, isActive: e.target.checked })} /></td>
+    <td className="px-4 py-3"><div className="flex gap-2"><button disabled={!isDirty || Object.keys(errors).length > 0} onClick={onSave} className="px-2 py-1 rounded bg-amber-500 text-black disabled:opacity-40">Save</button><button onClick={onCancel} className="px-2 py-1 rounded border border-zinc-700">Cancel</button>{onDelete && <button onClick={onDelete} className="px-2 py-1 rounded border border-red-500 text-red-400">Delete</button>}</div></td>
+  </tr>;
+}
+
 function BookingModal({ store, onClose, initialDate, booking, prefill }: { store: any, onClose: () => void, initialDate: string, booking?: Booking, prefill?: any }) {
   const [formData, setFormData] = useState({
     name: booking?.customer_name || '',
@@ -2122,7 +2184,7 @@ function BookingModal({ store, onClose, initialDate, booking, prefill }: { store
     const endAt = new Date(startTimestamp + formData.duration * 3600000).toISOString();
     const check = store.validateInterval(formData.roomId, startAt, endAt, booking?.id, formData.staffId);
     if (!check.ok) { alert(check.reason); return; }
-    const pricing = store.calculatePricing(formData.date, formData.guests, Math.max(0, formData.duration - 2));
+    const pricing = store.calculatePricing(formData.date, formData.guests, Math.max(0, formData.duration - 2), undefined, formData.serviceId);
 
     const basePatch = {
       customer_name: formData.name,

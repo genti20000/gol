@@ -6,6 +6,7 @@ import { useStore } from '@/store';
 import { BookingStatus, Extra } from '@/types';
 import { LOGO_URL, BASE_DURATION_HOURS, getGuestLabel } from '@/constants';
 import { isValidBookingDateTime } from '@/lib/bookingValidation';
+import { penceToPounds } from '@/lib/servicePricing';
 import { getCheckoutSummaryFields } from '@/lib/checkoutSummary';
 
 export default function Checkout() {
@@ -48,8 +49,10 @@ export default function Checkout() {
     checkoutSummary.date,
     checkoutSummary.guests,
     checkoutSummary.extraHours,
-    effectivePromo
+    effectivePromo,
+    queryServiceId
   ), [checkoutSummary.date, checkoutSummary.extraHours, checkoutSummary.guests, effectivePromo, store]);
+  const selectedService = useMemo(() => store.services.find(s => s.id === queryServiceId), [store.services, queryServiceId]);
   const enabledExtras = useMemo(() => store.getEnabledExtras(), [store]);
   const extrasTotal = useMemo(() => store.computeExtrasTotal(extrasSelection, guests), [extrasSelection, guests, store]);
   const parsedDateTime = useMemo(() => {
@@ -385,7 +388,10 @@ export default function Checkout() {
           <div className="border-t border-zinc-800 pt-6 space-y-4">
             <div className="flex justify-between items-end">
               <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">Total Price</span>
-              <span className="text-4xl font-bold text-white tracking-tighter">£{pricing.totalPrice + extrasTotal}</span>
+              <div className="text-right">
+                {selectedService && <div className="text-[10px] text-zinc-500 uppercase font-bold">£{penceToPounds(selectedService.pricePerPersonPence).toFixed(2)} per person</div>}
+                <span className="text-4xl font-bold text-white tracking-tighter">£{pricing.totalPrice + extrasTotal}</span>
+              </div>
             </div>
             {store.settings.deposit_enabled && (
               <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl flex justify-between items-center">
