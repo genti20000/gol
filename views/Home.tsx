@@ -44,14 +44,15 @@ export default function Home() {
     }
   }, [date, store.settings]);
 
+  const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promoCode, serviceId), [date, guests, extraHours, promoCode, serviceId, store]);
+  const activeServices = useMemo(() => store.services.filter(s => s.isActive).sort((a, b) => a.sortOrder - b.sortOrder), [store.services]);
+  const selectedService = useMemo(() => activeServices.find(s => s.id === serviceId) || activeServices[0], [activeServices, serviceId]);
+
   useEffect(() => {
     if (!selectedService) return;
     if (guests < selectedService.minPeople || guests > selectedService.maxPeople) setGuests(selectedService.minPeople);
   }, [selectedService, guests]);
 
-  const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promoCode, serviceId), [date, guests, extraHours, promoCode, serviceId, store]);
-  const activeServices = useMemo(() => store.services.filter(s => s.isActive).sort((a, b) => a.sortOrder - b.sortOrder), [store.services]);
-  const selectedService = useMemo(() => activeServices.find(s => s.id === serviceId) || activeServices[0], [activeServices, serviceId]);
   const guestOptions = useMemo(() => {
     if (!selectedService) return [8];
     const list: number[] = [];
