@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { extractBookingToken, isBookingTokenValid } from '@/lib/bookingAccessToken';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
   if (!supabaseUrl || !supabaseServiceKey) {
@@ -20,10 +21,15 @@ export async function GET(
     return NextResponse.json({ error: 'Missing booking id.' }, { status: 400 });
   }
 
+  const bookingToken = await extractBookingToken(request);
+  if (!bookingToken) {
+    return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
+  }
+
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
   const { data, error } = await supabase
     .from('bookings')
-    .select('id,status,booking_ref,customer_email,deposit_amount,confirmed_at,booking_date,start_time,service_id,guests,duration_hours,promo_code,base_total,extras_price,discount_amount,promo_discount_amount,total_price,extras_total,extras_snapshot,room_id,room_name,staff_id,extras_hours')
+    .select('id,status,booking_ref,customer_email,deposit_amount,confirmed_at,booking_date,start_time,service_id,guests,duration_hours,promo_code,base_total,extras_price,discount_amount,promo_discount_amount,total_price,extras_total,extras_snapshot,room_id,room_name,staff_id,extras_hours,booking_access_token')
     .eq('id', bookingId)
     .maybeSingle();
 
@@ -32,6 +38,10 @@ export async function GET(
       console.error('Failed to load booking by id.', error);
     }
     return NextResponse.json({ error: 'Booking not found.' }, { status: 404 });
+  }
+
+  if (!isBookingTokenValid(bookingToken, data.booking_access_token)) {
+    return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
   }
 
   return NextResponse.json({

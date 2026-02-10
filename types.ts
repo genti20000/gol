@@ -102,6 +102,7 @@ export interface Booking {
   confirmed_at?: string | null;
   source?: 'public' | 'admin';
   magicToken?: string;
+  booking_access_token?: string;
   // Deposit tracking
   deposit_amount: number;
   deposit_paid: boolean;
