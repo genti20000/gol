@@ -26,9 +26,13 @@ export interface Service {
   id: string;
   name: string;
   durationMinutes: number;
-  basePrice: number;
+  minPeople: number;
+  maxPeople: number;
+  pricePerPersonPence: number;
+  depositPerPersonPence?: number;
   description?: string;
-  enabled: boolean;
+  isActive: boolean;
+  sortOrder: number;
 }
 
 export interface StaffMember {

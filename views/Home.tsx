@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
-import { LOGO_URL, PRICING_TIERS, EXTRAS, getGuestLabel, WHATSAPP_URL } from '@/constants';
+import { LOGO_URL, EXTRAS, WHATSAPP_URL } from '@/constants';
+import { penceToPounds } from '@/lib/servicePricing';
 
 const formatDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
@@ -31,7 +32,7 @@ export default function Home() {
   // Correctly handle side-effect to select default service
   useEffect(() => {
     if (store.services.length > 0 && !serviceId) {
-      const defaultService = store.services.find(s => s.enabled);
+      const defaultService = store.services.find(s => s.isActive);
       if (defaultService) setServiceId(defaultService.id);
     }
   }, [store.services, serviceId]);
@@ -43,7 +44,20 @@ export default function Home() {
     }
   }, [date, store.settings]);
 
-  const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promoCode), [date, guests, extraHours, promoCode, store]);
+  useEffect(() => {
+    if (!selectedService) return;
+    if (guests < selectedService.minPeople || guests > selectedService.maxPeople) setGuests(selectedService.minPeople);
+  }, [selectedService, guests]);
+
+  const pricing = useMemo(() => store.calculatePricing(date, guests, extraHours, promoCode, serviceId), [date, guests, extraHours, promoCode, serviceId, store]);
+  const activeServices = useMemo(() => store.services.filter(s => s.isActive).sort((a, b) => a.sortOrder - b.sortOrder), [store.services]);
+  const selectedService = useMemo(() => activeServices.find(s => s.id === serviceId) || activeServices[0], [activeServices, serviceId]);
+  const guestOptions = useMemo(() => {
+    if (!selectedService) return [8];
+    const list: number[] = [];
+    for (let i = selectedService.minPeople; i <= selectedService.maxPeople; i += 1) list.push(i);
+    return list;
+  }, [selectedService]);
   const offers = useMemo(() => {
     const items: { id: string; title: string; description?: string }[] = [];
     if (store.settings.midweekDiscountPercent > 0) {
@@ -159,7 +173,7 @@ export default function Home() {
         `}</style>
 
         <form onSubmit={handleSearch} className="glass-panel p-6 sm:p-10 rounded-[2rem] md:rounded-[2.5rem] shadow-2xl space-y-6 md:space-y-10 text-sm">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
             <div className="flex flex-col text-left gap-2">
               <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 ml-1">Date</label>
               <div onClick={() => setShowDatePicker(true)} className="bg-zinc-900/50 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 cursor-pointer hover:border-amber-500 transition-all flex items-center justify-between text-white shadow-inner min-h-[44px]">
@@ -169,9 +183,16 @@ export default function Home() {
             </div>
 
             <div className="flex flex-col text-left gap-2">
+              <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 ml-1">Service</label>
+              <select aria-label="Service" value={serviceId} onChange={(e) => setServiceId(e.target.value)} className="bg-zinc-900/50 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 focus:ring-1 ring-amber-500 outline-none text-white w-full font-bold appearance-none shadow-inner min-h-[44px]">
+                {activeServices.map(service => <option key={service.id} value={service.id} className="bg-zinc-950">{service.name} (£{penceToPounds(service.pricePerPersonPence).toFixed(2)} pp)</option>)}
+              </select>
+            </div>
+
+            <div className="flex flex-col text-left gap-2">
               <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 ml-1">Group Size</label>
               <select aria-label="Group size" value={guests} onChange={(e) => setGuests(parseInt(e.target.value))} className="bg-zinc-900/50 border-zinc-800 border rounded-xl md:rounded-2xl px-5 py-3.5 md:py-4 focus:ring-1 ring-amber-500 outline-none text-white w-full font-bold appearance-none shadow-inner min-h-[44px]">
-                {PRICING_TIERS.map(tier => <option key={tier.min} value={tier.min} className="bg-zinc-950">{getGuestLabel(tier.min)}</option>)}
+                {guestOptions.map(size => <option key={size} value={size} className="bg-zinc-950">{size} Guests</option>)}
               </select>
             </div>
 
@@ -187,6 +208,7 @@ export default function Home() {
             <div className="flex flex-col items-center md:items-start gap-1">
               <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Live Quote</div>
               <div className="flex items-baseline gap-2">
+                {selectedService && <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mr-2">£{penceToPounds(selectedService.pricePerPersonPence).toFixed(2)} pp</span>}
                 <span className="text-4xl md:text-5xl font-bold text-white tracking-tighter">£{pricing.totalPrice}</span>
                 {pricing.discountAmount > 0 && <span className="text-green-500 font-bold text-[10px] uppercase tracking-widest ml-2">-{pricing.discountPercent}% Midweek</span>}
               </div>

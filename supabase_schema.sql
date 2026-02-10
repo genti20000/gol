@@ -31,10 +31,14 @@ CREATE TABLE rooms (
 CREATE TABLE services (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  duration_minutes INTEGER NOT NULL,
-  base_price NUMERIC NOT NULL DEFAULT 0,
+  duration_minutes INTEGER NOT NULL CHECK (duration_minutes BETWEEN 30 AND 600),
+  min_people INTEGER NOT NULL CHECK (min_people >= 1),
+  max_people INTEGER NOT NULL CHECK (max_people >= min_people),
+  price_per_person_pence INTEGER NOT NULL DEFAULT 0 CHECK (price_per_person_pence >= 0),
+  deposit_per_person_pence INTEGER,
   description TEXT,
-  enabled BOOLEAN DEFAULT true,
+  is_active BOOLEAN DEFAULT true,
+  sort_order INTEGER NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -222,8 +226,10 @@ INSERT INTO rooms (id, code, name, min_capacity, max_capacity) VALUES
 ('room-c', 'C', 'Attic', 8, 100)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO services (id, name, duration_minutes, base_price) VALUES
-('srv-1', 'Standard Karaoke Session', 120, 0)
+INSERT INTO services (id, name, duration_minutes, min_people, max_people, price_per_person_pence, is_active, sort_order) VALUES
+('srv-8', '8 People', 120, 8, 8, 1900, true, 1),
+('srv-9', '9 People', 120, 9, 9, 1900, true, 2),
+('srv-10', '10 People', 120, 10, 10, 1900, true, 3)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO extras (id, name, price, pricing_mode, sort_order) VALUES

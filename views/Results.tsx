@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { LOGO_URL, WHATSAPP_URL, getGuestLabel, WHATSAPP_PREFILL_ENABLED } from '@/constants';
+import { penceToPounds } from '@/lib/servicePricing';
 
 export default function Results() {
   const { route, navigate, back } = useRouterShim();
@@ -24,7 +25,8 @@ export default function Results() {
     return store.getValidStartTimes(queryDate, totalDurationMinutes, queryStaffId || undefined, queryServiceId || undefined);
   }, [queryDate, totalDurationMinutes, queryStaffId, queryServiceId, store]);
 
-  const pricing = useMemo(() => store.calculatePricing(queryDate, queryGuests, queryExtraHours, queryPromo), [queryDate, queryGuests, queryExtraHours, queryPromo, store]);
+  const pricing = useMemo(() => store.calculatePricing(queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId), [queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId, store]);
+  const selectedService = useMemo(() => store.services.find(s => s.id === queryServiceId), [store.services, queryServiceId]);
 
   const [waitlistForm, setWaitlistForm] = useState({
     name: '',
@@ -180,7 +182,10 @@ export default function Results() {
           )}
           <div className="flex justify-between items-end border-t border-zinc-800 pt-4 mt-2">
             <span className="text-[10px] font-bold uppercase tracking-widest">Grand Total</span>
-            <span className="text-3xl font-bold text-white tracking-tighter">£{pricing.totalPrice}</span>
+            <div className="flex flex-col items-end">
+              {selectedService && <span className="text-[10px] text-zinc-500 uppercase font-bold">£{penceToPounds(selectedService.pricePerPersonPence).toFixed(2)} per person</span>}
+              <span className="text-3xl font-bold text-white tracking-tighter">£{pricing.totalPrice}</span>
+            </div>
           </div>
         </div>
       </div>

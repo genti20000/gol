@@ -22,7 +22,6 @@ import {
 import { normalizeExtraInfoText } from './lib/extras';
 import {
   ROOMS,
-  PRICING_TIERS,
   EXTRAS as SESSION_EXTRAS,
   MIDWEEK_DISCOUNT_PERCENT,
   DEFAULT_OPERATING_HOURS,
@@ -32,6 +31,7 @@ import {
 } from './constants';
 import { supabase, supabaseConfigured } from './lib/supabase';
 import { computeOfferDiscounts } from './lib/offerUtils';
+import { getServiceBaseTotal, parsePeopleRangeFromName } from './lib/servicePricing';
 
 export type MutationResult = { ok: boolean; error?: string };
 
@@ -57,29 +57,19 @@ const DEFAULT_CAL_SYNC: CalendarSyncConfig = {
 };
 
 const DEFAULT_SERVICES: Service[] = [
-  { id: 'srv-8', name: '8 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-9', name: '9 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-10', name: '10 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-11', name: '11 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-12', name: '12 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-13', name: '13 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-14', name: '14 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-15', name: '15 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-16', name: '16 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-17', name: '17 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-18', name: '18 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-19', name: '19 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-20', name: '20 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-21', name: '21 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-22', name: '22 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-23', name: '23 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-24', name: '24 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-25', name: '25 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-26', name: '26 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-27', name: '27 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-28', name: '28 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-29', name: '29 People', durationMinutes: 120, basePrice: 19, enabled: true },
-  { id: 'srv-30', name: '30 People', durationMinutes: 120, basePrice: 19, enabled: true },
+  ...Array.from({ length: 23 }, (_, i) => {
+    const people = i + 8;
+    return {
+      id: `srv-${people}`,
+      name: `${people} People`,
+      durationMinutes: 120,
+      minPeople: people,
+      maxPeople: people,
+      pricePerPersonPence: 1900,
+      isActive: true,
+      sortOrder: i + 1
+    };
+  })
 ];
 
 const DEFAULT_EXTRAS: Extra[] = [
@@ -106,7 +96,7 @@ interface StoreContextValue {
   extras: Extra[];
   operatingHours: DayOperatingHours[];
   getOperatingWindow: (date: string) => { open: string, close: string } | null;
-  calculatePricing: (date: string, guests: number, extraHours: number, promoCode?: string) => any;
+  calculatePricing: (date: string, guests: number, extraHours: number, promoCode?: string, serviceId?: string) => any;
   getValidStartTimes: (date: string, durationMinutes: number, staffId?: string, serviceId?: string) => string[];
   findFirstAvailableRoomAndStaff: (startAt: string, endAt: string, staffId?: string, serviceId?: string) => any;
   addBooking: (booking: Partial<Booking>) => Promise<Booking | null>;
@@ -305,14 +295,22 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
           deposit_forfeited: b.deposit_forfeited ?? false
         })));
         if (roomsData) setRooms(roomsData as Room[]);
-        if (servicesData) setServices(servicesData.map(s => ({
-          id: s.id,
-          name: s.name,
-          durationMinutes: s.duration_minutes,
-          basePrice: s.base_price,
-          description: s.description,
-          enabled: s.enabled
-        })));
+        if (servicesData) setServices(servicesData.map((s, index) => {
+          const parsedRange = parsePeopleRangeFromName(s.name);
+          const minPeople = Math.max(1, s.min_people ?? parsedRange?.minPeople ?? 8);
+          const maxPeople = Math.max(minPeople, s.max_people ?? parsedRange?.maxPeople ?? minPeople);
+          return {
+            id: s.id,
+            name: s.name,
+            durationMinutes: s.duration_minutes,
+            minPeople,
+            maxPeople,
+            pricePerPersonPence: Math.max(0, Math.floor(s.price_per_person_pence ?? 0)),
+            description: s.description,
+            isActive: s.is_active ?? s.enabled ?? true,
+            sortOrder: s.sort_order ?? (index + 1)
+          };
+        }));
         if (blocksData) setBlocks(blocksData.map(b => ({
           ...b,
           roomId: b.room_id,
@@ -403,11 +401,10 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     return null;
   }, [specialHours, operatingHours]);
 
-  const calculatePricing = useCallback((date: string, guests: number, extraHours: number, promoCode?: string) => {
-    const tier = PRICING_TIERS.find(t => guests >= t.min && guests <= t.max);
-    const basePrice = tier ? tier.price : 0;
+  const calculatePricing = useCallback((date: string, guests: number, extraHours: number, promoCode?: string, serviceId?: string) => {
+    const selectedService = serviceId ? services.find(s => s.id === serviceId) : services.find(s => s.isActive);
+    const baseTotal = getServiceBaseTotal(selectedService, guests);
     const extraPrice = SESSION_EXTRAS.find(e => e.hours === extraHours)?.price || 0;
-    const baseTotal = basePrice;
 
     // compute discounts using offers (midweek / percent / fixed)
     const offers = settings.offers ?? [];
@@ -445,7 +442,7 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
       totalPrice,
       discountPercent
     };
-  }, [promoCodes, settings]);
+  }, [promoCodes, settings, services]);
 
   const validateInterval = useCallback((roomId: string, start: string, end: string, excludeBookingId?: string, staffId?: string, skipWindowCheck = false) => {
     const startTs = new Date(start).getTime();
@@ -960,13 +957,20 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
   }, []);
 
   const addService = useCallback(async (service: Partial<Service>): Promise<MutationResult> => {
+    const parsedRange = parsePeopleRangeFromName(service.name || '');
+    const safeMin = Math.max(1, Math.floor(service.minPeople ?? parsedRange?.minPeople ?? 8));
+    const safeMax = Math.max(safeMin, Math.floor(service.maxPeople ?? parsedRange?.maxPeople ?? safeMin));
     const dbPayload: Record<string, any> = {
       id: service.id,
       name: service.name,
       duration_minutes: service.durationMinutes,
-      base_price: service.basePrice,
+      min_people: safeMin,
+      max_people: safeMax,
+      price_per_person_pence: Math.max(0, Math.floor(service.pricePerPersonPence ?? 0)),
+      deposit_per_person_pence: service.depositPerPersonPence ?? null,
       description: service.description,
-      enabled: service.enabled
+      is_active: service.isActive ?? true,
+      sort_order: service.sortOrder ?? (services.length + 1)
     };
     const { data, error } = await supabase.from('services').insert([dbPayload]).select().single();
     if (error) return { ok: false, error: error.message };
@@ -975,30 +979,38 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
       id: data.id,
       name: data.name,
       durationMinutes: data.duration_minutes,
-      basePrice: data.base_price,
+      minPeople: data.min_people,
+      maxPeople: data.max_people,
+      pricePerPersonPence: data.price_per_person_pence,
+      depositPerPersonPence: data.deposit_per_person_pence ?? undefined,
       description: data.description,
-      enabled: data.enabled
+      isActive: data.is_active,
+      sortOrder: data.sort_order ?? services.length + 1
     };
-    setServices(prev => [...prev, mapped]);
+    setServices(prev => [mapped, ...prev]);
     return { ok: true };
-  }, []);
+  }, [services.length]);
   const updateService = useCallback(async (id: string, patch: Partial<Service>): Promise<MutationResult> => {
     const dbPatch: Record<string, any> = {};
     if (patch.name !== undefined) dbPatch.name = patch.name;
     if (patch.durationMinutes !== undefined) dbPatch.duration_minutes = patch.durationMinutes;
-    if (patch.basePrice !== undefined) dbPatch.base_price = patch.basePrice;
+    if (patch.minPeople !== undefined) dbPatch.min_people = patch.minPeople;
+    if (patch.maxPeople !== undefined) dbPatch.max_people = patch.maxPeople;
+    if (patch.pricePerPersonPence !== undefined) dbPatch.price_per_person_pence = patch.pricePerPersonPence;
+    if (patch.depositPerPersonPence !== undefined) dbPatch.deposit_per_person_pence = patch.depositPerPersonPence;
     if (patch.description !== undefined) dbPatch.description = patch.description;
-    if (patch.enabled !== undefined) dbPatch.enabled = patch.enabled;
-    
+    if (patch.isActive !== undefined) dbPatch.is_active = patch.isActive;
+    if (patch.sortOrder !== undefined) dbPatch.sort_order = patch.sortOrder;
+
     const { error } = await supabase.from('services').update(dbPatch).eq('id', id);
     if (error) return { ok: false, error: error.message };
     setServices(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
     return { ok: true };
   }, []);
   const deleteService = useCallback(async (id: string): Promise<MutationResult> => {
-    const { error } = await supabase.from('services').delete().eq('id', id);
+    const { error } = await supabase.from('services').update({ is_active: false }).eq('id', id);
     if (error) return { ok: false, error: error.message };
-    setServices(prev => prev.filter(s => s.id !== id));
+    setServices(prev => prev.map(s => s.id === id ? { ...s, isActive: false } : s));
     return { ok: true };
   }, []);
 

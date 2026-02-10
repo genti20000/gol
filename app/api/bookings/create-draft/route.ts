@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-import { BASE_DURATION_HOURS, EXTRAS, MIDWEEK_DISCOUNT_PERCENT, PRICING_TIERS } from '@/constants';
+import { BASE_DURATION_HOURS, EXTRAS, MIDWEEK_DISCOUNT_PERCENT } from '@/constants';
 import {
   REQUIRED_BOOKING_DRAFT_FIELDS,
   REQUIRED_BOOKING_INSERT_FIELDS,
@@ -61,10 +61,9 @@ export async function POST(request: Request) {
 
     const { date, time, guests, extraHours, firstName, surname, email } = validation.normalized;
     const promo = payload.promo?.trim() ?? '';
-
-    const tier = PRICING_TIERS.find((t) => guests >= t.min && guests <= t.max);
-    if (!tier) {
-      return NextResponse.json({ error: 'Guest count is out of range.' }, { status: 400 });
+    const serviceId = payload.serviceId;
+    if (!serviceId) {
+      return NextResponse.json({ error: 'Service is required.' }, { status: 400 });
     }
 
     const extraOption = EXTRAS.find((extra) => extra.hours === extraHours);
@@ -84,6 +83,20 @@ export async function POST(request: Request) {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    const { data: selectedService, error: serviceError } = await supabase
+      .from('services')
+      .select('id,min_people,max_people,price_per_person_pence,is_active')
+      .eq('id', serviceId)
+      .maybeSingle();
+
+    if (serviceError || !selectedService || !selectedService.is_active) {
+      return NextResponse.json({ error: 'Selected service is unavailable.' }, { status: 400 });
+    }
+
+    if (guests < selectedService.min_people || guests > selectedService.max_people) {
+      return NextResponse.json({ error: 'Guest count is outside the selected service range.' }, { status: 400 });
+    }
+
     const { data: settings, error: settingsError } = await supabase
       .from('venue_settings')
       .select('deposit_enabled,deposit_amount,midweek_discount_percent,offers')
@@ -95,7 +108,7 @@ export async function POST(request: Request) {
       console.warn('Venue settings row is missing for booking draft, using defaults.');
     }
 
-    const baseTotal = tier.price;
+    const baseTotal = Number(((selectedService.price_per_person_pence * guests) / 100).toFixed(2));
     const extrasPrice = extraOption.price;
     const offerUtils = (await import('@/lib/offerUtils')) as any;
     const offers = settings?.offers ?? [];
