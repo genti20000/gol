@@ -8,6 +8,7 @@ import { LOGO_URL, BASE_DURATION_HOURS, getGuestLabel } from '@/constants';
 import { isValidBookingDateTime } from '@/lib/bookingValidation';
 import { penceToPounds } from '@/lib/servicePricing';
 import { getCheckoutSummaryFields } from '@/lib/checkoutSummary';
+import { computeBookingTotals } from '@/lib/bookingTotals';
 
 export default function Checkout() {
   const { route, navigate, back } = useRouterShim();
@@ -44,23 +45,42 @@ export default function Checkout() {
   }), [draftBooking, date, time, guests, extraHours]);
 
   const effectivePromo = draftBooking?.promo_code || promo;
+  const effectiveServiceId = draftBooking?.service_id || queryServiceId;
 
   const pricing = useMemo(() => store.calculatePricing(
     checkoutSummary.date,
     checkoutSummary.guests,
     checkoutSummary.extraHours,
     effectivePromo,
-    queryServiceId
-  ), [checkoutSummary.date, checkoutSummary.extraHours, checkoutSummary.guests, effectivePromo, store]);
-  const selectedService = useMemo(() => store.services.find(s => s.id === queryServiceId), [store.services, queryServiceId]);
+    effectiveServiceId,
+    checkoutSummary.time
+  ), [checkoutSummary.date, checkoutSummary.extraHours, checkoutSummary.guests, checkoutSummary.time, effectivePromo, effectiveServiceId, store]);
+  const selectedService = useMemo(() => store.services.find(s => s.id === effectiveServiceId), [store.services, effectiveServiceId]);
   const enabledExtras = useMemo(() => store.getEnabledExtras(), [store]);
-  const extrasTotal = useMemo(() => store.computeExtrasTotal(extrasSelection, guests), [extrasSelection, guests, store]);
+  const extrasLineItems = useMemo(() => Object.entries(extrasSelection).map(([id, qty]) => {
+    const extra = store.extras.find((item: Extra) => item.id === id);
+    if (!extra || qty <= 0) return null;
+    const lineTotal = extra.pricingMode === 'per_person'
+      ? extra.price * checkoutSummary.guests * qty
+      : extra.price * qty;
+    return { id, name: extra.name, qty, lineTotal };
+  }).filter(Boolean) as Array<{ id: string; name: string; qty: number; lineTotal: number }>, [extrasSelection, store.extras, checkoutSummary.guests]);
+  const previewTotals = useMemo(() => computeBookingTotals({
+    baseTotal: pricing.baseTotal,
+    extrasPrice: pricing.extrasPrice,
+    discountAmount: pricing.ticketSessionDiscountAmount ?? (pricing.discountAmount + (pricing.offerPercentDiscount || 0) + (pricing.offerFixed || 0)),
+    promoDiscountAmount: pricing.promoDiscountAmount,
+    lineItems: extrasLineItems
+  }), [pricing.baseTotal, pricing.extrasPrice, pricing.ticketSessionDiscountAmount, pricing.discountAmount, pricing.offerPercentDiscount, pricing.offerFixed, pricing.promoDiscountAmount, extrasLineItems]);
+  const ticketSessionDiscount = pricing.ticketSessionDiscountAmount ?? (pricing.discountAmount + (pricing.offerPercentDiscount || 0) + (pricing.offerFixed || 0));
+  const ticketSessionDiscountPercent = pricing.ticketSessionDiscountPercent ?? 0;
+  const extrasTotal = previewTotals.extrasTotal;
   const parsedDateTime = useMemo(() => {
-    if (!date || !time) return null;
-    const timestamp = Date.parse(`${date}T${time}:00`);
+    if (!checkoutSummary.date || !checkoutSummary.time) return null;
+    const timestamp = Date.parse(`${checkoutSummary.date}T${checkoutSummary.time}:00`);
     if (!Number.isFinite(timestamp)) return null;
     return new Date(timestamp);
-  }, [date, time]);
+  }, [checkoutSummary.date, checkoutSummary.time]);
 
   // Show extras step first when available, otherwise go straight to details
   useEffect(() => {
@@ -309,7 +329,7 @@ export default function Checkout() {
                 disabled={isProcessing || !formData.name || !formData.surname || !formData.email}
                 className={`${enabledExtras.length > 0 ? 'flex-[2]' : 'w-full'} gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-50 text-[10px] min-h-[44px] cursor-pointer`}
               >
-                {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : `Confirm Booking £${pricing.totalPrice + extrasTotal}`}
+                {isProcessing ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : `Confirm Booking £${previewTotals.grandTotal}`}
               </button>
             </div>
           </div>
@@ -326,7 +346,7 @@ export default function Checkout() {
                   {parsedDateTime
                     ? parsedDateTime.toLocaleDateString('en-GB', { dateStyle: 'full' })
                     : 'Select a valid date'}{' '}
-                  at {time || 'Select a time'}
+                  at {checkoutSummary.time || 'Select a time'}
                 </p>
               </div>
               <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest">{getGuestLabel(checkoutSummary.guests)}</span>
@@ -344,37 +364,43 @@ export default function Checkout() {
                 <span>£{pricing.extrasPrice}</span>
               </div>
             )}
-            {Object.entries(extrasSelection).map(([id, qty]) => {
-              const extra = store.extras.find(e => e.id === id);
-              if (!extra) return null;
-              const cost = extra.pricingMode === 'per_person' ? extra.price * checkoutSummary.guests * qty : extra.price * qty;
+            {extrasLineItems.map((item) => {
               return (
-                <div key={id} className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-zinc-400 animate-in slide-in-from-left-2">
-                  <span>{extra.name} (x{qty})</span>
-                  <span>£{cost}</span>
+                <div key={item.id} className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-zinc-400 animate-in slide-in-from-left-2">
+                  <span>{item.name} (x{item.qty})</span>
+                  <span>£{item.lineTotal}</span>
                 </div>
               );
             })}
-            {pricing.discountAmount > 0 && (
+            {ticketSessionDiscount > 0 && (
               <div className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-green-500">
-                <span>Midweek Discount</span>
-                <span>-£{pricing.discountAmount}</span>
+                <span>Ticket Discount ({ticketSessionDiscountPercent}% Session Only)</span>
+                <span>-£{ticketSessionDiscount}</span>
               </div>
             )}
             {pricing.promoDiscountAmount > 0 && (
               <div className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-amber-500">
-                <span>Promo Applied</span>
+                <span>Promo Discount (Session Only)</span>
                 <span>-£{pricing.promoDiscountAmount}</span>
               </div>
+            )}
+            {(ticketSessionDiscount > 0 || pricing.promoDiscountAmount > 0) && extrasLineItems.length > 0 && (
+              <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">
+                Discounts apply to ticket/session price only. Add-ons are charged at full price.
+              </p>
             )}
           </div>
 
           <div className="border-t border-zinc-800 pt-6 space-y-4">
             <div className="flex justify-between items-end">
-              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">Total Price</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">Total Due Today</span>
               <div className="text-right">
-                {selectedService && <div className="text-[10px] text-zinc-500 uppercase font-bold">£{penceToPounds(selectedService.pricePerPersonPence).toFixed(2)}</div>}
-                <span className="text-4xl font-bold text-white tracking-tighter">£{pricing.totalPrice + extrasTotal}</span>
+                {selectedService && (
+                  <div className="text-[10px] text-zinc-500 uppercase font-bold">
+                    Ticket price (pp): £{penceToPounds(selectedService.pricePerPersonPence).toFixed(2)}
+                  </div>
+                )}
+                <span className="text-4xl font-bold text-white tracking-tighter">£{previewTotals.grandTotal}</span>
               </div>
             </div>
             {store.settings.deposit_enabled && (

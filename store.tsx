@@ -24,6 +24,8 @@ import {
   ROOMS,
   EXTRAS as SESSION_EXTRAS,
   MIDWEEK_DISCOUNT_PERCENT,
+  EARLY_BIRD_LAST_START_TIME,
+  EARLY_BIRD_PRICE_PER_PERSON,
   DEFAULT_OPERATING_HOURS,
   SLOT_MINUTES,
   BUFFER_MINUTES,
@@ -32,6 +34,7 @@ import {
 import { supabase, supabaseConfigured } from './lib/supabase';
 import { computeOfferDiscounts } from './lib/offerUtils';
 import { getServiceBaseTotal, parsePeopleRangeFromName } from './lib/servicePricing';
+import { computeEarlyBirdDiscount } from './lib/earlyBird';
 
 export type MutationResult = { ok: boolean; error?: string };
 
@@ -193,7 +196,7 @@ interface StoreContextValue {
   extras: Extra[];
   operatingHours: DayOperatingHours[];
   getOperatingWindow: (date: string) => { open: string, close: string } | null;
-  calculatePricing: (date: string, guests: number, extraHours: number, promoCode?: string, serviceId?: string) => any;
+  calculatePricing: (date: string, guests: number, extraHours: number, promoCode?: string, serviceId?: string, startTime?: string) => any;
   getValidStartTimes: (date: string, durationMinutes: number, staffId?: string, serviceId?: string) => string[];
   findFirstAvailableRoomAndStaff: (startAt: string, endAt: string, staffId?: string, serviceId?: string) => any;
   addBooking: (booking: Partial<Booking>) => Promise<Booking | null>;
@@ -468,17 +471,24 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     return null;
   }, [specialHours, operatingHours]);
 
-  const calculatePricing = useCallback((date: string, guests: number, extraHours: number, promoCode?: string, serviceId?: string) => {
+  const calculatePricing = useCallback((date: string, guests: number, extraHours: number, promoCode?: string, serviceId?: string, startTime?: string) => {
     const selectedService = serviceId ? services.find(s => s.id === serviceId) : services.find(s => s.isActive);
     const baseTotal = getServiceBaseTotal(selectedService, guests);
     const extraPrice = SESSION_EXTRAS.find(e => e.hours === extraHours)?.price || 0;
+    const earlyBird = computeEarlyBirdDiscount({
+      baseTotal,
+      guests,
+      startTime,
+      targetPricePerPerson: EARLY_BIRD_PRICE_PER_PERSON,
+      lastStartTime: EARLY_BIRD_LAST_START_TIME
+    });
 
     // compute discounts using offers (midweek / percent / fixed)
     const offers = settings.offers ?? [];
     const offerRes = computeOfferDiscounts(offers, settings.midweekDiscountPercent, date, baseTotal, extraPrice);
 
     const discountPercent = offerRes.effectiveMidweekPercent;
-    const discountAmount = offerRes.midweekDiscountAmount;
+    const discountAmount = offerRes.midweekDiscountAmount + earlyBird.discountAmount;
 
     const subtotal = baseTotal + extraPrice - discountAmount;
 
@@ -497,6 +507,10 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
     const offerFixed = offerRes.offerFixed;
 
     const totalPrice = Math.max(0, afterPromo - offerPercentDiscount - offerFixed);
+    const ticketSessionDiscountAmount = discountAmount + offerPercentDiscount + offerFixed;
+    const ticketSessionDiscountPercent = baseTotal + extraPrice > 0
+      ? Math.round((ticketSessionDiscountAmount / (baseTotal + extraPrice)) * 100)
+      : 0;
 
     return {
       baseTotal,
@@ -507,7 +521,13 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
       offerFixed,
       offerPercentDiscount,
       totalPrice,
-      discountPercent
+      discountPercent,
+      earlyBirdApplied: earlyBird.eligible,
+      earlyBirdDiscountAmount: earlyBird.discountAmount,
+      earlyBirdDiscountPercent: earlyBird.discountPercent,
+      earlyBirdEffectivePp: earlyBird.effectivePp,
+      ticketSessionDiscountAmount,
+      ticketSessionDiscountPercent
     };
   }, [promoCodes, settings, services]);
 

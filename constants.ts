@@ -72,6 +72,8 @@ export const EXTRAS = [
 ];
 
 export const MIDWEEK_DISCOUNT_PERCENT = 25; // Mon, Tue, Wed
+export const EARLY_BIRD_PRICE_PER_PERSON = 15; // applies to slots starting up to 19:00
+export const EARLY_BIRD_LAST_START_TIME = '19:00';
 
 export const DEFAULT_OPERATING_HOURS: DayOperatingHours[] = [
   { day: 0, open: '15:00', close: '03:00', enabled: false }, // Sunday CLOSED

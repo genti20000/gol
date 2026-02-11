@@ -27,6 +27,17 @@ export default function Results() {
 
   const pricing = useMemo(() => store.calculatePricing(queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId), [queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId, store]);
   const selectedService = useMemo(() => store.services.find(s => s.id === queryServiceId), [store.services, queryServiceId]);
+  const slotPricingByTime = useMemo(() => {
+    const entries = validTimes.map((time) => [
+      time,
+      store.calculatePricing(queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId, time)
+    ] as const);
+    return Object.fromEntries(entries);
+  }, [validTimes, store, queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId]);
+  const summaryPricing = useMemo(
+    () => (validTimes[0] ? slotPricingByTime[validTimes[0]] : pricing),
+    [validTimes, slotPricingByTime, pricing]
+  );
 
   const [waitlistForm, setWaitlistForm] = useState({
     name: '',
@@ -166,12 +177,12 @@ export default function Results() {
         <div className="glass-panel p-5 md:p-6 rounded-[1.5rem] md:rounded-[2rem] border-amber-500/20 w-full md:min-w-[280px] md:w-auto">
           <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">
             <span>Subtotal</span>
-            <span className="font-mono">£{pricing.baseTotal + pricing.extrasPrice}</span>
+            <span className="font-mono">£{summaryPricing.baseTotal + summaryPricing.extrasPrice}</span>
           </div>
-          {pricing.discountAmount > 0 && (
+          {(summaryPricing.ticketSessionDiscountAmount || 0) > 0 && (
             <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-green-500 mb-2">
-              <span>Midweek Discount</span>
-              <span className="font-mono">-£{pricing.discountAmount}</span>
+              <span>Ticket Discount ({summaryPricing.ticketSessionDiscountPercent || 0}%)</span>
+              <span className="font-mono">-£{summaryPricing.ticketSessionDiscountAmount}</span>
             </div>
           )}
           {store.settings.deposit_enabled && (
@@ -183,8 +194,8 @@ export default function Results() {
           <div className="flex justify-between items-end border-t border-zinc-800 pt-4 mt-2">
             <span className="text-[10px] font-bold uppercase tracking-widest">Grand Total</span>
             <div className="flex flex-col items-end">
-              {selectedService && <span className="text-[10px] text-zinc-500 uppercase font-bold">£{penceToPounds(selectedService.pricePerPersonPence).toFixed(2)}</span>}
-              <span className="text-3xl font-bold text-white tracking-tighter">£{pricing.totalPrice}</span>
+              {selectedService && <span className="text-[10px] text-zinc-500 uppercase font-bold">From £{penceToPounds(selectedService.pricePerPersonPence).toFixed(2)} pp</span>}
+              <span className="text-3xl font-bold text-white tracking-tighter">£{summaryPricing.totalPrice}</span>
             </div>
           </div>
         </div>
@@ -195,6 +206,14 @@ export default function Results() {
           {validTimes.map(time => (
             <button key={time} onClick={() => handleBook(time)} className="bg-transparent border-none cursor-pointer glass-panel hover:border-amber-500/50 p-5 md:p-6 rounded-xl md:rounded-2xl flex flex-col items-center justify-center gap-2 transition-all group min-h-[100px] md:min-h-[120px] text-zinc-50">
               <span className="text-xl md:text-2xl font-bold font-mono group-hover:text-amber-500 transition-colors">{time}</span>
+              <span className="text-[10px] md:text-[11px] font-bold uppercase tracking-widest text-amber-500">
+                £{slotPricingByTime[time]?.totalPrice ?? pricing.totalPrice}
+              </span>
+              {slotPricingByTime[time]?.earlyBirdApplied && (
+                <span className="text-[9px] font-bold uppercase tracking-widest text-green-500">
+                  Early Bird £15 pp
+                </span>
+              )}
               <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-zinc-500">
                 {isProcessing ? <i className="fa-solid fa-spinner fa-spin"></i> : 'Book Now'}
               </span>

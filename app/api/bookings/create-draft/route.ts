@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-import { BASE_DURATION_HOURS, EXTRAS, MIDWEEK_DISCOUNT_PERCENT } from '@/constants';
+import { BASE_DURATION_HOURS, EXTRAS, EARLY_BIRD_LAST_START_TIME, EARLY_BIRD_PRICE_PER_PERSON } from '@/constants';
 import {
   REQUIRED_BOOKING_DRAFT_FIELDS,
   REQUIRED_BOOKING_INSERT_FIELDS,
@@ -12,6 +12,7 @@ import { buildDraftBookingPayload } from '@/lib/bookingPayload';
 import { computeBookingTotals } from '@/lib/bookingTotals';
 import { computeOfferDiscounts } from '@/lib/offerUtils';
 import { computeAmountDueNow } from '@/lib/paymentLogic';
+import { computeEarlyBirdDiscount } from '@/lib/earlyBird';
 import { BookingStatus } from '@/types';
 
 type DraftRequest = {
@@ -113,10 +114,17 @@ export async function POST(request: Request) {
 
     const baseTotal = Number(((selectedService.price_per_person_pence * guests) / 100).toFixed(2));
     const extrasPrice = extraOption.price;
+    const earlyBird = computeEarlyBirdDiscount({
+      baseTotal,
+      guests,
+      startTime: time,
+      targetPricePerPerson: EARLY_BIRD_PRICE_PER_PERSON,
+      lastStartTime: EARLY_BIRD_LAST_START_TIME
+    });
     const offers = settings?.offers ?? [];
     const offerRes = computeOfferDiscounts(offers, settings?.midweek_discount_percent, date, baseTotal, extrasPrice);
     const discountPercent = offerRes.effectiveMidweekPercent;
-    const discountAmount = offerRes.midweekDiscountAmount;
+    const discountAmount = offerRes.midweekDiscountAmount + earlyBird.discountAmount;
 
     let promoDiscountAmount = 0;
     let promoCodeToStore: string | null = promo ? promo : null;
