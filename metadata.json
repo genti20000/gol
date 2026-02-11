@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Qwen",
+  "description": "A premium, production-grade karaoke room booking platform with real-time availability, dynamic pricing (Early Bird/Classic), and an integrated admin dashboard.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

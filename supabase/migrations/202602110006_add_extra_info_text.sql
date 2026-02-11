@@ -1,0 +1,2 @@
+ALTER TABLE extras
+ADD COLUMN IF NOT EXISTS info_text TEXT;

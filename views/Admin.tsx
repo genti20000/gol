@@ -1,0 +1,2675 @@
+
+"use client";
+
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import { useStore, type MutationResult } from '../store';
+import { supabase, supabaseConfigured } from '../lib/supabase';
+import { OperatingHourRow } from './OperatingHourRow';
+import AdminBookingsList from './AdminBookingsList';
+import {
+  Booking,
+  BookingStatus,
+  Room,
+  DayOperatingHours,
+  RoomBlock,
+  RecurringBlock,
+  PromoCode,
+  Service,
+  StaffMember,
+  Customer,
+  WaitlistEntry,
+  Extra,
+  Offer
+} from '../types';
+import { ROOMS, LOGO_URL, PRICING_TIERS, EXTRAS, SLOT_MINUTES, BUFFER_MINUTES, getGuestLabel, LS_ADMIN_USERS } from '../constants';
+import { formatPounds, getServicePreviewTotal, parsePeopleRangeFromName, poundsToPence, penceToPounds } from '../lib/servicePricing';
+
+type Tab = 'bookings' | 'bookings-list' | 'customers' | 'blocks' | 'settings' | 'reports';
+type ViewMode = 'day' | 'week' | 'month';
+
+const FOOD_EXTRA_MATCHERS = [/pizza/i, /platter/i, /food/i, /meal/i, /buffet/i, /catering/i, /snack/i, /dessert/i];
+const DRINK_EXTRA_MATCHERS = [/drink/i, /prosecco/i, /beer/i, /wine/i, /cocktail/i, /champagne/i, /soda/i, /soft drink/i, /juice/i, /mocktail/i, /spirits/i];
+
+const hasMatchingExtra = (booking: Booking, matchers: RegExp[]) =>
+  (booking.extras || []).some(extra => matchers.some(matcher => matcher.test(extra.nameSnapshot)));
+
+const getBookingIndicators = (booking: Booking) => {
+  const hasSpecialRequests = Boolean(booking.notes && booking.notes.trim().length > 0);
+  const hasFood = hasMatchingExtra(booking, FOOD_EXTRA_MATCHERS);
+  const hasDrink = hasMatchingExtra(booking, DRINK_EXTRA_MATCHERS);
+  return { hasSpecialRequests, hasFood, hasDrink };
+};
+
+const handleMutation = async (action: Promise<MutationResult>, fallbackMessage: string) => {
+  const result = await action;
+  if (!result.ok) {
+    alert(result.error ?? fallbackMessage);
+    return false;
+  }
+  return true;
+};
+
+
+
+interface ServiceDraft {
+  id: string;
+  name: string;
+  peopleCount: number;
+  durationMinutes: number;
+  pricePerPerson: string;
+  isActive: boolean;
+  sortOrder: number;
+  isNew?: boolean;
+}
+
+const getServiceNameSuffix = (name: string) => {
+  const suffix = String(name || '').replace(/^\s*\d+\s*/i, '').trim();
+  return suffix || 'People';
+};
+
+const buildServiceName = (peopleCount: number, suffix: string) => {
+  const safePeople = Math.max(1, Math.floor(Number(peopleCount) || 1));
+  const safeSuffix = String(suffix || '').trim() || 'People';
+  return `${safePeople} ${safeSuffix}`;
+};
+
+const toServiceDraft = (service: Service): ServiceDraft => ({
+  id: service.id,
+  name: buildServiceName(
+    parsePeopleRangeFromName(service.name)?.minPeople ?? service.minPeople,
+    getServiceNameSuffix(service.name)
+  ),
+  peopleCount: parsePeopleRangeFromName(service.name)?.minPeople ?? service.minPeople,
+  durationMinutes: service.durationMinutes,
+  pricePerPerson: formatPounds(penceToPounds(service.pricePerPersonPence)),
+  isActive: service.isActive,
+  sortOrder: service.sortOrder
+});
+
+const validateServiceDraft = (draft: ServiceDraft) => {
+  const errors: Partial<Record<keyof ServiceDraft, string>> = {};
+  if (!Number.isInteger(draft.peopleCount) || draft.peopleCount < 1) errors.peopleCount = 'People must be at least 1.';
+  if (!Number.isInteger(draft.durationMinutes) || draft.durationMinutes < 30 || draft.durationMinutes > 600) errors.durationMinutes = 'Duration must be between 30 and 600.';
+  if (!/^\d+(\.\d{0,2})?$/.test(draft.pricePerPerson) || Number(draft.pricePerPerson) < 0) errors.pricePerPerson = '£ must be 0 or higher.';
+  return errors;
+};
+
+const parseAllowlist = (value: string) =>
+  value
+    .split(',')
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean);
+
+export default function Admin() {
+  const store = useStore();
+  const [activeTab, setActiveTab] = useState<Tab>('bookings');
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [credentials, setCredentials] = useState({ email: '', password: '' });
+  const [localAllowlist, setLocalAllowlist] = useState<string[]>([]);
+  const [localAllowlistInput, setLocalAllowlistInput] = useState('');
+  const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const calSyncConfig = store.calSync;
+  const [serviceDrafts, setServiceDrafts] = useState<Record<string, ServiceDraft>>({});
+  const [newServiceDraft, setNewServiceDraft] = useState<ServiceDraft | null>(null);
+
+
+  const allowedEmails = useMemo(
+    () => {
+      const envAllowlist = parseAllowlist(process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? '');
+      const combined = new Set([...envAllowlist, ...localAllowlist]);
+      return Array.from(combined);
+    },
+    [localAllowlist]
+  );
+
+  const allowlistConfigured = useMemo(() => allowedEmails.length > 0, [allowedEmails.length]);
+
+  const isAllowed = useMemo(() => {
+    if (!session?.user?.email) return false;
+    if (!allowlistConfigured) return false;
+    return allowedEmails.includes(session.user.email.toLowerCase());
+  }, [allowedEmails, allowlistConfigured, session?.user?.email]);
+
+  useEffect(() => {
+    if (!supabaseConfigured) {
+      setAuthLoading(false);
+      setAuthError('Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.');
+      return;
+    }
+    let isMounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!isMounted) return;
+      setSession(data.session);
+      setAuthLoading(false);
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      isMounted = false;
+      data.subscription.unsubscribe();
+    };
+  }, [supabaseConfigured]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const storedAllowlist = localStorage.getItem(LS_ADMIN_USERS) ?? '';
+    setLocalAllowlistInput(storedAllowlist);
+    setLocalAllowlist(parseAllowlist(storedAllowlist));
+  }, []);
+
+  useEffect(() => {
+    setServiceDrafts(prev => {
+      const next: Record<string, ServiceDraft> = { ...prev };
+      store.services.forEach(service => {
+        if (!next[service.id]) next[service.id] = toServiceDraft(service);
+      });
+      return next;
+    });
+  }, [store.services]);
+
+  useEffect(() => {
+    if (!session?.user?.email) return;
+    if (localAllowlistInput.trim()) return;
+    setLocalAllowlistInput(session.user.email);
+  }, [localAllowlistInput, session?.user?.email]);
+
+  const handleLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setAuthError(null);
+    const { error } = await supabase.auth.signInWithPassword({
+      email: credentials.email,
+      password: credentials.password
+    });
+    if (error) {
+      setAuthError(error.message);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+  };
+
+  const handleViewBooking = (booking: Booking) => {
+    setViewingBooking(booking);
+    setShowBookingModal(true);
+  };
+
+  const handleLocalAllowlistSave = (event: React.FormEvent) => {
+    event.preventDefault();
+    const trimmedValue = localAllowlistInput.trim();
+    if (typeof window !== 'undefined') {
+      if (trimmedValue) {
+        localStorage.setItem(LS_ADMIN_USERS, trimmedValue);
+      } else {
+        localStorage.removeItem(LS_ADMIN_USERS);
+      }
+    }
+    setLocalAllowlist(parseAllowlist(trimmedValue));
+  };
+
+  useEffect(() => {
+    const config = calSyncConfig;
+    if (!config.enabled || store.loading) return;
+
+    const pushSnapshot = async () => {
+      try {
+        const payload = {
+          token: config.token,
+          includeCustomerName: config.includeCustomerName,
+          includeBlocks: config.includeBlocks,
+          includePending: config.includePending,
+          bookings: store.bookings,
+          blocks: store.blocks,
+          recurringBlocks: store.recurringBlocks,
+          rooms: store.rooms,
+          updatedAt: new Date().toISOString()
+        };
+
+        const res = await fetch("/.netlify/functions/calendar-snapshot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+          setLastSyncTime(new Date().toLocaleTimeString());
+        }
+      } catch (err) {
+        console.warn("Sync failed (possibly local mode):", err);
+      }
+    };
+    pushSnapshot();
+  }, [
+    calSyncConfig,
+    store.bookings,
+    store.blocks,
+    store.recurringBlocks,
+    store.rooms,
+    store.loading
+  ]);
+
+  if (authLoading) {
+    return <div className="p-20 text-center font-bold animate-pulse text-zinc-500 uppercase tracking-widest text-xs">Checking Admin Session...</div>;
+  }
+
+  if (!supabaseConfigured) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="glass-panel p-8 md:p-10 rounded-[2rem] border-red-500/30 max-w-md w-full text-center space-y-6">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-500/10 border border-red-500/30 mx-auto">
+            <i className="fa-solid fa-triangle-exclamation text-2xl text-red-400"></i>
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-xl font-bold uppercase tracking-tighter">Supabase not configured</h1>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">
+              Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable admin access.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <form onSubmit={handleLogin} className="glass-panel p-8 md:p-10 rounded-[2rem] border-zinc-800 max-w-md w-full space-y-6 shadow-2xl">
+          <div className="space-y-2 text-center">
+            <h1 className="text-2xl font-bold uppercase tracking-tighter text-white">Admin Sign In</h1>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">Authorised staff only</p>
+          </div>
+          <div className="space-y-4">
+            <div className="flex flex-col gap-2">
+              <label htmlFor="admin-email" className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Email</label>
+              <input
+                id="admin-email"
+                type="email"
+                required
+                value={credentials.email}
+                onChange={(event) => setCredentials(prev => ({ ...prev, email: event.target.value }))}
+                className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner"
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label htmlFor="admin-password" className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Password</label>
+              <input
+                id="admin-password"
+                type="password"
+                required
+                value={credentials.password}
+                onChange={(event) => setCredentials(prev => ({ ...prev, password: event.target.value }))}
+                className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white outline-none focus:ring-1 ring-amber-500 shadow-inner"
+              />
+            </div>
+          </div>
+          {authError && (
+            <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-red-200 text-center">
+              {authError}
+            </div>
+          )}
+          <button type="submit" className="w-full gold-gradient text-black py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-xl shadow-amber-500/10 active:scale-95 transition-transform">
+            Sign In
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  if (!isAllowed) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="glass-panel p-8 md:p-10 rounded-[2rem] border-red-500/30 max-w-md w-full text-center space-y-6">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-500/10 border border-red-500/30 mx-auto">
+            <i className="fa-solid fa-ban text-2xl text-red-400"></i>
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-xl font-bold uppercase tracking-tighter">
+              {allowlistConfigured ? 'Access Denied' : 'Admin allowlist not configured'}
+            </h1>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">
+              {allowlistConfigured
+                ? 'Your account is not authorised to access the admin console.'
+                : 'Set NEXT_PUBLIC_ADMIN_EMAILS to enable admin access.'}
+            </p>
+          </div>
+          {!allowlistConfigured && (
+            <form onSubmit={handleLocalAllowlistSave} className="space-y-3 text-left">
+              <div className="space-y-2">
+                <label className="text-[9px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Local allowlist (comma-separated)</label>
+                <input
+                  type="text"
+                  value={localAllowlistInput}
+                  onChange={(event) => setLocalAllowlistInput(event.target.value)}
+                  placeholder="name@company.com, admin@company.com"
+                  className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-4 py-3 text-[11px] text-white outline-none focus:ring-1 ring-amber-500 shadow-inner"
+                />
+              </div>
+              <p className="text-[9px] uppercase tracking-widest text-zinc-500">
+                Saved only in this browser for local access.
+              </p>
+              <button
+                type="submit"
+                className="w-full gold-gradient text-black py-3 rounded-xl text-[9px] font-bold uppercase tracking-widest shadow-xl shadow-amber-500/10 active:scale-95 transition-transform"
+              >
+                Save Allowlist
+              </button>
+            </form>
+          )}
+          <button
+            onClick={handleSignOut}
+            className="w-full bg-zinc-900 border border-zinc-800 py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest text-white"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (store.loadError) {
+    return (
+      <div className="p-20 text-center font-bold uppercase tracking-widest text-red-400 text-xs">
+        {store.loadError || 'Failed to load admin data. Please refresh and try again.'}
+      </div>
+    );
+  }
+
+  if (store.loading) return <div className="p-20 text-center font-bold animate-pulse text-zinc-500 uppercase tracking-widest text-xs">Initialising Admin Console...</div>;
+
+  return (
+    <div className="min-h-screen pb-8 md:pb-16 px-3 sm:px-4 pt-4 sm:pt-8 md:max-w-7xl md:mx-auto">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 sm:gap-8 mb-6 sm:mb-12">
+        <div className="flex items-center gap-3 sm:gap-6">
+          <img src={LOGO_URL} alt="Logo" className="h-10 opacity-60" />
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-bold uppercase tracking-tighter text-white">Console</h2>
+            <p className="text-zinc-500 font-bold uppercase tracking-widest text-[9px]">LKC Private Operations</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col lg:flex-row items-start lg:items-center gap-3 sm:gap-4 w-full lg:w-auto">
+          <nav className="flex bg-zinc-900/50 p-1.5 rounded-2xl border border-zinc-800 w-full lg:w-auto overflow-x-auto no-scrollbar shadow-2xl">
+            {([
+              { id: 'bookings', label: 'Bookings' },
+              { id: 'bookings-list', label: 'Bookings List' },
+              { id: 'customers', label: 'Customers' },
+              { id: 'blocks', label: 'Blocks' },
+              { id: 'settings', label: 'Settings' },
+              { id: 'reports', label: 'Reports' }
+            ] as Array<{ id: Tab; label: string }>).map(t => (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                className={`flex-1 lg:flex-none px-3 sm:px-5 py-2.5 rounded-xl text-[8px] sm:text-[9px] font-bold uppercase tracking-widest transition-all whitespace-nowrap min-h-[44px] ${activeTab === t.id ? 'bg-amber-500 text-black' : 'text-zinc-500 hover:text-white'}`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </nav>
+          <div className="flex items-center gap-2 sm:gap-3 text-[8px] sm:text-[9px] uppercase tracking-widest text-zinc-500">
+            <span className="truncate max-w-[46vw] sm:max-w-none">{session.user.email}</span>
+            <button
+              onClick={handleSignOut}
+              className="bg-zinc-900 border border-zinc-800 py-2 px-4 rounded-full text-[9px] font-bold uppercase tracking-widest text-zinc-300 hover:text-white transition-colors"
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="animate-in fade-in duration-500">
+        {activeTab === 'bookings' && <BookingsTab store={store} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />}
+        {activeTab === 'bookings-list' && (
+          <AdminBookingsList rooms={store.rooms} allBookings={store.bookings} onViewBooking={handleViewBooking} />
+        )}
+        {activeTab === 'customers' && <CustomersTab store={store} />}
+        {activeTab === 'blocks' && <BlocksTab store={store} selectedDate={selectedDate} />}
+        {activeTab === 'settings' && <SettingsTab store={store} lastSyncTime={lastSyncTime} />}
+        {activeTab === 'reports' && <ReportsTab store={store} />}
+      </div>
+
+      {showBookingModal && viewingBooking && (
+        <BookingModal
+          store={store}
+          onClose={() => { setShowBookingModal(false); setViewingBooking(null); }}
+          initialDate={selectedDate}
+          booking={viewingBooking}
+        />
+      )}
+    </div>
+  );
+}
+
+function AdminModal({ open, title, body, canApply, onApply, onCancel, applyLabel = "Apply" }: { open: boolean, title: string, body: string, canApply: boolean, onApply: () => void, onCancel: () => void, applyLabel?: string }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/90 backdrop-blur-sm" onClick={onCancel}></div>
+      <div className="relative glass-panel p-8 rounded-3xl border-zinc-800 max-w-sm w-full animate-in zoom-in-95 duration-200 shadow-2xl">
+        <h3 className="text-lg font-bold uppercase tracking-tighter text-white mb-2">{title}</h3>
+        <p className="text-zinc-400 text-xs font-medium uppercase tracking-widest leading-relaxed mb-8">{body}</p>
+        <div className="flex gap-4">
+          <button onClick={onCancel} className="flex-1 bg-zinc-900 border border-zinc-800 py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest min-h-[48px]">Cancel</button>
+          {canApply && (
+            <button onClick={onApply} className="flex-1 gold-gradient text-black py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest min-h-[48px]">{applyLabel}</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BookingsTab({ store, selectedDate, setSelectedDate }: { store: any, selectedDate: string, setSelectedDate: (d: string) => void }) {
+  const [viewMode, setViewMode] = useState<ViewMode>('day');
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
+  const [prefill, setPrefill] = useState<any>(null);
+  const [inspectorBooking, setInspectorBooking] = useState<Booking | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [rowHeight, setRowHeight] = useState(48);
+  const [activeRooms, setActiveRooms] = useState<Record<string, boolean>>({});
+  const [confirmModal, setConfirmModal] = useState<{ open: boolean, title: string, body: string, canApply: boolean, onApply: () => void } | null>(null);
+
+  const isClosed = !store.getOperatingWindow(selectedDate);
+  const isPastDay = new Date(selectedDate).getTime() < new Date().setHours(0, 0, 0, 0);
+
+  useEffect(() => {
+    setActiveRooms((current) => {
+      const next = { ...current };
+      store.rooms.forEach((room: Room) => {
+        if (typeof next[room.id] === 'undefined') {
+          next[room.id] = true;
+        }
+      });
+      return next;
+    });
+  }, [store.rooms]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const persisted = Number(window.localStorage.getItem('lkc-admin-vertical-zoom') ?? '48');
+    if (!Number.isNaN(persisted)) {
+      setRowHeight(Math.min(96, Math.max(24, persisted)));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('lkc-admin-vertical-zoom', String(rowHeight));
+  }, [rowHeight]);
+
+  useEffect(() => {
+    const handleKeydown = (event: KeyboardEvent) => {
+      const key = typeof event.key === 'string' ? event.key : '';
+      if (event.key === 'Escape') {
+        setInspectorBooking(null);
+      }
+      if (key.toLowerCase() === 'n' && viewMode === 'day' && !isClosed && !isPastDay) {
+        event.preventDefault();
+        setEditingBooking(null);
+        setPrefill(null);
+        setShowManualModal(true);
+      }
+      if (event.key === '+' || event.key === '=') {
+        event.preventDefault();
+        setRowHeight((h) => Math.min(96, h + 4));
+      }
+      if (event.key === '-') {
+        event.preventDefault();
+        setRowHeight((h) => Math.max(24, h - 4));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeydown);
+    return () => window.removeEventListener('keydown', handleKeydown);
+  }, [isClosed, isPastDay, viewMode]);
+
+  const handleEdit = (id: string) => {
+    const b = store.bookings.find((booking: Booking) => booking.id === id);
+    if (b) {
+      setInspectorBooking(b);
+      setEditingBooking(b);
+      setPrefill(null);
+      setShowManualModal(true);
+    }
+  };
+
+  const handleTapToCreate = (data: { date: string, roomId?: string, time?: string }) => {
+    setEditingBooking(null);
+    setPrefill(data);
+    setShowManualModal(true);
+  };
+
+  const handleCommitChange = (booking: Booking, patch: any, skipConfirm = false) => {
+    const timeChanged = patch.start_at || patch.end_at;
+    const roomChanged = patch.room_id && patch.room_id !== booking.room_id;
+
+    const commit = async () => {
+      const ok = await handleMutation(store.updateBooking(booking.id, patch), 'Failed to update booking.');
+      if (ok) setConfirmModal(null);
+    };
+
+    if (!skipConfirm && booking.status === BookingStatus.CONFIRMED && (timeChanged || roomChanged)) {
+      setConfirmModal({
+        open: true,
+        title: "Confirm Reschedule",
+        body: `This booking for ${booking.customer_name} is already confirmed. Are you sure you want to modify the slot?`,
+        canApply: true,
+        onApply: commit
+      });
+    } else {
+      commit();
+    }
+  };
+
+  const onValidationFailure = (reason: string) => {
+    setConfirmModal({
+      open: true,
+      title: "Conflict Detected",
+      body: reason || "This slot is unavailable due to an existing booking, block, or venue operating hours.",
+      canApply: false,
+      onApply: () => { }
+    });
+  };
+
+  return (
+    <div className="glass-panel rounded-[1.5rem] sm:rounded-[2.5rem] border-zinc-800 shadow-2xl overflow-hidden">
+      <div className="sticky top-0 z-40 border-b border-zinc-900 bg-zinc-950/95 backdrop-blur px-4 py-3 sm:px-6 sm:py-4">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2 min-h-[64px]">
+            <button onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])} className="bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2 text-[10px] font-bold uppercase tracking-widest">Today</button>
+            <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-[11px] font-bold" />
+            <div className="flex items-center gap-1 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800">
+              <button onClick={() => setViewMode('day')} className={`px-4 py-2 rounded-lg text-[9px] font-bold uppercase tracking-widest ${viewMode === 'day' ? 'bg-amber-500 text-black' : 'text-zinc-500'}`}>Day</button>
+              <button onClick={() => setViewMode('week')} className={`px-4 py-2 rounded-lg text-[9px] font-bold uppercase tracking-widest ${viewMode === 'week' ? 'bg-amber-500 text-black' : 'text-zinc-500'}`}>Week</button>
+              <button onClick={() => setViewMode('month')} className={`px-4 py-2 rounded-lg text-[9px] font-bold uppercase tracking-widest ${viewMode === 'month' ? 'bg-amber-500 text-black' : 'text-zinc-500'}`}>Month</button>
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Vertical Zoom</span>
+              <button onClick={() => setRowHeight(h => Math.max(24, h - 4))} className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800">-</button>
+              <input type="range" min={24} max={96} step={4} value={rowHeight} onChange={e => setRowHeight(Number(e.target.value))} aria-label="Vertical Zoom" className="w-28 accent-amber-500" />
+              <button onClick={() => setRowHeight(h => Math.min(96, h + 4))} className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800">+</button>
+              {viewMode === 'day' && !isClosed && !isPastDay && (
+                <button onClick={() => { setEditingBooking(null); setPrefill(null); setShowManualModal(true); }} className="gold-gradient text-black px-5 py-2 rounded-lg text-[9px] font-bold uppercase tracking-widest">
+                  Add Booking
+                </button>
+              )}
+              <button className="w-8 h-8 rounded-lg border border-zinc-800 bg-zinc-900" aria-label="More"><i className="fa-solid fa-ellipsis-vertical"></i></button>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {store.rooms.map((room: Room) => (
+              <button
+                key={room.id}
+                onClick={() => setActiveRooms(prev => ({ ...prev, [room.id]: !prev[room.id] }))}
+                className={`px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest border ${activeRooms[room.id] !== false ? 'border-amber-500/50 text-amber-300 bg-amber-500/10' : 'border-zinc-800 text-zinc-500 bg-zinc-900'}`}
+              >
+                {room.name}
+              </button>
+            ))}
+            <input
+              type="search"
+              placeholder="Search name/email"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="ml-auto bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-[11px] min-w-[220px]"
+            />
+          </div>
+        </div>
+      </div>
+
+      {viewMode === 'day' ? (
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] min-h-[calc(100vh-19rem)]">
+          <div className="min-w-0 p-4 sm:p-6">
+            <TimelineView
+              store={store}
+              date={selectedDate}
+              onSelectBooking={(id: string) => {
+                const booking = store.bookings.find((item: Booking) => item.id === id) || null;
+                setInspectorBooking(booking);
+              }}
+              onTapToCreate={handleTapToCreate}
+              onCommitChange={handleCommitChange}
+              onValidationFailure={onValidationFailure}
+              rowHeight={rowHeight}
+              roomFilters={activeRooms}
+              searchQuery={searchQuery}
+            />
+          </div>
+          <aside className="border-l border-zinc-900 bg-zinc-950">
+            <BookingInspector
+              booking={inspectorBooking}
+              onClose={() => setInspectorBooking(null)}
+              onToggleStatus={async () => {
+                if (!inspectorBooking) return;
+                const nextStatus = inspectorBooking.status === BookingStatus.CONFIRMED ? BookingStatus.PENDING : BookingStatus.CONFIRMED;
+                const ok = await handleMutation(store.updateBooking(inspectorBooking.id, { status: nextStatus }), 'Failed to update status.');
+                if (ok) {
+                  setInspectorBooking({ ...inspectorBooking, status: nextStatus });
+                }
+              }}
+              onEdit={() => inspectorBooking && handleEdit(inspectorBooking.id)}
+              onCancel={async () => {
+                if (!inspectorBooking) return;
+                if (!confirm('Cancel this booking?')) return;
+                const ok = await handleMutation(store.updateBooking(inspectorBooking.id, { status: BookingStatus.CANCELLED }), 'Failed to cancel booking.');
+                if (ok) setInspectorBooking(null);
+              }}
+            />
+          </aside>
+        </div>
+      ) : viewMode === 'week' ? (
+        <WeekView store={store} selectedDate={selectedDate} onSelectDay={setSelectedDate} onTapEmpty={handleTapToCreate} />
+      ) : (
+        <MonthCalendar store={store} onSelectDay={(d) => { setSelectedDate(d); setViewMode('day'); }} />
+      )}
+
+      {showManualModal && (
+        <BookingModal
+          store={store}
+          onClose={() => { setShowManualModal(false); setEditingBooking(null); setPrefill(null); }}
+          initialDate={selectedDate}
+          booking={editingBooking || undefined}
+          prefill={prefill || undefined}
+        />
+      )}
+
+      <AdminModal
+        open={!!confirmModal?.open}
+        title={confirmModal?.title || ''}
+        body={confirmModal?.body || ''}
+        canApply={!!confirmModal?.canApply}
+        onApply={() => confirmModal?.onApply()}
+        onCancel={() => setConfirmModal(null)}
+        applyLabel={confirmModal?.title.includes('Reschedule') ? 'Yes, Update' : 'OK'}
+      />
+    </div>
+  );
+}
+
+function BookingInspector({ booking, onClose, onToggleStatus, onEdit, onCancel }: { booking: Booking | null, onClose: () => void, onToggleStatus: () => void, onEdit: () => void, onCancel: () => void }) {
+  if (!booking) {
+    return <div className="h-full p-6 text-[10px] font-bold uppercase tracking-widest text-zinc-600">Select a booking to inspect details.</div>;
+  }
+
+  return (
+    <div className="h-full p-5 space-y-5">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-xs text-zinc-500 uppercase tracking-widest">Inspector</p>
+          <h3 className="text-lg font-bold text-white">{booking.customer_name}</h3>
+          <p className="text-xs text-zinc-400">{booking.customer_email}</p>
+        </div>
+        <button onClick={onClose} className="text-zinc-500 hover:text-white"><i className="fa-solid fa-xmark"></i></button>
+      </div>
+      <div className="space-y-2 text-xs">
+        <p><span className="text-zinc-500">Time:</span> {new Date(booking.start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {new Date(booking.end_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+        <p><span className="text-zinc-500">Room:</span> {booking.room_name}</p>
+        <p><span className="text-zinc-500">Guests:</span> {booking.guests}</p>
+        <p><span className="text-zinc-500">Status:</span> {booking.status}</p>
+        <p><span className="text-zinc-500">Extras:</span> £{booking.extras_price || 0}</p>
+        <p><span className="text-zinc-500">Notes:</span> {booking.notes || '—'}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={onToggleStatus} className="bg-zinc-900 border border-zinc-800 py-2 rounded-lg text-[10px] font-bold uppercase">{booking.status === BookingStatus.CONFIRMED ? 'Unconfirm' : 'Confirm'}</button>
+        <button onClick={onEdit} className="bg-zinc-900 border border-zinc-800 py-2 rounded-lg text-[10px] font-bold uppercase">Edit</button>
+        <button onClick={onCancel} className="bg-red-500/20 border border-red-500/30 py-2 rounded-lg text-[10px] font-bold uppercase text-red-300">Cancel</button>
+        <a href={booking.customer_phone ? `https://wa.me/${booking.customer_phone.replace(/\D/g, '')}` : '#'} target="_blank" rel="noreferrer" className="bg-zinc-900 border border-zinc-800 py-2 rounded-lg text-[10px] font-bold uppercase text-center">WhatsApp</a>
+      </div>
+    </div>
+  );
+}
+
+function WaitlistListing({ store, date }: { store: any, date: string }) {
+  const list = store.getWaitlistForDate(date);
+
+  if (list.length === 0) return <p className="text-[10px] text-zinc-700 uppercase tracking-[0.2em] italic px-2">No waitlist entries for this day.</p>;
+
+  return (
+    <div className="space-y-4">
+      {list.map((w: WaitlistEntry) => (
+        <div key={w.id} className="p-5 bg-zinc-900/30 border border-zinc-800 rounded-2xl flex flex-col gap-5 shadow-sm">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-[11px] font-bold text-white uppercase">{w.name}</p>
+              <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">{w.phone}</p>
+            </div>
+            <span className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded border ${w.status === 'active' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
+              w.status === 'contacted' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' : 'bg-zinc-800 text-zinc-500 border-zinc-700'
+              }`}>
+              {w.status}
+            </span>
+          </div>
+          <div className="flex justify-between items-center">
+            <div className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">
+              {w.guests} Guests {w.preferredTime ? `• ${w.preferredTime}` : ''}
+            </div>
+            <div className="flex gap-4">
+              <button
+                onClick={async () => {
+                  await handleMutation(
+                    store.setWaitlistStatus(w.id, w.status === 'active' ? 'contacted' : 'closed'),
+                    'Failed to update waitlist status.'
+                  );
+                }}
+                className="text-zinc-500 hover:text-white transition-colors p-2"
+                title="Update Status"
+                aria-label="Update waitlist status"
+              >
+                <i className="fa-solid fa-check"></i>
+              </button>
+              <a href={store.buildWhatsAppUrl(store.buildWaitlistMessage(w))} target="_blank" className="text-green-500 hover:text-green-400 transition-colors p-2" title="WhatsApp Concierge"><i className="fa-brands fa-whatsapp"></i></a>
+              <button
+                onClick={async () => {
+                  await handleMutation(
+                    store.deleteWaitlistEntry(w.id),
+                    'Failed to delete waitlist entry.'
+                  );
+                }}
+                className="text-zinc-700 hover:text-red-500 transition-colors p-2"
+                title="Delete"
+                aria-label="Delete waitlist entry"
+              >
+                <i className="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function WeekView({ store, selectedDate, onSelectDay, onTapEmpty }: { store: any, selectedDate: string, onSelectDay: (d: string) => void, onTapEmpty: (data: any) => void }) {
+  const weekData = useMemo(() => {
+    const d = new Date(selectedDate);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday start
+    const monday = new Date(d.setDate(diff));
+
+    const arr: { ds: string, day: number, dayName: string, confirmed: number, pending: number, blocks: number, isClosed: boolean, isPast: boolean, bookings: Booking[] }[] = [];
+    for (let i = 0; i < 7; i++) {
+      const current = new Date(monday);
+      current.setDate(monday.getDate() + i);
+      const ds = current.toISOString().split('T')[0];
+      const dayBookings = store.getBookingsForDate(ds);
+      const dayBlocks = store.getBlocksForDate(ds);
+      const confirmed = dayBookings.filter((b: any) => b.status === BookingStatus.CONFIRMED).length;
+      const pending = dayBookings.filter((b: any) => b.status === BookingStatus.PENDING).length;
+      const isClosed = !store.getOperatingWindow(ds);
+      const isPast = current.getTime() < new Date().setHours(0, 0, 0, 0);
+      arr.push({
+        ds,
+        day: current.getDate(),
+        dayName: ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][current.getDay()],
+        confirmed,
+        pending,
+        blocks: dayBlocks.length,
+        isClosed,
+        isPast,
+        bookings: dayBookings
+          .filter((b: Booking) => b.status !== BookingStatus.CANCELLED)
+          .sort((a: Booking, b: Booking) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
+      });
+    }
+    return arr;
+  }, [selectedDate, store.bookings, store.blocks, store.specialHours]);
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-7 gap-px bg-zinc-900 border border-zinc-900 rounded-[1.5rem] overflow-hidden">
+      {weekData.map((d, i) => (
+        <div key={i} className={`h-48 p-4 flex flex-col justify-between transition-all ${d.isClosed ? 'bg-zinc-950/40 text-zinc-800' : 'bg-zinc-950 hover:bg-zinc-900 cursor-pointer'}`} onClick={() => onSelectDay(d.ds)}>
+          <div className="flex justify-between items-start">
+            <div>
+              <p className={`text-[8px] font-bold uppercase tracking-widest ${d.isClosed ? 'opacity-20' : 'text-zinc-500'}`}>{d.dayName}</p>
+              <p className={`text-lg font-bold ${d.isClosed ? 'opacity-20' : 'text-white'}`}>{d.day}</p>
+            </div>
+            {d.isClosed && <span className="text-[7px] font-bold uppercase tracking-widest bg-red-500/10 text-red-500 px-1 rounded border border-red-500/20">CLOSED</span>}
+          </div>
+
+          <div className="space-y-1.5">
+            {!d.isClosed && !d.isPast && d.confirmed === 0 && d.pending === 0 && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onTapEmpty({ date: d.ds }); }}
+                className="w-full border border-dashed border-zinc-800 py-2.5 rounded-lg text-[7px] font-bold uppercase text-zinc-700 hover:text-amber-500 hover:border-amber-500/20 transition-all min-h-[40px]"
+              >
+                Add
+              </button>
+            )}
+            {d.bookings.length > 0 && (
+              <div className="space-y-1 text-[8px] font-bold uppercase text-zinc-300">
+                {d.bookings.slice(0, 3).map((b: Booking) => {
+                  const indicators = getBookingIndicators(b);
+                  return (
+                    <div key={b.id} className="flex items-center justify-between gap-2">
+                      <span className="truncate">{b.customer_name} • {b.guests}G</span>
+                      <span className="flex items-center gap-1 text-[9px] text-zinc-400">
+                        {indicators.hasSpecialRequests && <i className="fa-solid fa-note-sticky" title="Special requests"></i>}
+                        {indicators.hasFood && <i className="fa-solid fa-pizza-slice" title="Food extra"></i>}
+                        {indicators.hasDrink && <i className="fa-solid fa-martini-glass-citrus" title="Drink extra"></i>}
+                      </span>
+                    </div>
+                  );
+                })}
+                {d.bookings.length > 3 && (
+                  <div className="text-[7px] text-zinc-500 font-bold uppercase tracking-widest">
+                    +{d.bookings.length - 3} more
+                  </div>
+                )}
+              </div>
+            )}
+            {d.confirmed > 0 && <div className="bg-green-500/10 text-green-500 border border-green-500/20 px-2 py-1 rounded text-[8px] font-bold flex justify-between"><span>CONF</span> <span>{d.confirmed}</span></div>}
+            {d.pending > 0 && <div className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-1 rounded text-[8px] font-bold flex justify-between"><span>PEND</span> <span>{d.pending}</span></div>}
+            {d.blocks > 0 && <div className="bg-red-500/10 text-red-500 border border-red-500/20 px-2 py-1 rounded text-[8px] font-bold flex justify-between"><span>BLCK</span> <span>{d.blocks}</span></div>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CompactBookingList({ store, date, onSelect }: { store: any, date: string, onSelect: (id: string) => void }) {
+  const dayBookings = useMemo(() => {
+    return store.bookings.filter((b: Booking) => b.start_at.startsWith(date))
+      .sort((a: Booking, b: Booking) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+  }, [store.bookings, date]);
+
+  if (dayBookings.length === 0) return <p className="text-[10px] text-zinc-700 uppercase tracking-[0.2em] italic px-2">No bookings registered.</p>;
+
+  return (
+    <div className="space-y-3 px-1">
+      {dayBookings.map((b: Booking) => (
+        <div
+          key={b.id}
+          onClick={() => onSelect(b.id)}
+          className="flex flex-col md:flex-row justify-between items-start md:items-center p-5 bg-zinc-900/30 border border-zinc-900 rounded-2xl hover:border-zinc-700 transition-all cursor-pointer group gap-4 shadow-sm active:scale-[0.98]"
+        >
+          <div className="flex items-center gap-5 w-full md:w-auto">
+            <div className="w-12 h-12 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-500 text-xs font-bold font-mono shadow-inner uppercase shrink-0">
+              {b.room_name.charAt(0)}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-bold text-white text-[12px] uppercase tracking-tight truncate">{b.customer_name}</p>
+              <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5 truncate">{b.customer_email}</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4 md:gap-10 w-full md:w-auto border-t md:border-t-0 border-zinc-800 md:pt-0 pt-4">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 font-mono">
+              {new Date(b.start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — {new Date(b.end_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </div>
+            <div className={`text-[10px] font-bold uppercase px-3 py-1 rounded-full border ${b.status === BookingStatus.CONFIRMED ? 'bg-green-500/10 text-green-500 border-green-500/20' :
+              b.status === BookingStatus.CANCELLED ? 'bg-red-500/10 text-red-500 border-red-500/20' :
+                'bg-zinc-800 text-zinc-500 border-zinc-700'
+              }`}>
+              {b.status}
+            </div>
+            {(b.deposit_amount > 0 || (b.extras_total || 0) > 0) && (
+              <div className={`text-[10px] font-bold uppercase px-3 py-1 rounded-full border border-zinc-700 text-zinc-500`}>
+                {b.deposit_amount > 0 && `DEP: ${b.deposit_paid ? 'PAID' : 'PEND'}`}
+                {b.extras_total ? ` • EXT: £${b.extras_total}` : ''}
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MonthCalendar({ store, onSelectDay }: { store: any, onSelectDay: (d: string) => void }) {
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  const calendarData = useMemo(() => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const days: ({ ds: string; day: number; confirmed: number; pending: number; cancelled: number; isClosed: boolean; bookings: Booking[] } | null)[] = [];
+    for (let i = 0; i < firstDay; i++) days.push(null);
+    for (let i = 1; i <= daysInMonth; i++) {
+      const d = new Date(year, month, i);
+      const ds = d.toISOString().split('T')[0];
+      const dayBookings = store.bookings.filter((b: Booking) => b.start_at.startsWith(ds));
+      const confirmed = dayBookings.filter((b: Booking) => b.status === BookingStatus.CONFIRMED).length;
+      const pending = dayBookings.filter((b: Booking) => b.status === BookingStatus.PENDING).length;
+      const cancelled = dayBookings.filter((b: Booking) => b.status === BookingStatus.CANCELLED).length;
+      const isClosed = !store.getOperatingWindow(ds);
+
+      days.push({
+        ds,
+        day: i,
+        confirmed,
+        pending,
+        cancelled,
+        isClosed,
+        bookings: dayBookings
+          .filter((b: Booking) => b.status !== BookingStatus.CANCELLED)
+          .sort((a: Booking, b: Booking) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
+      });
+    }
+    return days;
+  }, [currentMonth, store.bookings]);
+
+  const monthLabel = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row items-center justify-between mb-4 md:mb-8 px-2 gap-4">
+        <div className="flex items-center gap-2 md:gap-4">
+          <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))} className="text-zinc-500 hover:text-white p-3 min-h-[44px] min-w-[44px] flex items-center justify-center" title="Previous month" aria-label="Previous month"><i className="fa-solid fa-chevron-left"></i></button>
+          <h3 className="text-xl font-bold uppercase tracking-tighter text-amber-500 whitespace-nowrap">{monthLabel}</h3>
+          <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))} className="text-zinc-500 hover:text-white p-3 min-h-[44px] min-w-[44px] flex items-center justify-center" title="Next month" aria-label="Next month"><i className="fa-solid fa-chevron-right"></i></button>
+        </div>
+        <div className="flex gap-4 text-[8px] font-bold uppercase tracking-widest">
+          <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500"></span> Confirmed</div>
+          <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-zinc-600"></span> Pending</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-7 gap-px bg-zinc-900 border border-zinc-900 rounded-[1.5rem] overflow-hidden shadow-2xl">
+        {["S", "M", "T", "W", "T", "F", "S"].map(d => (
+          <div key={d} className="bg-zinc-950 py-3 md:py-4 text-center text-[9px] font-bold uppercase tracking-widest text-zinc-600">{d}</div>
+        ))}
+        {calendarData.map((d, i) => {
+          if (!d) return <div key={i} className="bg-zinc-950/20 min-h-[80px] md:h-32"></div>;
+          return (
+            <div
+              key={i}
+              onClick={() => onSelectDay(d.ds)}
+              className={`min-h-[90px] md:h-32 p-2 md:p-3 transition-all cursor-pointer flex flex-col justify-between border-t border-l border-zinc-900/40 ${d.isClosed ? 'bg-zinc-950/40 text-zinc-800' : 'bg-zinc-950 hover:bg-zinc-900 text-white'
+                }`}
+            >
+              <span className={`text-[10px] font-bold ${d.isClosed ? 'opacity-20' : ''}`}>{d.day}</span>
+              <div className="space-y-1">
+                {d.bookings.length > 0 && (
+                  <div className="space-y-1 text-[7px] font-bold uppercase text-zinc-300">
+                    {d.bookings.slice(0, 2).map((b: Booking) => {
+                      const indicators = getBookingIndicators(b);
+                      return (
+                        <div key={b.id} className="flex items-center justify-between gap-1">
+                          <span className="truncate">{b.customer_name} • {b.guests}G</span>
+                          <span className="flex items-center gap-1 text-[8px] text-zinc-400">
+                            {indicators.hasSpecialRequests && <i className="fa-solid fa-note-sticky" title="Special requests"></i>}
+                            {indicators.hasFood && <i className="fa-solid fa-pizza-slice" title="Food extra"></i>}
+                            {indicators.hasDrink && <i className="fa-solid fa-martini-glass-citrus" title="Drink extra"></i>}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {d.bookings.length > 2 && (
+                      <div className="text-[6px] text-zinc-500 font-bold uppercase tracking-widest">
+                        +{d.bookings.length - 2} more
+                      </div>
+                    )}
+                  </div>
+                )}
+                {d.confirmed > 0 && (
+                  <div className="bg-green-500/10 text-green-500 border border-green-500/20 px-1.5 py-0.5 rounded text-[7px] font-bold uppercase tracking-tight flex justify-between items-center">
+                    <span className="hidden md:inline">CONF</span>
+                    <span className="w-full text-center md:text-right">{d.confirmed}</span>
+                  </div>
+                )}
+                {d.pending > 0 && (
+                  <div className="bg-zinc-800 text-zinc-500 border border-zinc-700 px-1.5 py-0.5 rounded text-[7px] font-bold uppercase tracking-tight flex justify-between items-center">
+                    <span className="hidden md:inline">PEND</span>
+                    <span className="w-full text-center md:text-right">{d.pending}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TimelineView({ store, date, onSelectBooking, onTapToCreate, onCommitChange, onValidationFailure, rowHeight, roomFilters, searchQuery }: any) {
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+
+  const window = store.getOperatingWindow(date);
+  if (!window) return <div className="p-10 text-center text-zinc-600 uppercase font-bold tracking-widest">Venue Closed</div>;
+
+  const isPastDay = new Date(date).getTime() < new Date().setHours(0, 0, 0, 0);
+  const [startHour, startMinute] = window.open.split(':').map(Number);
+  const [closeHourRaw, closeMinuteRaw] = window.close.split(':').map(Number);
+  let closeHour = closeHourRaw;
+  if (closeHour < startHour || (closeHour === startHour && closeMinuteRaw <= startMinute)) closeHour += 24;
+  const startMinutes = startHour * 60 + startMinute;
+  const endMinutes = closeHour * 60 + closeMinuteRaw;
+
+  const slots: number[] = [];
+  for (let minute = startMinutes; minute < endMinutes; minute += SLOT_MINUTES) {
+    slots.push(minute);
+  }
+
+  const visibleRooms = store.rooms.filter((room: Room) => roomFilters[room.id] !== false);
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+
+  const busyIntervalsByRoom = useMemo(() => {
+    const entries: Array<[string, any[]]> = visibleRooms.map((room: Room) => [
+      room.id,
+      store.getBusyIntervals(date, room.id),
+    ]);
+    return new Map<string, any[]>(entries);
+  }, [visibleRooms, store.getBusyIntervals, date]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const styleId = 'admin-schedule-styles';
+    let styleEl = document.getElementById(styleId) as HTMLStyleElement | null;
+    let css = '';
+    css += `.admin-schedule { --row-height: ${rowHeight}px; }
+`;
+    css += `.admin-row { height: var(--row-height); }
+`;
+    css += `.admin-room-grid { height: calc(var(--row-height) * ${slots.length}); }
+`;
+
+    visibleRooms.forEach((room: Room) => {
+      const items = busyIntervalsByRoom.get(room.id) ?? [];
+      items.forEach((item: any) => {
+        const dayStartTs = new Date(`${date}T${window.open}`).getTime();
+        const startOffsetSlots = (item.start - dayStartTs) / (SLOT_MINUTES * 60000);
+        const durationSlots = Math.max(1, (item.end - item.start) / (SLOT_MINUTES * 60000));
+        const topPx = Math.round(startOffsetSlots * rowHeight);
+        const heightPx = Math.max(rowHeight, Math.round(durationSlots * rowHeight));
+        css += `.booking-${item.id} { top: ${topPx}px; height: ${heightPx}px; }
+`;
+      });
+    });
+
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = styleId;
+      document.head.appendChild(styleEl);
+    }
+    styleEl.innerHTML = css;
+  }, [rowHeight, slots.length, date, visibleRooms, busyIntervalsByRoom, window.open]);
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>, roomId: string) => {
+    if (isPastDay) return;
+    event.preventDefault();
+    const bookingId = event.dataTransfer.getData('text/plain');
+    if (!bookingId) return;
+    const booking = store.bookings.find((item: Booking) => item.id === bookingId);
+    if (!booking) return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const y = event.clientY - rect.top;
+    const slotOffset = y / rowHeight;
+    const rawMinutes = Math.round((startMinutes + slotOffset * SLOT_MINUTES) / SLOT_MINUTES) * SLOT_MINUTES;
+    const durationMinutes = Math.max(0, Math.round((new Date(booking.end_at).getTime() - new Date(booking.start_at).getTime()) / 60000));
+    const maxStartMinutes = endMinutes - durationMinutes;
+    const clampedMinutes = Math.min(Math.max(rawMinutes, startMinutes), maxStartMinutes);
+    const baseTs = new Date(`${date}T00:00:00`).getTime();
+    const startAt = new Date(baseTs + clampedMinutes * 60000).toISOString();
+    const endAt = new Date(new Date(startAt).getTime() + durationMinutes * 60000).toISOString();
+
+    if (booking.room_id === roomId && new Date(booking.start_at).getTime() === new Date(startAt).getTime()) {
+      return;
+    }
+
+    const check = store.validateInterval(roomId, startAt, endAt, booking.id, booking.staff_id);
+    if (!check.ok) {
+      onValidationFailure(check.reason);
+      return;
+    }
+
+    const roomName = store.rooms.find((item: Room) => item.id === roomId)?.name || booking.room_name;
+    onCommitChange(booking, {
+      start_at: startAt,
+      end_at: endAt,
+      room_id: roomId,
+      room_name: roomName
+    });
+  };
+
+  return (
+    <div className="admin-schedule">
+      <div className="relative border border-zinc-900 rounded-[2rem] overflow-hidden bg-zinc-950 flex flex-col shadow-2xl w-full">
+        <div className="flex bg-zinc-950/95">
+          <div className="w-16 shrink-0 border-r border-zinc-900 bg-zinc-900/40 z-30 sticky left-0">
+            <div className="h-20 border-b border-zinc-900"></div>
+          </div>
+
+          <div className="flex-1 flex min-w-0">
+            {visibleRooms.map((room: Room) => (
+              <div key={room.id} className="flex-1 border-r border-zinc-900 relative min-w-0">
+                <div className="h-20 border-b border-zinc-900 flex flex-col items-center justify-center p-1 text-center bg-zinc-900/20 overflow-hidden">
+                  <span className="text-[9px] sm:text-[10px] font-bold uppercase text-white leading-tight break-words">{room.name.toUpperCase()}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex min-h-0 max-h-[calc(100vh-20rem)] overflow-y-auto">
+          <div className="w-16 shrink-0 border-r border-zinc-900 bg-zinc-900/40 z-20 sticky left-0">
+            {slots.map(slotMinute => (
+              <div key={slotMinute} className="relative border-b border-zinc-800/50 flex items-start justify-center pt-1 text-[9px] font-mono text-zinc-600 admin-row">
+                {slotMinute % 60 === 0 ? `${Math.floor((slotMinute / 60) % 24).toString().padStart(2, '0')}:00` : ''}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex-1 flex min-w-0">
+            {visibleRooms.map((room: Room) => (
+              <div key={room.id} className="flex-1 border-r border-zinc-900 relative min-w-0">
+                <div className="relative admin-room-grid">
+                  {slots.map(slotMinute => (
+                    <div key={slotMinute} className="relative border-b border-zinc-900/30 w-full admin-row"></div>
+                  ))}
+
+                  <div
+                    className="absolute inset-0 cursor-crosshair z-0"
+                    onClick={(event) => {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      const y = event.clientY - rect.top;
+                      const slotOffset = y / rowHeight;
+                      const totalMins = Math.floor(startMinutes + slotOffset * SLOT_MINUTES);
+                      const h = Math.floor(totalMins / 60);
+                      const m = Math.floor((totalMins % 60) / SLOT_MINUTES) * SLOT_MINUTES;
+                      const timeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+                      onTapToCreate({ date, roomId: room.id, time: timeStr });
+                    }}
+                    onDragOver={(event) => {
+                      if (isPastDay) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = 'move';
+                    }}
+                    onDrop={(event) => handleDrop(event, room.id)}
+                  ></div>
+
+                  {(busyIntervalsByRoom.get(room.id) ?? []).filter((item: any) => {
+                    if (item.type !== 'booking') return true;
+                    if (!normalizedSearch) return true;
+                    return `${item.customer_name} ${item.customer_email}`.toLowerCase().includes(normalizedSearch);
+                  }).map((item: any) => {
+                    const indicators = item.type === 'booking' ? getBookingIndicators(item as Booking) : null;
+                    const extrasText = item.type === 'booking' && item.extras_price ? `EXT: £${item.extras_price}` : null;
+
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={(event) => { event.stopPropagation(); if (item.type === 'booking') onSelectBooking(item.id); }}
+                        draggable={item.type === 'booking' && !isPastDay}
+                        onDragStart={(event) => {
+                          if (item.type !== 'booking' || isPastDay) return;
+                          event.dataTransfer.effectAllowed = 'move';
+                          event.dataTransfer.setData('text/plain', item.id);
+                          setDraggingId(item.id);
+                        }}
+                        onDragEnd={() => setDraggingId(null)}
+                        className={`absolute left-0.5 right-0.5 rounded-lg border flex flex-col justify-center items-center px-1 transition-all hover:scale-[1.02] active:scale-95 shadow-lg overflow-hidden z-10 ${item.type === 'booking'
+                          ? (item.status === 'CONFIRMED'
+                            ? 'bg-amber-500 text-black border-amber-400 ring-1 ring-black/20'
+                            : 'bg-zinc-800 text-zinc-200 border-zinc-500 border-dashed')
+                          : 'bg-red-500/20 text-red-500 border-red-500/20 cursor-default'
+                          } ${item.type === 'booking' ? (isPastDay ? 'cursor-pointer' : 'cursor-grab') : ''} ${draggingId === item.id ? 'opacity-70 cursor-grabbing' : ''} booking-${item.id}`}
+                      >
+                        <span className="text-[10px] font-bold uppercase text-center line-clamp-2 leading-none">
+                          {item.type === 'booking' ? `${item.customer_name} • ${item.guests} GUESTS` : (item.reason || 'Blocked')}
+                        </span>
+                        {item.type === 'booking' && indicators && (
+                          <div className="mt-1 flex items-center gap-1 text-[10px]">
+                            {indicators.hasSpecialRequests && <i className="fa-solid fa-note-sticky" title="Special requests"></i>}
+                            {indicators.hasFood && <i className="fa-solid fa-pizza-slice" title="Food extra"></i>}
+                            {indicators.hasDrink && <i className="fa-solid fa-martini-glass-citrus" title="Drink extra"></i>}
+                          </div>
+                        )}
+                        {extrasText && <span className="text-[9px] font-bold uppercase">{extrasText}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CustomersTab({ store }: { store: any }) {
+  const [search, setSearch] = useState('');
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [showModal, setShowModal] = useState(false);
+
+  const filtered = useMemo(() => {
+    const term = search.toLowerCase();
+    return store.customers.filter((c: Customer) => {
+      const fullName = `${c.name} ${c.surname || ''}`.toLowerCase();
+      return (
+        fullName.includes(term) ||
+        c.email.toLowerCase().includes(term) ||
+        (c.phone && c.phone.includes(term))
+      );
+    }).sort((a: Customer, b: Customer) => (b.lastBookingAt || 0) - (a.lastBookingAt || 0));
+  }, [search, store.customers]);
+
+  const handleEdit = (c: Customer) => {
+    setEditingCustomer(c);
+    setShowModal(true);
+  };
+
+  const handleAdd = () => {
+    setEditingCustomer(null);
+    setShowModal(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (confirm("Are you sure you want to delete this customer record?")) {
+      await handleMutation(store.deleteCustomer(id), 'Failed to delete customer.');
+    }
+  };
+
+  return (
+    <div className="glass-panel p-8 rounded-[2.5rem] border-zinc-800 shadow-2xl space-y-8">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+        <div className="space-y-1">
+          <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Guest CRM</h3>
+          <p className="text-zinc-600 text-[9px] font-bold uppercase tracking-widest">Customer database and history</p>
+        </div>
+        <div className="flex items-center gap-4 w-full md:w-auto">
+          <input
+            type="text"
+            placeholder="Search by name or email..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="bg-zinc-900 border border-zinc-800 rounded-xl px-6 py-3 text-sm text-white w-full max-w-sm outline-none focus:ring-1 ring-amber-500"
+          />
+          <button
+            onClick={handleAdd}
+            className="gold-gradient text-black px-6 py-3.5 rounded-xl text-[9px] font-bold uppercase tracking-widest shadow-lg shadow-amber-500/10 active:scale-95 transition-all whitespace-nowrap min-h-[44px]"
+          >
+            Add Guest
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filtered.map((c: Customer) => (
+          <div key={c.id} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl space-y-4 hover:border-zinc-700 transition-all group shadow-lg relative">
+            <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button onClick={() => handleEdit(c)} className="text-zinc-500 hover:text-white p-2" title="Edit Profile" aria-label="Edit profile"><i className="fa-solid fa-pen-to-square"></i></button>
+              <button onClick={() => handleDelete(c.id)} className="text-zinc-700 hover:text-red-500 p-2" title="Delete Profile" aria-label="Delete profile"><i className="fa-solid fa-trash-can"></i></button>
+            </div>
+            <div className="flex justify-between items-start">
+              <div className="w-10 h-10 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center font-bold text-lg">
+                {c.name.charAt(0)}
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Total Spend</p>
+                <p className="text-lg font-bold text-white tracking-tighter">£{c.totalSpend.toLocaleString()}</p>
+              </div>
+            </div>
+            <div>
+              <p className="font-bold text-white uppercase truncate pr-16">{c.name}</p>
+              <p className="text-[10px] text-zinc-600 font-bold lowercase tracking-tight truncate">{c.email}</p>
+            </div>
+            <div className="pt-4 border-t border-zinc-900 flex justify-between items-center">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">{c.totalBookings} Bookings</span>
+              {c.lastBookingAt && (
+                <span className="text-[8px] text-zinc-700 font-bold uppercase tracking-widest">Last: {new Date(c.lastBookingAt).toLocaleDateString()}</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {showModal && (
+        <CustomerModal
+          store={store}
+          onClose={() => setShowModal(false)}
+          customer={editingCustomer || undefined}
+        />
+      )}
+    </div>
+  );
+}
+
+function CustomerModal({ store, onClose, customer }: { store: any, onClose: () => void, customer?: Customer }) {
+  const [formData, setFormData] = useState({
+    name: customer?.name || '',
+    surname: customer?.surname || '',
+    email: customer?.email || '',
+    phone: customer?.phone || '',
+    notes: customer?.notes || '',
+    specialRequests: customer?.notes || ''
+  });
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (customer) {
+      const ok = await handleMutation(store.updateCustomer(customer.id, formData), 'Failed to update customer.');
+      if (ok) onClose();
+    } else {
+      const created = await store.addCustomer(formData);
+      if (!created) {
+        alert('Failed to add customer.');
+        return;
+      }
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={onClose}></div>
+      <form onSubmit={handleSave} className="relative w-full max-w-md glass-panel p-8 rounded-[2rem] border-zinc-800 shadow-2xl animate-in zoom-in duration-300 space-y-6">
+        <div className="flex justify-between items-center">
+          <h3 className="text-lg font-bold uppercase tracking-tight text-white">{customer ? 'Edit Profile' : 'New Guest'}</h3>
+          <button type="button" onClick={onClose} className="text-zinc-600 hover:text-white p-2" title="Close" aria-label="Close"><i className="fa-solid fa-x"></i></button>
+        </div>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">First Name</label>
+              <input aria-label="First name" type="text" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Surname</label>
+              <input aria-label="Surname" type="text" value={formData.surname} onChange={e => setFormData({ ...formData, surname: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Email Address</label>
+            <input aria-label="Email address" type="email" required value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Phone Number</label>
+            <input aria-label="Phone number" type="tel" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Internal Notes</label>
+            <textarea aria-label="Internal notes" rows={3} value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500 resize-none" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Special Requests (Customer)</label>
+            <textarea aria-label="Special requests" rows={3} value={formData.specialRequests} onChange={e => setFormData({ ...formData, specialRequests: e.target.value })} className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500 resize-none" />
+          </div>
+        </div>
+
+        <div className="flex gap-4 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 bg-zinc-900 border border-zinc-800 py-3.5 rounded-xl text-[10px] font-bold uppercase tracking-widest text-white">Discard</button>
+          <button type="submit" className="flex-1 gold-gradient text-black py-3.5 rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-xl shadow-amber-500/10">Save Guest</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function BlocksTab({ store, selectedDate }: { store: any, selectedDate: string }) {
+  const [showBlockModal, setShowBlockModal] = useState(false);
+  const [newBlock, setNewBlock] = useState({
+    roomId: store.rooms[0]?.id ?? '',
+    reason: '',
+    fromDate: selectedDate,
+    toDate: selectedDate,
+    startTime: '00:00',
+    endTime: '23:59',
+    entireVenue: false
+  });
+
+  useEffect(() => {
+    setNewBlock(prev => ({
+      ...prev,
+      roomId: prev.roomId || store.rooms[0]?.id || '',
+      fromDate: prev.fromDate || selectedDate,
+      toDate: prev.toDate || selectedDate
+    }));
+  }, [selectedDate, store.rooms]);
+
+  const handleAddBlock = async () => {
+    if (!newBlock.entireVenue && !newBlock.roomId) {
+      alert('Please select a room.');
+      return;
+    }
+
+    if (!newBlock.fromDate || !newBlock.toDate) {
+      alert('Please select both From Date and To Date.');
+      return;
+    }
+
+    const fromDay = new Date(`${newBlock.fromDate}T00:00:00`);
+    const toDay = new Date(`${newBlock.toDate}T00:00:00`);
+    if (!Number.isFinite(fromDay.getTime()) || !Number.isFinite(toDay.getTime())) {
+      alert('Invalid date range.');
+      return;
+    }
+    if (toDay < fromDay) {
+      alert('To Date must be the same as or after From Date.');
+      return;
+    }
+
+    const targetRoomIds: string[] = newBlock.entireVenue
+      ? store.rooms.map((room: Room) => room.id)
+      : [newBlock.roomId];
+
+    if (targetRoomIds.length === 0) {
+      alert('No rooms available to block.');
+      return;
+    }
+
+    const overnight = newBlock.endTime <= newBlock.startTime;
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const dayCount = Math.floor((toDay.getTime() - fromDay.getTime()) / msPerDay) + 1;
+    const maxBlocks = 2000;
+    if (dayCount * targetRoomIds.length > maxBlocks) {
+      alert('Range too large. Please reduce date span or room scope.');
+      return;
+    }
+
+    const payloads: Array<{ roomId: string; start_at: string; end_at: string; reason: string }> = [];
+    for (let dayOffset = 0; dayOffset < dayCount; dayOffset += 1) {
+      const baseDay = new Date(fromDay.getTime() + dayOffset * msPerDay);
+      const dayKey = baseDay.toISOString().split('T')[0];
+      const startAt = new Date(`${dayKey}T${newBlock.startTime}:00`);
+      const endAt = new Date(`${dayKey}T${newBlock.endTime}:00`);
+      if (overnight) {
+        endAt.setDate(endAt.getDate() + 1);
+      }
+      if (endAt <= startAt) {
+        alert('End time must be after start time.');
+        return;
+      }
+
+      for (const roomId of targetRoomIds) {
+        payloads.push({
+          roomId,
+          start_at: startAt.toISOString(),
+          end_at: endAt.toISOString(),
+          reason: newBlock.reason
+        });
+      }
+    }
+
+    const results = await Promise.all(payloads.map(payload => store.addBlock(payload)));
+    const failed = results.find((result: MutationResult) => !result.ok);
+    if (failed) {
+      alert(failed.error ?? 'Failed to add block.');
+      return;
+    }
+
+    setShowBlockModal(false);
+  };
+
+  const visibleOneOffBlocks = useMemo(() => {
+    const dayStart = new Date(`${selectedDate}T00:00:00`).getTime();
+    const dayEnd = dayStart + (24 * 60 * 60 * 1000);
+    const allRoomIds = new Set<string>(store.rooms.map((room: Room) => room.id));
+    const grouped = new Map<string, RoomBlock[]>();
+
+    store.blocks.forEach((block: RoomBlock) => {
+      const blockStart = new Date(block.start_at).getTime();
+      const blockEnd = new Date(block.end_at).getTime();
+      if (!(blockStart < dayEnd && blockEnd > dayStart)) return;
+      const key = `${block.start_at}|${block.end_at}|${(block.reason || '').trim()}`;
+      const arr = grouped.get(key);
+      if (arr) arr.push(block);
+      else grouped.set(key, [block]);
+    });
+
+    const entries: Array<{
+      id: string;
+      title: string;
+      reason: string;
+      startAt: string;
+      endAt: string;
+      blockIds: string[];
+      isEntireVenue: boolean;
+    }> = [];
+
+    grouped.forEach((groupBlocks) => {
+      const roomIds = new Set<string>(groupBlocks.map((block) => block.roomId));
+      const isEntireVenue =
+        allRoomIds.size > 0 &&
+        roomIds.size === allRoomIds.size &&
+        Array.from(allRoomIds).every((roomId) => roomIds.has(roomId));
+
+      if (isEntireVenue) {
+        entries.push({
+          id: `venue-${groupBlocks.map((block) => block.id).sort().join('-')}`,
+          title: 'Entire Venue Blocked',
+          reason: groupBlocks[0].reason || 'No reason',
+          startAt: groupBlocks[0].start_at,
+          endAt: groupBlocks[0].end_at,
+          blockIds: groupBlocks.map((block) => block.id),
+          isEntireVenue: true
+        });
+        return;
+      }
+
+      groupBlocks.forEach((block) => {
+        entries.push({
+          id: block.id,
+          title: store.rooms.find((room: Room) => room.id === block.roomId)?.name || 'Unknown Room',
+          reason: block.reason || 'No reason',
+          startAt: block.start_at,
+          endAt: block.end_at,
+          blockIds: [block.id],
+          isEntireVenue: false
+        });
+      });
+    });
+
+    return entries.sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+  }, [selectedDate, store.blocks, store.rooms]);
+
+  const handleDeleteBlockEntry = async (blockIds: string[]) => {
+    const results = await Promise.all(blockIds.map((blockId) => store.deleteBlock(blockId)));
+    const failed = results.find((result: MutationResult) => !result.ok);
+    if (failed) {
+      alert(failed.error ?? 'Failed to delete block.');
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+      <div className="glass-panel p-8 rounded-[2.5rem] border-zinc-800 shadow-2xl space-y-8">
+        <div className="flex justify-between items-center">
+          <h3 className="text-xl font-bold uppercase tracking-tighter text-white">One-Off Blocks</h3>
+          <button
+            onClick={() => {
+              setNewBlock({
+                roomId: store.rooms[0]?.id ?? '',
+                reason: '',
+                fromDate: selectedDate,
+                toDate: selectedDate,
+                startTime: '00:00',
+                endTime: '23:59',
+                entireVenue: false
+              });
+              setShowBlockModal(true);
+            }}
+            className="bg-zinc-900 border border-zinc-800 text-amber-500 px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest hover:border-amber-500 transition-all"
+          >
+            Add Block
+          </button>
+        </div>
+        <div className="space-y-3">
+          {visibleOneOffBlocks.map((entry) => (
+            <div key={entry.id} className="p-4 bg-zinc-950 border border-zinc-900 rounded-xl flex justify-between items-center group">
+              <div>
+                <p className={`text-xs font-bold uppercase ${entry.isEntireVenue ? 'text-amber-400' : 'text-white'}`}>{entry.title}</p>
+                <p className="text-[9px] text-zinc-600 font-bold uppercase tracking-widest">{entry.reason}</p>
+                <p className="text-[9px] text-zinc-700 font-mono">{new Date(entry.startAt).toLocaleString()} → {new Date(entry.endAt).toLocaleString()}</p>
+              </div>
+                    <button
+                      onClick={async () => {
+                        await handleDeleteBlockEntry(entry.blockIds);
+                      }}
+                      className="text-zinc-800 hover:text-red-500 p-2"
+                      title="Delete block"
+                      aria-label="Delete block"
+                    >
+                      <i className="fa-solid fa-trash-can"></i>
+                    </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="glass-panel p-8 rounded-[2.5rem] border-zinc-800 shadow-2xl space-y-8">
+        <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Recurring Blocks</h3>
+        <div className="space-y-4">
+          {store.recurringBlocks.map((rb: RecurringBlock) => (
+            <div key={rb.id} className="p-5 bg-zinc-950 border border-zinc-900 rounded-2xl flex justify-between items-center group">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={async () => {
+                    await handleMutation(store.toggleRecurringBlock(rb.id, !rb.enabled), 'Failed to update recurring block.');
+                  }}
+                  className={`w-12 h-6 rounded-full relative transition-all ${rb.enabled ? 'bg-amber-500' : 'bg-zinc-800'}`}
+                  aria-label={rb.enabled ? 'Disable recurring block' : 'Enable recurring block'}
+                >
+                  <i className={`fa-solid ${rb.enabled ? 'fa-check' : 'fa-power-off'} text-xs`}></i>
+                </button>
+                <div>
+                  <p className="text-xs font-bold text-white uppercase">{['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][rb.dayOfWeek]} • {rb.startTime}-{rb.endTime}</p>
+                  <p className="text-[9px] text-zinc-600 font-bold uppercase tracking-widest">{store.rooms.find((r: Room) => r.id === rb.roomId)?.name} {rb.reason ? `• ${rb.reason}` : ''}</p>
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  await handleMutation(store.deleteRecurringBlock(rb.id), 'Failed to delete recurring block.');
+                }}
+                className="text-zinc-800 hover:text-red-500 p-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Delete recurring block"
+                aria-label="Delete recurring block"
+              >
+                <i className="fa-solid fa-trash-can"></i>
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {showBlockModal && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={() => setShowBlockModal(false)}></div>
+          <div className="relative glass-panel p-8 rounded-[2rem] border-zinc-800 max-w-sm w-full space-y-6">
+            <h4 className="text-lg font-bold uppercase text-white">Add Maintenance Block</h4>
+            <div className="space-y-4">
+              <label className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-zinc-400">
+                <input
+                  type="checkbox"
+                  checked={newBlock.entireVenue}
+                  onChange={e => setNewBlock({ ...newBlock, entireVenue: e.target.checked })}
+                />
+                Block Entire Venue
+              </label>
+
+              {!newBlock.entireVenue && (
+                <select aria-label="Block room" value={newBlock.roomId} onChange={e => setNewBlock({ ...newBlock, roomId: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white">
+                  {store.rooms.map((r: Room) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+              )}
+              
+              <input aria-label="Block reason" type="text" placeholder="Reason (e.g. Deep Clean)" value={newBlock.reason} onChange={e => setNewBlock({ ...newBlock, reason: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white" />
+              <div className="grid grid-cols-2 gap-4">
+                <input aria-label="Block from date" type="date" value={newBlock.fromDate} onChange={e => setNewBlock({ ...newBlock, fromDate: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white" />
+                <input aria-label="Block to date" type="date" value={newBlock.toDate} onChange={e => setNewBlock({ ...newBlock, toDate: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <input aria-label="Block start time" type="time" value={newBlock.startTime} onChange={e => setNewBlock({ ...newBlock, startTime: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white" />
+                <input aria-label="Block end time" type="time" value={newBlock.endTime} onChange={e => setNewBlock({ ...newBlock, endTime: e.target.value })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white" />
+              </div>
+              {newBlock.endTime <= newBlock.startTime && (
+                <p className="text-[10px] text-amber-500 uppercase font-bold tracking-widest">
+                  Ends next day (overnight block)
+                </p>
+              )}
+            </div>
+            <div className="flex gap-4">
+              <button onClick={() => setShowBlockModal(false)} className="flex-1 py-4 bg-zinc-950 border border-zinc-900 rounded-xl text-[9px] font-bold uppercase tracking-widest">Cancel</button>
+              <button onClick={handleAddBlock} className="flex-1 py-4 gold-gradient text-black rounded-xl text-[9px] font-bold uppercase tracking-widest">Apply Block</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SettingsTab({ store, lastSyncTime }: { store: any, lastSyncTime: string | null }) {
+  const [activeSub, setActiveSub] = useState('venue');
+  const [showSaved, setShowSaved] = useState(false);
+  const calSyncConfig = store.calSync;
+  const [serviceDrafts, setServiceDrafts] = useState<Record<string, ServiceDraft>>({});
+  const [newServiceDraft, setNewServiceDraft] = useState<ServiceDraft | null>(null);
+  const [applyPricePerPerson, setApplyPricePerPerson] = useState('');
+  const [applyNameSuffix, setApplyNameSuffix] = useState('People');
+
+
+  const handleSettingChange = async (updateFn: () => Promise<MutationResult>, errorMessage: string) => {
+    const ok = await handleMutation(updateFn(), errorMessage);
+    if (!ok) return;
+    setShowSaved(true);
+    setTimeout(() => setShowSaved(false), 2000);
+  };
+
+  const createOfferId = () => {
+    const cryptoSource = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
+    if (cryptoSource?.randomUUID) return cryptoSource.randomUUID();
+    return `offer-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  };
+
+  useEffect(() => {
+    if (store.services.length === 0) return;
+    const firstSuffix = getServiceNameSuffix(store.services[0].name);
+    setApplyNameSuffix(prev => (prev.trim().length ? prev : firstSuffix));
+  }, [store.services]);
+
+  const handleApplyPricePerPersonToAll = async () => {
+    const normalized = applyPricePerPerson.trim();
+    if (!/^\d+(\.\d{0,2})?$/.test(normalized) || Number(normalized) < 0) {
+      alert('Enter a valid £ value (0 or higher, max 2 decimals).');
+      return;
+    }
+
+    const formatted = formatPounds(Number(normalized));
+    const nextPence = poundsToPence(Number(formatted));
+
+    setServiceDrafts((prev) => {
+      const next: Record<string, ServiceDraft> = { ...prev };
+      store.services.forEach((service: Service) => {
+        const draft = next[service.id] || toServiceDraft(service);
+        next[service.id] = { ...draft, pricePerPerson: formatted };
+      });
+      return next;
+    });
+
+    if (newServiceDraft) {
+      setNewServiceDraft({ ...newServiceDraft, pricePerPerson: formatted });
+    }
+
+    const results = await Promise.all(
+      store.services.map((service: Service) =>
+        store.updateService(service.id, { pricePerPersonPence: nextPence })
+      )
+    );
+
+    const failed = results.find((result: MutationResult) => !result.ok);
+    if (failed) {
+      alert(failed.error ?? 'Failed to apply price to all services.');
+      return;
+    }
+
+    setShowSaved(true);
+    setTimeout(() => setShowSaved(false), 2000);
+  };
+
+  const handleApplyServiceSuffixToAll = async () => {
+    const suffix = applyNameSuffix.trim();
+    if (!suffix) {
+      alert('Enter a label like People, Guests, or Players.');
+      return;
+    }
+
+    const updates = store.services.map((service: Service) => {
+      const draft = serviceDrafts[service.id] || toServiceDraft(service);
+      const name = buildServiceName(draft.peopleCount, suffix);
+      return {
+        id: service.id,
+        name,
+        peopleCount: draft.peopleCount
+      };
+    });
+
+    setServiceDrafts(prev => {
+      const next: Record<string, ServiceDraft> = { ...prev };
+      const serviceById = new Map<string, Service>(store.services.map((service: Service) => [service.id, service]));
+      updates.forEach(({ id, name, peopleCount }) => {
+        const fallbackService = serviceById.get(id);
+        const draft = next[id] || (fallbackService ? toServiceDraft(fallbackService) : null);
+        if (!draft) return;
+        next[id] = { ...draft, name, peopleCount };
+      });
+      return next;
+    });
+
+    if (newServiceDraft) {
+      setNewServiceDraft({
+        ...newServiceDraft,
+        name: buildServiceName(newServiceDraft.peopleCount, suffix)
+      });
+    }
+
+    const results = await Promise.all(
+      updates.map((item) =>
+        store.updateService(item.id, {
+          name: item.name,
+          minPeople: item.peopleCount,
+          maxPeople: item.peopleCount
+        })
+      )
+    );
+
+    const failed = results.find((result: MutationResult) => !result.ok);
+    if (failed) {
+      alert(failed.error ?? 'Failed to apply label to all services.');
+      return;
+    }
+
+    setShowSaved(true);
+    setTimeout(() => setShowSaved(false), 2000);
+  };
+
+  return (
+    <div className="flex flex-col lg:flex-row gap-4 sm:gap-8 lg:gap-10">
+      <div className="w-full lg:w-64 shrink-0 overflow-x-auto lg:overflow-y-auto no-scrollbar lg:max-h-[80vh]">
+        <div className="flex lg:block gap-2 lg:space-y-2 min-w-max lg:min-w-0">
+          {(['venue', 'hours', 'services', 'promos', 'extras', 'sync'] as const).map(s => (
+            <button key={s} onClick={() => setActiveSub(s)} className={`whitespace-nowrap lg:w-full text-left px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl text-[9px] sm:text-[10px] font-bold uppercase tracking-widest transition-all ${activeSub === s ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/10' : 'text-zinc-500 hover:bg-zinc-900 hover:text-white'}`}>
+              {s} Configuration
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex-1 glass-panel p-4 sm:p-8 rounded-[1.5rem] sm:rounded-[2.5rem] border-zinc-800 shadow-2xl overflow-visible lg:overflow-y-auto no-scrollbar lg:max-h-[80vh] relative">
+        {showSaved && (
+          <div className="absolute top-4 right-4 z-50 bg-green-500/10 border border-green-500/20 text-green-500 px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest animate-in fade-in slide-in-from-top-2 duration-300">
+            <i className="fa-solid fa-check mr-2"></i>Saved
+          </div>
+        )}
+        {activeSub === 'venue' && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-right-2 duration-300">
+            <h3 className="text-xl font-bold uppercase tracking-tighter text-white">General Settings</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Cancellation Cutoff (Hours)</label>
+                <input
+                  type="number"
+                  value={store.settings.cancelCutoffHours}
+                  onChange={async e => handleSettingChange(() => store.updateSettings({ cancelCutoffHours: parseInt(e.target.value) }), 'Failed to update cancellation cutoff.')}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                  aria-label="Cancellation Cutoff Hours"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Reschedule Cutoff (Hours)</label>
+                <input
+                  type="number"
+                  value={store.settings.rescheduleCutoffHours}
+                  onChange={async e => handleSettingChange(() => store.updateSettings({ rescheduleCutoffHours: parseInt(e.target.value) }), 'Failed to update reschedule cutoff.')}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                  aria-label="Reschedule Cutoff Hours"
+                />
+              </div>
+              <div className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-bold text-white uppercase">Require Deposit</p>
+                  <p className="text-[9px] text-zinc-600 uppercase font-bold tracking-widest mt-1">Guests must pay to confirm</p>
+                </div>
+                <button
+                  onClick={async () => handleSettingChange(() => store.updateSettings({ deposit_enabled: !store.settings.deposit_enabled }), 'Failed to update deposit setting.')}
+                  className={`w-12 h-6 rounded-full relative transition-all ${store.settings.deposit_enabled ? 'bg-amber-500' : 'bg-zinc-800'}`}
+                    aria-label={store.settings.deposit_enabled ? 'Disable deposit requirement' : 'Enable deposit requirement'}
+                >
+                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${store.settings.deposit_enabled ? 'left-7' : 'left-1'}`}></div>
+                </button>
+              </div>
+              {store.settings.deposit_enabled && (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Deposit Amount (£)</label>
+                  <input
+                    type="number"
+                    value={store.settings.deposit_amount}
+                    onChange={async e => handleSettingChange(() => store.updateSettings({ deposit_amount: parseInt(e.target.value) }), 'Failed to update deposit amount.')}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                    aria-label="Deposit Amount"
+                  />
+                </div>
+              )}
+
+              {/* Lead Time Settings */}
+              <div className="space-y-2 border-t border-zinc-900 pt-6 md:col-span-2">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-4">Lead Time Controls</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Min Days Lead Time</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={store.settings.minDaysBeforeBooking}
+                      onChange={async e => handleSettingChange(() => store.updateSettings({ minDaysBeforeBooking: Math.max(0, parseInt(e.target.value)) }), 'Failed to update minimum days lead time.')}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                      aria-label="Min Days Lead Time"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Min Hours Lead Time</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={store.settings.minHoursBeforeBooking}
+                      onChange={async e => handleSettingChange(() => store.updateSettings({ minHoursBeforeBooking: Math.max(0, parseInt(e.target.value)) }), 'Failed to update minimum hours lead time.')}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                      aria-label="Min Hours Lead Time"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-6 border-t border-zinc-900 pt-6 md:col-span-2">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Discounts & Offers</p>
+                    <p className="text-[9px] text-zinc-600 uppercase font-bold tracking-widest mt-1">Homepage offer ribbon + midweek pricing</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Midweek Discount (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={store.settings.midweekDiscountPercent}
+                      onChange={async e => handleSettingChange(() => store.updateSettings({ midweekDiscountPercent: Math.max(0, parseInt(e.target.value || '0')) }), 'Failed to update midweek discount.')}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white"
+                      aria-label="Midweek Discount Percent"
+                    />
+                    <p className="text-[9px] text-zinc-600 uppercase font-bold tracking-widest">Applies Monday–Wednesday</p>
+                  </div>
+                  <div className="p-4 bg-zinc-950 border border-zinc-900 rounded-2xl flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-white uppercase">Show Midweek Offer</p>
+                      <p className="text-[9px] text-zinc-600 uppercase font-bold tracking-widest mt-1">Displayed above the booking form</p>
+                    </div>
+                    <button
+                      onClick={async () => handleSettingChange(() => store.updateSettings({ midweekDiscountPercent: store.settings.midweekDiscountPercent > 0 ? 0 : Math.max(1, store.settings.midweekDiscountPercent || 25) }), 'Failed to toggle midweek offer.')}
+                      className={`w-12 h-6 rounded-full relative transition-all ${store.settings.midweekDiscountPercent > 0 ? 'bg-amber-500' : 'bg-zinc-800'}`}
+                      aria-label={store.settings.midweekDiscountPercent > 0 ? 'Disable midweek offer' : 'Enable midweek offer'}
+                    >
+                      <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${store.settings.midweekDiscountPercent > 0 ? 'left-7' : 'left-1'}`}></div>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Homepage Offer Cards</p>
+                    <button
+                      onClick={async () => {
+                        const nextOffers = [
+                          ...(store.settings.offers || []),
+                          { id: createOfferId(), title: 'New Offer', description: 'Limited time offer', enabled: true, woptions: { kind: 'percent', value: 10 } } as Offer
+                        ];
+                        await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to add offer.');
+                      }}
+                      className="bg-zinc-900 border border-zinc-800 text-amber-500 px-4 py-2 rounded-xl text-[9px] font-bold uppercase tracking-widest"
+                    >
+                      Add Offer
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4">
+                    {(store.settings.offers || []).map((offer: Offer) => (
+                      <div key={offer.id} className="p-5 bg-zinc-950 border border-zinc-900 rounded-2xl flex flex-col md:flex-row md:items-center gap-4">
+                        <div className="flex-1 space-y-3">
+                          <input
+                            type="text"
+                            value={offer.title}
+                            aria-label="Offer title"
+                            onChange={async e => {
+                              const nextOffers = (store.settings.offers || []).map((item: Offer) => item.id === offer.id ? { ...item, title: e.target.value } : item);
+                              await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to update offer title.');
+                            }}
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white text-sm font-bold"
+                          />
+                          <input
+                            type="text"
+                            value={offer.description ?? ''}
+                            aria-label="Offer description"
+                            onChange={async e => {
+                              const nextOffers = (store.settings.offers || []).map((item: Offer) => item.id === offer.id ? { ...item, description: e.target.value } : item);
+                              await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to update offer description.');
+                            }}
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white text-xs"
+                          />
+                          <div className="flex items-center gap-2 mt-2">
+                            <select
+                              aria-label={`Offer option for ${offer.title}`}
+                              value={(offer.woptions && offer.woptions.kind) || 'none'}
+                              onChange={async e => {
+                                const kind = e.target.value === 'none' ? null : (e.target.value as 'percent'|'fixed'|'midweek');
+                                const nextOffers = (store.settings.offers || []).map((item: Offer) => item.id === offer.id ? { ...item, woptions: kind ? { kind, value: kind === 'percent' ? (item.woptions?.value ?? 10) : (item.woptions?.value ?? 0) } : null } : item);
+                                await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to update offer option.');
+                              }}
+                              className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-white text-xs"
+                            >
+                              <option value="none">No Option</option>
+                              <option value="percent">% Discount</option>
+                              <option value="fixed">Fixed Off</option>
+                              <option value="midweek">Midweek</option>
+                            </select>
+                            {(offer.woptions && offer.woptions.kind !== 'midweek') && (
+                              <input
+                                aria-label={`Offer value for ${offer.title}`}
+                                type="number"
+                                value={offer.woptions?.value ?? 0}
+                                onChange={async e => {
+                                  const val = Math.max(0, parseInt(e.target.value || '0'));
+                                  const nextOffers = (store.settings.offers || []).map((item: Offer) => item.id === offer.id ? { ...item, woptions: { ...(item.woptions || {}), value: val } } : item);
+                                  await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to update offer option value.');
+                                }}
+                                className="w-20 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-white text-xs"
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={async () => {
+                              const nextOffers = (store.settings.offers || []).map((item: Offer) => item.id === offer.id ? { ...item, enabled: !item.enabled } : item);
+                              await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to update offer visibility.');
+                            }}
+                            aria-label={offer.enabled ? 'Disable offer' : 'Enable offer'}
+                            title={offer.enabled ? 'Disable offer' : 'Enable offer'}
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all ${offer.enabled ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-zinc-900 border-zinc-800 text-zinc-800'}`} 
+                          >
+                            <i className={`fa-solid ${offer.enabled ? 'fa-eye' : 'fa-eye-slash'} text-[12px]`}></i>
+                          </button>
+                          <button
+                            onClick={async () => {
+                              const nextOffers = (store.settings.offers || []).filter((item: Offer) => item.id !== offer.id);
+                              await handleSettingChange(() => store.updateSettings({ offers: nextOffers }), 'Failed to delete offer.');
+                            }}
+                            className="text-zinc-700 hover:text-red-500 p-2"
+                            title="Delete offer"
+                            aria-label="Delete offer"
+                          >
+                            <i className="fa-solid fa-trash-can"></i>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {(store.settings.offers || []).length === 0 && (
+                      <p className="text-[9px] text-zinc-600 uppercase font-bold tracking-widest">No additional offers yet.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeSub === 'hours' && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-right-2 duration-300">
+            <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Operating Hours</h3>
+            <div className="space-y-4">
+              {store.operatingHours.map((oh: DayOperatingHours) => (
+                <OperatingHourRow
+                  key={oh.day}
+                  oh={oh}
+                  store={store}
+                  handleMutation={handleSettingChange}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeSub === 'services' && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-right-2 duration-300">
+            <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-3">
+              <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Services Configuration</h3>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  value={applyPricePerPerson}
+                  onChange={e => setApplyPricePerPerson(e.target.value)}
+                  placeholder="£"
+                  aria-label="Apply price to all services"
+                  className="w-24 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-white text-[11px]"
+                />
+                <button
+                  onClick={handleApplyPricePerPersonToAll}
+                  className="bg-zinc-900 border border-zinc-800 text-amber-500 px-4 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest"
+                >
+                  Apply price to all
+                </button>
+                <input
+                  type="text"
+                  value={applyNameSuffix}
+                  onChange={e => setApplyNameSuffix(e.target.value)}
+                  placeholder="People / Guests"
+                  aria-label="Apply label suffix to all services"
+                  className="w-40 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-white text-[11px]"
+                />
+                <button
+                  onClick={handleApplyServiceSuffixToAll}
+                  className="bg-zinc-900 border border-zinc-800 text-amber-500 px-4 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest"
+                >
+                  Apply label to all
+                </button>
+                <button
+                  onClick={() => setNewServiceDraft({ id: `new-${Date.now()}`, name: buildServiceName(8, applyNameSuffix), peopleCount: 8, durationMinutes: 120, pricePerPerson: '0.00', isActive: true, sortOrder: 1, isNew: true })}
+                  className="bg-zinc-900 border border-zinc-800 text-amber-500 px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest"
+                >
+                  Add Service
+                </button>
+              </div>
+            </div>
+            <div className="overflow-x-auto rounded-2xl border border-zinc-900">
+              <table className="min-w-full text-left text-[11px]">
+                <thead className="bg-zinc-950 text-zinc-500 uppercase tracking-widest">
+                  <tr>
+                    <th className="px-4 py-3">Number</th><th className="px-4 py-3">Duration</th><th className="px-4 py-3">£</th><th className="px-4 py-3">Preview total</th><th className="px-4 py-3">Active</th><th className="px-4 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {newServiceDraft && <ServiceConfigRow draft={newServiceDraft} onChange={next => setNewServiceDraft(next)} onCancel={() => setNewServiceDraft(null)} onSave={async () => {
+                    const errors = validateServiceDraft(newServiceDraft);
+                    if (Object.keys(errors).length) return;
+                    await handleMutation(store.addService({ name: buildServiceName(newServiceDraft.peopleCount, applyNameSuffix), minPeople: newServiceDraft.peopleCount, maxPeople: newServiceDraft.peopleCount, durationMinutes: newServiceDraft.durationMinutes, pricePerPersonPence: poundsToPence(Number(newServiceDraft.pricePerPerson)), isActive: newServiceDraft.isActive, sortOrder: newServiceDraft.sortOrder }), 'Failed to add service.');
+                    setNewServiceDraft(null);
+                  }} />}
+                  {store.services.slice().sort((a, b) => {
+                    const aDraft = serviceDrafts[a.id] || toServiceDraft(a);
+                    const bDraft = serviceDrafts[b.id] || toServiceDraft(b);
+                    return aDraft.peopleCount - bDraft.peopleCount || a.sortOrder - b.sortOrder;
+                  }).map((service: Service) => {
+                    const draft = serviceDrafts[service.id] || toServiceDraft(service);
+                    return <ServiceConfigRow key={service.id} draft={draft} persistedService={service} onChange={next => setServiceDrafts(prev => ({ ...prev, [service.id]: next }))} onCancel={() => setServiceDrafts(prev => ({ ...prev, [service.id]: toServiceDraft(service) }))} onSave={async () => {
+                      const errors = validateServiceDraft(draft);
+                      if (Object.keys(errors).length) return;
+                      await handleMutation(store.updateService(service.id, { name: buildServiceName(draft.peopleCount, getServiceNameSuffix(draft.name)), minPeople: draft.peopleCount, maxPeople: draft.peopleCount, durationMinutes: draft.durationMinutes, pricePerPersonPence: poundsToPence(Number(draft.pricePerPerson)), isActive: draft.isActive, sortOrder: draft.sortOrder }), 'Failed to update service.');
+                    }} onDelete={async () => {
+                      if (!confirm(`Hide service "${service.name}"?`)) return;
+                      await handleMutation(store.deleteService(service.id), 'Failed to hide service.');
+                    }} />;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeSub === 'extras' && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-right-2 duration-300">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Service Extras</h3>
+              <button
+                onClick={async () => {
+                  await handleMutation(store.addExtra({ name: 'New Extra', price: 0, pricingMode: 'flat' }), 'Failed to add extra.');
+                }}
+                className="bg-zinc-900 border border-zinc-800 text-amber-500 px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest"
+              >
+                Add Extra
+              </button>
+            </div>
+            <div className="grid grid-cols-1 gap-4">
+              {store.extras.map((e: Extra) => (
+                <div key={e.id} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                  <div className="flex-1 space-y-2 w-full">
+                    <input
+                      aria-label={`Extra name ${e.name}`}
+                      type="text"
+                      value={e.name}
+                      onChange={async val => {
+                        await handleMutation(store.updateExtra(e.id, { name: val.target.value }), 'Failed to update extra name.');
+                      }}
+                      className="w-full bg-transparent border-none text-white font-bold uppercase text-sm outline-none focus:text-amber-500"
+                    />
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2 text-[9px] font-bold uppercase tracking-widest text-zinc-500">
+                        <span>Info (shows when customer clicks ⓘ)</span>
+                        <span>{(e.infoText ?? '').length}/500</span>
+                      </div>
+                      <textarea
+                        aria-label={`Extra info for ${e.name}`}
+                        rows={3}
+                        maxLength={500}
+                        value={e.infoText ?? ''}
+                        onChange={async val => {
+                          await handleMutation(store.updateExtra(e.id, { infoText: val.target.value }), 'Failed to update extra info.');
+                        }}
+                        className="w-full rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-[11px] text-white outline-none focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/40"
+                      />
+                    </div>
+                    <div className="flex gap-4">
+                      <button
+                        onClick={async () => {
+                          await handleMutation(store.updateExtra(e.id, { pricingMode: 'flat' }), 'Failed to update extra pricing.');
+                        }}
+                        className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded border ${e.pricingMode === 'flat' ? 'bg-amber-500 text-black border-amber-400' : 'bg-zinc-900 text-zinc-600 border-zinc-800'}`}
+                      >
+                        Flat Rate
+                      </button>
+                      <button
+                        onClick={async () => {
+                          await handleMutation(store.updateExtra(e.id, { pricingMode: 'per_person' }), 'Failed to update extra pricing.');
+                        }}
+                        className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded border ${e.pricingMode === 'per_person' ? 'bg-amber-500 text-black border-amber-400' : 'bg-zinc-900 text-zinc-600 border-zinc-800'}`}
+                      >
+                        Per Person
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 w-full md:w-auto">
+                    <div className="flex items-center gap-2 bg-zinc-900 px-4 py-2 rounded-xl border border-zinc-800">
+                      <span className="text-[10px] text-zinc-500 uppercase font-bold">£:</span>
+                      <input
+                        aria-label={`Price for extra ${e.name}`}
+                        type="number"
+                        value={e.price}
+                        onChange={async val => {
+                          await handleMutation(store.updateExtra(e.id, { price: parseInt(val.target.value) }), 'Failed to update extra price.');
+                        }}
+                        className="bg-transparent border-none text-white font-mono text-xs w-16 outline-none"
+                      />
+                    </div>
+                    <button
+                      onClick={async () => {
+                        await handleMutation(store.updateExtra(e.id, { enabled: !e.enabled }), 'Failed to update extra visibility.');
+                      }}
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-all ${e.enabled ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-zinc-900 border-zinc-800 text-zinc-800'}`}
+                      title={e.enabled ? 'Disable extra' : 'Enable extra'}
+                      aria-label={e.enabled ? `Disable extra ${e.name}` : `Enable extra ${e.name}`}
+                    >
+                      <i className={`fa-solid ${e.enabled ? 'fa-eye' : 'fa-eye-slash'} text-[10px]`}></i>
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await handleMutation(store.deleteExtra(e.id), 'Failed to delete extra.');
+                      }}
+                      className="text-zinc-800 hover:text-red-500 p-2"
+                      title="Delete extra"
+                      aria-label={`Delete extra ${e.name}`}
+                    >
+                      <i className="fa-solid fa-trash-can"></i>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeSub === 'sync' && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-right-2 duration-300">
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-xl font-bold uppercase tracking-tighter text-white">External Calendar Sync</h3>
+                <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mt-1">Connect LKC to Google, Apple or Outlook</p>
+              </div>
+              {lastSyncTime && <span className="text-[8px] bg-green-500/10 text-green-500 px-3 py-1 rounded-full font-bold uppercase tracking-[0.2em] border border-green-500/20">Last Sync: {lastSyncTime}</span>}
+            </div>
+
+            <div className="p-8 bg-zinc-950 border border-zinc-900 rounded-[2rem] space-y-6">
+              <div className="flex items-center justify-between p-4 bg-zinc-900/50 rounded-2xl border border-zinc-800">
+                <span className="text-xs font-bold uppercase tracking-widest">Enable Live iCal Feed</span>
+                <button onClick={() => store.setCalendarSyncConfig({ enabled: !calSyncConfig.enabled })} className={`w-12 h-6 rounded-full relative transition-all ${calSyncConfig.enabled ? 'bg-amber-500' : 'bg-zinc-800'}`} title={calSyncConfig.enabled ? 'Disable iCal feed' : 'Enable iCal feed'} aria-label={calSyncConfig.enabled ? 'Disable iCal feed' : 'Enable iCal feed'}>
+                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${calSyncConfig.enabled ? 'left-7' : 'left-1'}`}></div>
+                </button>
+              </div>
+
+              {calSyncConfig.enabled && (
+                <div className="space-y-6 animate-in slide-in-from-bottom-2">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 ml-1">Feed Subscription URL</label>
+                    <div className="flex gap-2">
+                      <input readOnly aria-label="Feed Subscription URL" value={`${window.location.origin}/.netlify/functions/calendar-ics?token=${calSyncConfig.token}`} className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 text-white font-mono text-xs select-all" />
+                      <button onClick={() => store.regenerateCalendarToken()} className="px-4 bg-zinc-800 rounded-xl text-zinc-400 hover:text-white" title="Regenerate token" aria-label="Regenerate feed token"><i className="fa-solid fa-rotate"></i></button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeSub === 'promos' && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-right-2 duration-300">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xl font-bold uppercase tracking-tighter text-white">Promo Codes</h3>
+              <button
+                onClick={async () => {
+                  await handleMutation(
+                    store.addPromoCode({ code: 'NEWCODE', enabled: true, startDate: new Date().toISOString().split('T')[0], endDate: '2025-12-31', percentOff: 10, uses: 0 }),
+                    'Failed to create promo code.'
+                  );
+                }}
+                className="bg-zinc-900 border border-zinc-800 text-amber-500 px-5 py-2.5 rounded-xl text-[9px] font-bold uppercase tracking-widest"
+              >
+                Create Promo
+              </button>
+            </div>
+            <div className="grid grid-cols-1 gap-4">
+              {store.promoCodes.map((p: PromoCode) => (
+                <div key={p.id} className="p-6 bg-zinc-950 border border-zinc-900 rounded-2xl flex justify-between items-center shadow-lg group">
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="text"
+                        aria-label="Promo code"
+                        value={p.code}
+                        onChange={async e => {
+                          await handleMutation(store.updatePromoCode(p.id, { code: e.target.value.toUpperCase() }), 'Failed to update promo code.');
+                        }}
+                        className="bg-transparent border-none text-lg font-mono font-bold text-amber-500 uppercase outline-none focus:text-white"
+                      />
+                      <span className="text-[9px] text-zinc-700 font-bold uppercase tracking-widest">{p.uses} Uses</span>
+                    </div>
+                    <div className="flex items-center gap-4 mt-2">
+                      <div className="flex items-center gap-2 bg-zinc-900 px-3 py-1 rounded-lg border border-zinc-800">
+                        <span className="text-[9px] text-zinc-600 font-bold">%:</span>
+                        <input
+                          type="number"
+                          aria-label="Promo percent off"
+                          value={p.percentOff || 0}
+                          onChange={async e => {
+                            await handleMutation(store.updatePromoCode(p.id, { percentOff: parseInt(e.target.value), fixedOff: undefined }), 'Failed to update promo discount.');
+                          }}
+                          className="bg-transparent border-none text-white font-mono text-[10px] w-12 outline-none"
+                        />
+                      </div>
+                      <span className="text-zinc-800">or</span>
+                      <div className="flex items-center gap-2 bg-zinc-900 px-3 py-1 rounded-lg border border-zinc-800">
+                        <span className="text-[9px] text-zinc-600 font-bold">£:</span>
+                        <input
+                          type="number"
+                          aria-label="Promo fixed off"
+                          value={p.fixedOff || 0}
+                          onChange={async e => {
+                            await handleMutation(store.updatePromoCode(p.id, { fixedOff: parseInt(e.target.value), percentOff: undefined }), 'Failed to update promo discount.');
+                          }}
+                          className="bg-transparent border-none text-white font-mono text-[10px] w-12 outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-3">
+                    <button
+                      onClick={async () => {
+                        await handleMutation(store.updatePromoCode(p.id, { enabled: !p.enabled }), 'Failed to update promo status.');
+                      }}
+                      className={`px-4 py-1.5 rounded-lg text-[8px] font-bold uppercase tracking-widest border transition-all ${p.enabled ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20'}`}
+                    >
+                      {p.enabled ? 'Live' : 'Paused'}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await handleMutation(store.deletePromoCode(p.id), 'Failed to delete promo code.');
+                      }}
+                      className="text-zinc-800 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                      title="Delete promo code"
+                      aria-label={`Delete promo code ${p.code}`}
+                    >
+                      <i className="fa-solid fa-trash-can"></i>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReportsTab({ store }: { store: any }) {
+  const stats = useMemo(() => {
+    const confirmed = store.bookings.filter((b: Booking) => b.status === BookingStatus.CONFIRMED);
+    const revenue = confirmed.reduce((acc: number, b: Booking) => acc + (b.total_price || 0), 0);
+    const guests = confirmed.reduce((acc: number, b: Booking) => acc + (b.guests || 0), 0);
+
+    const revByMonth: Record<string, number> = {};
+    confirmed.forEach((b: Booking) => {
+      const month = new Date(b.start_at).toLocaleString('default', { month: 'short' });
+      revByMonth[month] = (revByMonth[month] || 0) + (b.total_price || 0);
+    });
+
+    return { revenue, guestCount: guests, bookingCount: confirmed.length, revByMonth };
+  }, [store.bookings]);
+
+  const revEntries = Object.entries(stats.revByMonth);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const styleId = 'reports-inline-styles';
+    let styleEl = document.getElementById(styleId) as HTMLStyleElement | null;
+    const max = stats.revenue || 0;
+    let css = '';
+    revEntries.forEach(([month, rev]) => {
+      const slug = `report-${month.replace(/\s+/g, '-').toLowerCase()}`;
+      const percent = max > 0 ? Math.round((Number(rev) / max) * 100) : 0;
+      css += `.${slug} { height: ${percent}%; }\n`;
+    });
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = styleId;
+      document.head.appendChild(styleEl);
+    }
+    styleEl.innerHTML = css;
+  }, [stats.revenue, stats.revByMonth]);
+
+  return (
+    <div className="space-y-10">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="glass-panel p-10 rounded-[2.5rem] border-zinc-800 shadow-2xl space-y-2">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Gross Revenue</p>
+          <p className="text-5xl font-bold text-white tracking-tighter">£{stats.revenue.toLocaleString()}</p>
+        </div>
+        <div className="glass-panel p-10 rounded-[2.5rem] border-zinc-800 shadow-2xl space-y-2">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Confirmed Sessions</p>
+          <p className="text-5xl font-bold text-white tracking-tighter">{stats.bookingCount}</p>
+        </div>
+        <div className="glass-panel p-10 rounded-[2.5rem] border-zinc-800 shadow-2xl space-y-2">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Footfall</p>
+          <p className="text-5xl font-bold text-white tracking-tighter">{stats.guestCount}</p>
+        </div>
+      </div>
+
+      <div className="glass-panel p-10 rounded-[2.5rem] border-zinc-800 shadow-2xl">
+        <h3 className="text-xl font-bold uppercase tracking-tighter text-white mb-10">Revenue Performance</h3>
+        <div className="h-64 flex items-end justify-between gap-4">
+          {revEntries.map(([month, rev]) => {
+            const slug = `report-${month.replace(/\s+/g, '-').toLowerCase()}`;
+            return (
+              <div key={month} className="flex-1 flex flex-col items-center gap-4 group">
+                <div className={`w-full bg-amber-500/10 border border-amber-500/20 rounded-xl transition-all group-hover:bg-amber-500/30 relative ${slug}`}>
+                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-zinc-900 border border-zinc-800 px-3 py-1 rounded text-[8px] font-mono text-amber-500 opacity-0 group-hover:opacity-100 transition-opacity">£{rev}</div>
+                </div>
+                <span className="text-[9px] font-bold uppercase text-zinc-600 group-hover:text-white transition-colors">{month}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function ServiceConfigRow({ draft, persistedService, onChange, onSave, onCancel, onDelete }: {
+  draft: ServiceDraft;
+  persistedService?: Service;
+  onChange: (next: ServiceDraft) => void;
+  onSave: () => Promise<void>;
+  onCancel: () => void;
+  onDelete?: () => Promise<void>;
+}) {
+  const errors = validateServiceDraft(draft);
+  const isDirty = !persistedService || JSON.stringify(toServiceDraft(persistedService)) !== JSON.stringify(draft);
+  const rowSuffix = getServiceNameSuffix(draft.name);
+  const previewPeople = Math.max(1, Math.floor(draft.peopleCount || 1));
+  const onKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && isDirty && Object.keys(errors).length === 0) await onSave();
+    if (e.key === 'Escape') onCancel();
+  };
+  return <tr className="border-t border-zinc-900 align-top">
+    <td className="px-4 py-3"><input type="number" value={draft.peopleCount} onKeyDown={onKeyDown} onChange={e => {
+      const nextCount = Number(e.target.value);
+      onChange({ ...draft, peopleCount: nextCount, name: buildServiceName(nextCount, rowSuffix) });
+    }} className="w-20 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-white" />{errors.peopleCount && <p className="text-red-400 text-[10px]">{errors.peopleCount}</p>}</td>
+    <td className="px-4 py-3"><input type="number" value={draft.durationMinutes} onKeyDown={onKeyDown} onChange={e => onChange({ ...draft, durationMinutes: Number(e.target.value) })} className="w-20 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-white" />{errors.durationMinutes && <p className="text-red-400 text-[10px]">{errors.durationMinutes}</p>}</td>
+    <td className="px-4 py-3"><input type="text" value={draft.pricePerPerson} onKeyDown={onKeyDown} onChange={e => onChange({ ...draft, pricePerPerson: e.target.value })} className="w-20 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-white" />{errors.pricePerPerson && <p className="text-red-400 text-[10px]">{errors.pricePerPerson}</p>}</td>
+    <td className="px-4 py-3 text-zinc-200">{getServicePreviewTotal({ minPeople: previewPeople, maxPeople: previewPeople, pricePerPersonPence: poundsToPence(Number(draft.pricePerPerson || 0)) })}</td>
+    <td className="px-4 py-3"><input type="checkbox" checked={draft.isActive} onChange={e => onChange({ ...draft, isActive: e.target.checked })} /></td>
+    <td className="px-4 py-3"><div className="flex gap-2"><button disabled={!isDirty || Object.keys(errors).length > 0} onClick={onSave} className="px-2 py-1 rounded bg-amber-500 text-black disabled:opacity-40">Save</button><button onClick={onCancel} className="px-2 py-1 rounded border border-zinc-700">Cancel</button>{onDelete && <button onClick={onDelete} className="px-2 py-1 rounded border border-red-500 text-red-400">Delete</button>}</div></td>
+  </tr>;
+}
+
+function BookingModal({ store, onClose, initialDate, booking, prefill }: { store: any, onClose: () => void, initialDate: string, booking?: Booking, prefill?: any }) {
+  const [formData, setFormData] = useState({
+    name: booking?.customer_name || '',
+    surname: booking?.customer_surname || '',
+    email: booking?.customer_email || '',
+    phone: booking?.customer_phone || '',
+    date: booking ? new Date(booking.start_at).toISOString().split('T')[0] : (prefill?.date || initialDate),
+    time: booking ? new Date(booking.start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : (prefill?.time || '22:00'),
+    duration: booking ? (new Date(booking.end_at).getTime() - new Date(booking.start_at).getTime()) / 3600000 : 2,
+    guests: booking?.guests || 8,
+    roomId: booking?.room_id || (prefill?.roomId || 'room-a'),
+    staffId: booking?.staff_id || '',
+    serviceId: booking?.service_id || (store.services[0]?.id || ''),
+    status: booking?.status || BookingStatus.CONFIRMED,
+    notes: booking?.notes || '',
+    specialRequests: booking?.special_requests || '',
+    deposit_paid: booking?.deposit_paid || false,
+    deposit_forfeited: booking?.deposit_forfeited || false,
+    deposit_amount: booking?.deposit_amount || (store.settings.deposit_enabled ? store.settings.deposit_amount : 0)
+  });
+  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+
+  const formDateTimestamp = Date.parse(`${formData.date}T00:00:00`);
+  const isPastDay = Number.isFinite(formDateTimestamp)
+    ? formDateTimestamp < new Date().setHours(0, 0, 0, 0)
+    : false;
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isPastDay) return;
+    const startTimestamp = Date.parse(`${formData.date}T${formData.time}:00`);
+    if (!Number.isFinite(startTimestamp)) {
+      alert('Invalid booking date/time.');
+      return;
+    }
+    const startAt = new Date(startTimestamp).toISOString();
+    const endAt = new Date(startTimestamp + formData.duration * 3600000).toISOString();
+    const check = store.validateInterval(formData.roomId, startAt, endAt, booking?.id, formData.staffId);
+    if (!check.ok) { alert(check.reason); return; }
+    const pricing = store.calculatePricing(formData.date, formData.guests, Math.max(0, formData.duration - 2), undefined, formData.serviceId);
+
+    const basePatch = {
+      customer_name: formData.name,
+      customer_surname: formData.surname,
+      customer_email: formData.email,
+      customer_phone: formData.phone,
+      start_at: startAt,
+      end_at: endAt,
+      guests: formData.guests,
+      room_id: formData.roomId,
+      room_name: ROOMS.find(r => r.id === formData.roomId)?.name || 'Room',
+      staff_id: formData.staffId,
+      service_id: formData.serviceId,
+      status: formData.status,
+      base_total: pricing.baseTotal,
+      extras_hours: Math.max(0, formData.duration - 2),
+      extras_price: pricing.extrasPrice,
+      discount_amount: pricing.discountAmount,
+      promo_discount_amount: pricing.promoDiscountAmount,
+      total_price: pricing.totalPrice + (booking?.extras_total || 0),
+      notes: formData.notes,
+      special_requests: formData.specialRequests,
+      deposit_paid: formData.deposit_paid,
+      deposit_forfeited: formData.deposit_forfeited,
+      deposit_amount: formData.deposit_amount
+    };
+
+    if (booking) {
+      const ok = await handleMutation(store.updateBooking(booking.id, basePatch), 'Failed to update booking.');
+      if (ok) onClose();
+    } else {
+      try {
+        const created = await store.addBooking({
+          ...basePatch,
+          created_at: new Date().toISOString(),
+          source: 'admin'
+        });
+        if (!created) {
+          alert('Failed to create booking.');
+          return;
+        }
+        onClose();
+      } catch (error) {
+        const message = error instanceof Error && error.message ? error.message : 'Failed to create booking.';
+        console.error('BOOKING_CONFIRM_ERROR', { error, payload: basePatch });
+        alert(message);
+      }
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={onClose}></div>
+      <form onSubmit={handleSave} className="relative w-full max-w-lg glass-panel p-4 sm:p-8 rounded-[1.25rem] sm:rounded-[2rem] border-zinc-800 shadow-2xl animate-in zoom-in duration-300 space-y-4 overflow-y-auto max-h-[92dvh] no-scrollbar">
+        <div className="flex justify-between items-center mb-2">
+          <h3 className="text-lg sm:text-xl font-bold uppercase tracking-tight text-white">{booking ? 'Manage' : 'Add'} Session</h3>
+          <button type="button" onClick={onClose} className="text-zinc-600 hover:text-white p-2" title="Close" aria-label="Close"><i className="fa-solid fa-x"></i></button>
+        </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">First Name</label>
+            <input aria-label="First name" type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required className="bg-zinc-900 border-zinc-800 border rounded-xl px-4 sm:px-5 py-3 sm:py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Surname</label>
+            <input aria-label="Surname" type="text" value={formData.surname} onChange={e => setFormData({ ...formData, surname: e.target.value })} required className="bg-zinc-900 border-zinc-800 border rounded-xl px-4 sm:px-5 py-3 sm:py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Email</label>
+            <input aria-label="Email address" type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} required className="bg-zinc-900 border-zinc-800 border rounded-xl px-4 sm:px-5 py-3 sm:py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Phone</label>
+            <input aria-label="Phone number" type="tel" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-4 sm:px-5 py-3 sm:py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Start Date</label>
+            <input aria-label="Start date" type="date" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-4 sm:px-5 py-3 sm:py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Start Time</label>
+            <input aria-label="Start time" type="time" step="900" value={formData.time} onChange={e => setFormData({ ...formData, time: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-4 sm:px-5 py-3 sm:py-4 text-white font-mono text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Length (Hours)</label>
+            <select aria-label="Session length hours" value={formData.duration} onChange={e => setFormData({ ...formData, duration: parseFloat(e.target.value) })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-4 sm:px-5 py-3 sm:py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner">
+              {[2, 3, 4, 5, 6].map(h => <option key={h} value={h}>{h} Hours</option>)}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Guests</label>
+            <input aria-label="Guests count" type="number" min="8" max="100" value={formData.guests} onChange={e => setFormData({ ...formData, guests: parseInt(e.target.value) })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-4 sm:px-5 py-3 sm:py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Room Allocation</label>
+            <select aria-label="Room allocation" value={formData.roomId} onChange={e => setFormData({ ...formData, roomId: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-4 sm:px-5 py-3 sm:py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner">
+              {ROOMS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Status</label>
+            <select aria-label="Booking status" value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as BookingStatus })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-4 sm:px-5 py-3 sm:py-4 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner">
+              <option value={BookingStatus.CONFIRMED}>Confirmed</option>
+              <option value={BookingStatus.PENDING}>Pending Payment</option>
+              <option value={BookingStatus.CANCELLED}>Cancelled</option>
+              <option value={BookingStatus.NO_SHOW}>No Show</option>
+            </select>
+          </div>
+          <div className="sm:col-span-2 space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Internal Notes</label>
+            <textarea
+              aria-label="Internal notes"
+              rows={3}
+              value={formData.notes}
+              onChange={e => setFormData({ ...formData, notes: e.target.value })}
+              className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-4 sm:px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner resize-y"
+            />
+          </div>
+          <div className="sm:col-span-2 space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Guest Requests</label>
+            <textarea
+              aria-label="Guest special requests"
+              rows={3}
+              value={formData.specialRequests}
+              onChange={e => setFormData({ ...formData, specialRequests: e.target.value })}
+              className="w-full bg-zinc-900 border-zinc-800 border rounded-xl px-4 sm:px-5 py-3 text-white text-sm outline-none focus:ring-1 ring-amber-500 shadow-inner resize-y"
+            />
+          </div>
+
+          <div className="sm:col-span-2 border-t border-zinc-800 pt-6 mt-2 text-zinc-600 text-[10px] font-bold uppercase tracking-[0.2em]">
+            Session Management Controls
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-2 sm:pt-4 sticky bottom-0 bg-zinc-950/80 backdrop-blur-sm -mx-4 sm:-mx-8 px-4 sm:px-8 pb-1 sm:pb-0">
+          <button type="button" onClick={onClose} className="flex-1 bg-zinc-900 border border-zinc-800 py-3.5 rounded-xl text-[10px] font-bold uppercase tracking-widest">Discard</button>
+          <button type="submit" disabled={isPastDay} className="flex-1 gold-gradient text-black py-3.5 rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-xl shadow-amber-500/10 active:scale-95 transition-transform disabled:opacity-50">Save Session</button>
+        </div>
+      </form>
+    </div>
+  );
+}
