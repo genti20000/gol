@@ -35,6 +35,70 @@ import { getServiceBaseTotal, parsePeopleRangeFromName } from './lib/servicePric
 
 export type MutationResult = { ok: boolean; error?: string };
 
+type BookingRow = {
+  id: string;
+  room_id: string;
+  room_name: string;
+  service_id: string | null;
+  staff_id: string | null;
+  start_at: string;
+  end_at: string;
+  status: string;
+  guests: number;
+  customer_name: string | null;
+  customer_surname: string | null;
+  customer_email: string | null;
+  customer_phone: string | null;
+  notes: string | null;
+  base_total: number | null;
+  extras_hours: number | null;
+  extras_price: number | null;
+  discount_amount: number | null;
+  promo_code: string | null;
+  promo_discount_amount: number | null;
+  total_price: number | null;
+  created_at: string | null;
+  source: 'public' | 'admin' | null;
+  magic_token: string | null;
+  extras_snapshot: Booking['extras'] | null;
+  extras_total: number | null;
+  deposit_amount: number | null;
+  deposit_paid: boolean | null;
+  deposit_forfeited: boolean | null;
+};
+
+const mapBookingRowToBooking = (b: BookingRow): Booking => ({
+  id: b.id,
+  room_id: b.room_id,
+  room_name: b.room_name,
+  service_id: b.service_id ?? undefined,
+  staff_id: b.staff_id ?? undefined,
+  start_at: b.start_at,
+  end_at: b.end_at,
+  status: b.status as BookingStatus,
+  guests: b.guests,
+  customer_name: b.customer_name ?? '',
+  customer_surname: b.customer_surname ?? '',
+  customer_email: b.customer_email ?? '',
+  customer_phone: b.customer_phone ?? '',
+  notes: b.notes ?? undefined,
+  base_total: b.base_total ?? 0,
+  extras_hours: b.extras_hours ?? 0,
+  extras_price: b.extras_price ?? 0,
+  discount_amount: b.discount_amount ?? 0,
+  promo_code: b.promo_code ?? undefined,
+  promo_discount_amount: b.promo_discount_amount ?? 0,
+  total_price: b.total_price ?? 0,
+  created_at: b.created_at ?? new Date().toISOString(),
+  source: b.source ?? undefined,
+  magicToken: b.magic_token ?? undefined,
+  extras: b.extras_snapshot ?? undefined,
+  extras_total: b.extras_total ?? undefined,
+  deposit_amount: b.deposit_amount ?? 0,
+  deposit_paid: b.deposit_paid ?? false,
+  deposit_forfeited: b.deposit_forfeited ?? false
+});
+
 const DEFAULT_SETTINGS: VenueSettings = {
   cancelCutoffHours: 24,
   rescheduleCutoffHours: 48,
@@ -262,38 +326,8 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
           return;
         }
 
-        if (bookingsData) setBookings(bookingsData.map(b => ({
-          ...b,
-          id: b.id,
-          room_id: b.room_id,
-          room_name: b.room_name,
-          service_id: b.service_id,
-          staff_id: b.staff_id,
-          start_at: b.start_at,
-          end_at: b.end_at,
-          status: b.status as BookingStatus,
-          guests: b.guests,
-          customer_name: b.customer_name ?? '',
-          customer_surname: b.customer_surname ?? '',
-          customer_email: b.customer_email ?? '',
-          customer_phone: b.customer_phone ?? '',
-          notes: b.notes,
-          base_total: b.base_total ?? 0,
-          extras_hours: b.extras_hours ?? 0,
-          extras_price: b.extras_price ?? 0,
-          discount_amount: b.discount_amount ?? 0,
-          promo_code: b.promo_code,
-          promo_discount_amount: b.promo_discount_amount ?? 0,
-          total_price: b.total_price ?? 0,
-          created_at: b.created_at ?? new Date().toISOString(),
-          source: b.source,
-          magicToken: b.magic_token,
-          extras: b.extras_snapshot,
-          extras_total: b.extras_total,
-          deposit_amount: b.deposit_amount ?? 0,
-          deposit_paid: b.deposit_paid ?? false,
-          deposit_forfeited: b.deposit_forfeited ?? false
-        })));
+        const bookingRows = (bookingsData ?? []) as BookingRow[];
+        setBookings(bookingRows.map((b: BookingRow) => mapBookingRowToBooking(b)));
         if (roomsData) setRooms(roomsData as Room[]);
         if (servicesData) setServices(servicesData.map((s, index) => {
           const parsedRange = parsePeopleRangeFromName(s.name);

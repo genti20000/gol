@@ -188,7 +188,7 @@ export default function Checkout() {
       if (!finalBooking) {
         throw new Error('Unable to create booking. Please try again.');
       }
-      const resolvedToken = finalBooking.booking_access_token || finalBooking.magic_token || bookingToken;
+      const resolvedToken = finalBooking.booking_access_token || finalBooking.magicToken || bookingToken;
       navigate(`/confirmation?id=${finalBooking.id}&token=${encodeURIComponent(resolvedToken || '')}`);
     } catch (error) {
       console.error('BOOKING_CONFIRM_ERROR', {
