@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { ServerAdminAuthError, requireServerAdminAuth } from '@/lib/serverAdminAuth';
 import { deriveStatusFromPaymentState, PAYMENT_STATES, validateNotesInput } from '@/lib/adminBookingOps';
 import { parseAdminBookingAction, parseBookingId, parseCancelReason } from '@/lib/adminBookingValidation';
+import { sendAdminNewBookingPush } from '@/lib/adminPush';
 
 const upsertAuditLog = async (
   supabase: any,
@@ -128,6 +129,16 @@ export async function PATCH(
         { status: booking.status, payment_state: booking.payment_state ?? PAYMENT_STATES.NONE },
         { status: updated.status, payment_state: updated.payment_state }
       );
+
+      if (booking.status !== 'CONFIRMED' && updated.status === 'CONFIRMED') {
+        await sendAdminNewBookingPush({
+          id: updated.id,
+          booking_ref: updated.booking_ref,
+          room_name: updated.room_name,
+          start_at: updated.start_at,
+          customer_name: updated.customer_name
+        });
+      }
 
       return NextResponse.json({ ok: true, booking: updated });
     }

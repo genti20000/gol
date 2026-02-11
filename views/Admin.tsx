@@ -24,6 +24,7 @@ import {
 } from '../types';
 import { ROOMS, LOGO_URL, PRICING_TIERS, EXTRAS, SLOT_MINUTES, BUFFER_MINUTES, getGuestLabel, LS_ADMIN_USERS } from '../constants';
 import { formatPounds, getServicePreviewTotal, parsePeopleRangeFromName, poundsToPence, penceToPounds } from '../lib/servicePricing';
+import AdminPushSetup from '@/components/AdminPushSetup';
 
 type Tab = 'bookings' | 'bookings-list' | 'customers' | 'blocks' | 'settings' | 'reports';
 type ViewMode = 'day' | 'week' | 'month';
@@ -419,6 +420,7 @@ export default function Admin() {
           </nav>
           <div className="flex items-center gap-2 sm:gap-3 text-[8px] sm:text-[9px] uppercase tracking-widest text-zinc-500">
             <span className="truncate max-w-[46vw] sm:max-w-none">{session.user.email}</span>
+            <AdminPushSetup adminEmail={session.user.email} />
             <button
               onClick={handleSignOut}
               className="bg-zinc-900 border border-zinc-800 py-2 px-4 rounded-full text-[9px] font-bold uppercase tracking-widest text-zinc-300 hover:text-white transition-colors"

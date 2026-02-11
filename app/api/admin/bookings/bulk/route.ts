@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ServerAdminAuthError, requireServerAdminAuth } from '@/lib/serverAdminAuth';
 import { parseBulkBookingPayload } from '@/lib/adminBookingValidation';
+import { sendAdminNewBookingPush } from '@/lib/adminPush';
 
 export async function POST(request: Request) {
   try {
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
         .from('bookings')
         .update({ payment_state: 'PAID', status: 'CONFIRMED', deposit_paid: true, confirmed_at: new Date().toISOString() })
         .in('id', ids)
-        .select('id');
+        .select('id,booking_ref,room_name,start_at,customer_name');
 
       if (error) return NextResponse.json({ error: 'Bulk mark paid failed.' }, { status: 500 });
 
@@ -56,6 +57,18 @@ export async function POST(request: Request) {
         action: 'bulk_mark_paid',
         metadata: { idsCount: ids.length }
       })));
+
+      await Promise.all(
+        (updatedRows ?? []).map((booking: any) =>
+          sendAdminNewBookingPush({
+            id: booking.id,
+            booking_ref: booking.booking_ref,
+            room_name: booking.room_name,
+            start_at: booking.start_at,
+            customer_name: booking.customer_name
+          })
+        )
+      );
 
       return NextResponse.json({
         ok: true,

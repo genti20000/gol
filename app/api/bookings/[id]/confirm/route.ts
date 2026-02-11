@@ -5,6 +5,7 @@ import { validateBookingDraftInput } from '@/lib/bookingValidation';
 import { extractBookingToken, isBookingTokenValid } from '@/lib/bookingAccessToken';
 import { parseBookingId } from '@/lib/adminBookingValidation';
 import { isDraftExpired } from '@/lib/draftExpiry';
+import { sendAdminNewBookingPush } from '@/lib/adminPush';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -94,6 +95,16 @@ export async function POST(request: Request, { params }: { params: { id: string 
         if (confirmError) {
             console.error('Failed to confirm booking.', confirmError);
             return NextResponse.json({ error: 'Unable to confirm booking.' }, { status: 500 });
+        }
+
+        if (booking.status !== BookingStatus.CONFIRMED) {
+            await sendAdminNewBookingPush({
+                id: confirmedBooking.id,
+                booking_ref: confirmedBooking.booking_ref,
+                room_name: confirmedBooking.room_name,
+                start_at: confirmedBooking.start_at,
+                customer_name: confirmedBooking.customer_name
+            });
         }
 
         // TODO: Send Confirmation Email (existing logic usually handles this via triggers or another call)

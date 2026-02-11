@@ -195,7 +195,7 @@ export async function POST(request: Request) {
         // Availability Check
         const { data: overlappingBookings } = await supabase
             .from('bookings')
-            .select('room_id')
+            .select('room_id,status,expires_at')
             .not('status', 'in', `(${BookingStatus.CANCELLED},${BookingStatus.FAILED},${BookingStatus.EXPIRED})`)
             .lt('start_at', endDate.toISOString())
             .gt('end_at', startDate.toISOString());
@@ -207,7 +207,17 @@ export async function POST(request: Request) {
             .gt('end_at', startDate.toISOString());
 
         const blockedRoomIds = new Set<string>();
-        (overlappingBookings ?? []).forEach((b) => b.room_id && blockedRoomIds.add(b.room_id));
+        (overlappingBookings ?? []).forEach((b) => {
+            const status = String((b as any).status || '');
+            if (status === BookingStatus.DRAFT) {
+                const expiresAtRaw = (b as any).expires_at;
+                const expiresAtMs = Date.parse(String(expiresAtRaw || ''));
+                if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+                    return;
+                }
+            }
+            b.room_id && blockedRoomIds.add(b.room_id);
+        });
         (roomBlocks ?? []).forEach((b) => b.room_id && blockedRoomIds.add(b.room_id));
 
         const assignedRoom = rooms.find((room) => !blockedRoomIds.has(room.id));

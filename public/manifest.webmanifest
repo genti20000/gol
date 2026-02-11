@@ -1,0 +1,15 @@
+{
+  "name": "London Karaoke Club Admin",
+  "short_name": "LKC Admin",
+  "start_url": "/admin",
+  "display": "standalone",
+  "background_color": "#0B0D10",
+  "theme_color": "#0B0D10",
+  "icons": [
+    {
+      "src": "/premium-hero.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
