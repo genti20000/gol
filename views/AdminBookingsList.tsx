@@ -376,6 +376,11 @@ export default function AdminBookingsList({ rooms, allBookings, onViewBooking }:
               <td className="px-2 space-x-1">
                 {missing && <span className="px-2 py-1 rounded border border-amber-500/30 text-amber-400">Missing customer details</span>}
                 {conflict && <span className="px-2 py-1 rounded border border-red-500/30 text-red-400">Conflict</span>}
+                {(Number(b.extras_total || 0) > 0) && (
+                  <span className="px-2 py-1 rounded border border-cyan-500/30 text-cyan-300">
+                    Extras +{asMoney(Number(b.extras_total || 0))}
+                  </span>
+                )}
               </td>
               <td className="px-2 py-2">
                 <div className="flex flex-wrap gap-2">

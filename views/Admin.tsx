@@ -719,7 +719,21 @@ function BookingInspector({ booking, onClose, onToggleStatus, onEdit, onCancel }
         <p><span className="text-zinc-500">Room:</span> {booking.room_name}</p>
         <p><span className="text-zinc-500">Guests:</span> {booking.guests}</p>
         <p><span className="text-zinc-500">Status:</span> {booking.status}</p>
-        <p><span className="text-zinc-500">Extras:</span> £{booking.extras_price || 0}</p>
+        <p><span className="text-zinc-500">Session Extras:</span> £{booking.extras_price || 0}</p>
+        <p><span className="text-zinc-500">Add-ons Total:</span> £{booking.extras_total || 0}</p>
+        <p><span className="text-zinc-500">Grand Total:</span> £{booking.total_price || 0}</p>
+        {(booking.extras || []).length > 0 ? (
+          <div className="pt-2 space-y-1">
+            <p className="text-zinc-500">Add-ons:</p>
+            {(booking.extras || []).map((extra) => (
+              <p key={`${extra.extraId}-${extra.quantity}`} className="text-[11px] text-zinc-300">
+                {extra.nameSnapshot} x{extra.quantity} - £{extra.lineTotal}
+              </p>
+            ))}
+          </div>
+        ) : (
+          <p><span className="text-zinc-500">Add-ons:</span> —</p>
+        )}
         <p><span className="text-zinc-500">Notes:</span> {booking.notes || '—'}</p>
       </div>
       <div className="grid grid-cols-2 gap-2">

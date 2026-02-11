@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
-import { BookingStatus, Extra } from '@/types';
+import { Extra } from '@/types';
 import { LOGO_URL, BASE_DURATION_HOURS, getGuestLabel } from '@/constants';
 import { isValidBookingDateTime } from '@/lib/bookingValidation';
 import { penceToPounds } from '@/lib/servicePricing';
@@ -44,7 +44,6 @@ export default function Checkout() {
   }), [draftBooking, date, time, guests, extraHours]);
 
   const effectivePromo = draftBooking?.promo_code || promo;
-  const totalDuration = BASE_DURATION_HOURS + checkoutSummary.extraHours;
 
   const pricing = useMemo(() => store.calculatePricing(
     checkoutSummary.date,
@@ -129,6 +128,9 @@ export default function Checkout() {
     setIsProcessing(true);
 
     try {
+      if (!bookingId || !bookingToken) {
+        throw new Error('Booking session expired. Please choose your slot again.');
+      }
       if (!checkoutSummary.date || !checkoutSummary.time) {
         throw new Error('Booking date and time are required.');
       }
@@ -139,57 +141,37 @@ export default function Checkout() {
       if (!Number.isFinite(startTimestamp)) {
         throw new Error('Invalid booking date/time');
       }
-      const startAt = new Date(startTimestamp).toISOString();
-      const endAt = new Date(startTimestamp + totalDuration * 3600000).toISOString();
+      const updateResponse = await fetch(`/api/bookings/${bookingId}/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: bookingToken,
+          firstName: formData.name,
+          surname: formData.surname,
+          email: formData.email,
+          phone: formData.phone || null,
+          notes: formData.notes || null,
+          specialRequests: formData.notes || null,
+          extras: extrasSelection
+        })
+      });
 
-      const assignment = store.findFirstAvailableRoomAndStaff(startAt, endAt, queryStaffId, queryServiceId);
-      if (!assignment) {
-        alert("This slot has been taken. Please choose another time.");
-        navigate('/');
-        return;
+      if (!updateResponse.ok) {
+        const payload = await updateResponse.json().catch(() => null);
+        throw new Error(payload?.error || 'Unable to save booking details.');
       }
 
-      const bookingExtras = store.buildBookingExtrasSnapshot(extrasSelection, checkoutSummary.guests);
+      const confirmResponse = await fetch(`/api/bookings/${bookingId}/confirm?token=${encodeURIComponent(bookingToken)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
 
-      const booking = {
-        room_id: assignment.room_id,
-        room_name: store.rooms.find(r => r.id === assignment.room_id)!.name,
-        staff_id: assignment.staff_id,
-        service_id: queryServiceId,
-        start_at: startAt,
-        end_at: endAt,
-        booking_date: checkoutSummary.date,
-        start_time: checkoutSummary.time,
-        status: BookingStatus.CONFIRMED,
-        confirmed_at: new Date().toISOString(),
-        guests,
-        customer_name: formData.name,
-        customer_surname: formData.surname,
-        customer_email: formData.email,
-        customer_phone: formData.phone,
-        notes: formData.notes,
-        special_requests: formData.notes,
-        base_total: pricing.baseTotal,
-        extras_hours: checkoutSummary.extraHours,
-        extras_price: pricing.extrasPrice,
-        discount_amount: pricing.discountAmount,
-        promo_code: effectivePromo || undefined,
-        promo_discount_amount: pricing.promoDiscountAmount,
-        total_price: pricing.totalPrice + extrasTotal,
-        created_at: new Date().toISOString(),
-        source: 'public' as const,
-        extras: bookingExtras,
-        extras_total: extrasTotal,
-        deposit_amount: 0,
-        deposit_paid: false
-      };
-
-      const finalBooking = await store.addBooking(booking);
-      if (!finalBooking) {
-        throw new Error('Unable to create booking. Please try again.');
+      if (!confirmResponse.ok) {
+        const payload = await confirmResponse.json().catch(() => null);
+        throw new Error(payload?.error || 'Unable to confirm booking.');
       }
-      const resolvedToken = finalBooking.booking_access_token || finalBooking.magicToken || bookingToken;
-      navigate(`/confirmation?id=${finalBooking.id}&token=${encodeURIComponent(resolvedToken || '')}`);
+
+      navigate(`/confirmation?id=${bookingId}&token=${encodeURIComponent(bookingToken)}`);
     } catch (error) {
       console.error('BOOKING_CONFIRM_ERROR', {
         error,

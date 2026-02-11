@@ -9,6 +9,7 @@ import {
   validateBookingDraftInput
 } from '@/lib/bookingValidation';
 import { buildDraftBookingPayload } from '@/lib/bookingPayload';
+import { computeBookingTotals } from '@/lib/bookingTotals';
 import { computeOfferDiscounts } from '@/lib/offerUtils';
 import { computeAmountDueNow } from '@/lib/paymentLogic';
 import { BookingStatus } from '@/types';
@@ -157,11 +158,18 @@ export async function POST(request: Request) {
     const afterPromo = Math.max(0, subtotal - promoDiscountAmount);
     const offerPercentDiscount = offerRes.offerPercent > 0 ? Math.round(afterPromo * (offerRes.offerPercent / 100)) : 0;
     const offerFixed = offerRes.offerFixed;
-    const totalPrice = Math.max(0, afterPromo - offerPercentDiscount - offerFixed);
+    const lineItems: Array<{ lineTotal: number }> = [];
+    const totals = computeBookingTotals({
+      baseTotal,
+      extrasPrice,
+      discountAmount: discountAmount + offerPercentDiscount + offerFixed,
+      promoDiscountAmount,
+      lineItems
+    });
     const depositEnabled = Boolean(settings?.deposit_enabled);
     const depositAmountSetting = settings?.deposit_amount ?? 0;
     const depositAmount = computeAmountDueNow({
-      totalPrice,
+      totalPrice: totals.grandTotal,
       depositEnabled,
       depositAmount: depositAmountSetting
     });
@@ -311,7 +319,7 @@ export async function POST(request: Request) {
       discountAmount,
       promoCode: promoCodeToStore,
       promoDiscountAmount,
-      totalPrice,
+      totalPrice: totals.grandTotal,
       source: 'public',
       depositAmount,
       depositPaid: isZeroDeposit,
@@ -324,6 +332,8 @@ export async function POST(request: Request) {
       specialRequests: isNonEmptyString(payload.specialRequests) ? payload.specialRequests.trim() : null
     });
     bookingPayload.guests = guests;
+    bookingPayload.extras_total = totals.extrasTotal;
+    bookingPayload.total_price = totals.grandTotal;
 
     const missingInsertFields = REQUIRED_BOOKING_INSERT_FIELDS.filter((field) => {
       const value = bookingPayload[field as keyof typeof bookingPayload];

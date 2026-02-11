@@ -4,6 +4,7 @@ import { BookingStatus, BookingExtraSelection } from '@/types';
 import { isBookingTokenValid } from '@/lib/bookingAccessToken';
 import { validateBookingDraftInput } from '@/lib/bookingValidation';
 import { getExtraMaxQuantity, validateBookingUpdateInput } from '@/lib/bookingUpdateValidation';
+import { computeBookingTotals } from '@/lib/bookingTotals';
 import { parseBookingId } from '@/lib/adminBookingValidation';
 
 type UpdateRequest = {
@@ -107,7 +108,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
             return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
         }
 
-        if (booking.status !== BookingStatus.PENDING) {
+        if (booking.status !== BookingStatus.PENDING && booking.status !== BookingStatus.DRAFT) {
             return NextResponse.json({ error: 'Booking status does not allow updates.' }, { status: 400 });
         }
 
@@ -197,16 +198,15 @@ export async function POST(request: Request, { params }: { params: { id: string 
             updates.extras_total = extrasTotal;
             updates.extras_snapshot = extrasSnapshot;
 
-            // Re-calculate total_price
-            const newTotalPrice = Math.max(0,
-                Number(booking.base_total) +
-                Number(booking.extras_price) +
-                extrasTotal -
-                Number(booking.discount_amount) -
-                Number(booking.promo_discount_amount)
-            );
+            const totals = computeBookingTotals({
+                baseTotal: Number(booking.base_total),
+                extrasPrice: Number(booking.extras_price),
+                discountAmount: Number(booking.discount_amount),
+                promoDiscountAmount: Number(booking.promo_discount_amount),
+                lineItems: extrasSnapshot as any[]
+            });
 
-            updates.total_price = newTotalPrice;
+            updates.total_price = totals.grandTotal;
         }
 
         // If start_at present, compute booking_date and start_time to keep DB consistent

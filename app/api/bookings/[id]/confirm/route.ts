@@ -42,7 +42,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
             return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
         }
 
-        if (booking.status !== BookingStatus.PENDING) {
+        if (booking.status !== BookingStatus.PENDING && booking.status !== BookingStatus.DRAFT) {
             if (booking.status === BookingStatus.CONFIRMED) {
                 return NextResponse.json({ message: 'Booking already confirmed.', booking });
             }
