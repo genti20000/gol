@@ -222,7 +222,9 @@ export async function POST(request: Request) {
             notes: null,
             specialRequests: null
         });
-        bookingPayload.status = BookingStatus.PENDING;
+        // Keep init rows as DRAFT until customer details are collected in checkout.
+        // DB constraints require contact details for active states.
+        bookingPayload.status = BookingStatus.DRAFT;
         bookingPayload.guests = guests;
 
         console.log('booking init payload keys', Object.keys(bookingPayload), 'booking_date', bookingPayload.booking_date);
@@ -234,11 +236,26 @@ export async function POST(request: Request) {
             .maybeSingle();
 
         if (bookingError || !insertedBooking) {
+            const code = bookingError?.code;
+            const message = bookingError?.message ?? '';
+            const lowerMessage = message.toLowerCase();
+            const isContactConstraint =
+                code === '23514' &&
+                lowerMessage.includes('bookings_contact_required_for_active_states_check');
+            const isOverlapConstraint =
+                code === '23P01' || lowerMessage.includes('bookings_no_overlap_per_room');
+
             console.error('Failed to create booking (init).', {
                 error: { message: bookingError?.message, hint: bookingError?.hint, code: bookingError?.code },
                 payloadKeys: Object.keys(bookingPayload),
                 booking_date: bookingPayload.booking_date
             });
+            if (isContactConstraint) {
+                return NextResponse.json({ error: 'Unable to initialize booking draft. Please try another time slot.' }, { status: 409 });
+            }
+            if (isOverlapConstraint) {
+                return NextResponse.json({ error: 'That room was just booked. Please choose another time.' }, { status: 409 });
+            }
             return NextResponse.json({ error: 'Unable to initialize booking.' }, { status: 500 });
         }
 
