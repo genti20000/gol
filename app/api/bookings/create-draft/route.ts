@@ -13,6 +13,7 @@ import { computeBookingTotals } from '@/lib/bookingTotals';
 import { computeOfferDiscounts } from '@/lib/offerUtils';
 import { computeAmountDueNow } from '@/lib/paymentLogic';
 import { computeEarlyBirdDiscount } from '@/lib/earlyBird';
+import { expireStaleDrafts, getDraftExpiryIso } from '@/lib/draftExpiry';
 import { BookingStatus } from '@/types';
 
 type DraftRequest = {
@@ -86,6 +87,11 @@ export async function POST(request: Request) {
     const endDate = new Date(startDate.getTime() + totalDurationHours * 3600000);
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    try {
+      await expireStaleDrafts(supabase);
+    } catch (expiryError) {
+      console.warn('Failed to auto-expire stale drafts during create-draft.', expiryError);
+    }
 
     const { data: selectedService, error: serviceError } = await supabase
       .from('services')
@@ -253,7 +259,7 @@ export async function POST(request: Request) {
     const { data: overlappingBookings, error: bookingsError } = await supabase
       .from('bookings')
       .select('room_id')
-      .neq('status', BookingStatus.CANCELLED)
+      .not('status', 'in', `(${BookingStatus.CANCELLED},${BookingStatus.FAILED},${BookingStatus.EXPIRED})`)
       .lt('start_at', endDate.toISOString())
       .gt('end_at', startDate.toISOString());
 
@@ -311,7 +317,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unable to allocate a room.' }, { status: 500 });
     }
 
-    const expiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+    const expiresAt = getDraftExpiryIso();
 
     const bookingPayload = buildDraftBookingPayload({
       roomId: assignedRoomId,

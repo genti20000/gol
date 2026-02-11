@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { extractBookingToken, isBookingTokenValid } from '@/lib/bookingAccessToken';
 import { parseBookingId } from '@/lib/adminBookingValidation';
+import { isDraftExpired } from '@/lib/draftExpiry';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -31,7 +32,7 @@ export async function GET(
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
   const { data, error } = await supabase
     .from('bookings')
-    .select('id,status,booking_ref,customer_email,deposit_amount,confirmed_at,booking_date,start_time,service_id,guests,duration_hours,promo_code,base_total,extras_price,discount_amount,promo_discount_amount,total_price,extras_total,extras_snapshot,room_id,room_name,staff_id,extras_hours,booking_access_token')
+    .select('id,status,booking_ref,customer_email,deposit_amount,confirmed_at,booking_date,start_time,service_id,guests,duration_hours,promo_code,base_total,extras_price,discount_amount,promo_discount_amount,total_price,extras_total,extras_snapshot,room_id,room_name,staff_id,extras_hours,expires_at,booking_access_token')
     .eq('id', bookingId)
     .maybeSingle();
 
@@ -44,6 +45,15 @@ export async function GET(
 
   if (!isBookingTokenValid(bookingToken, data.booking_access_token)) {
     return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
+  }
+
+  if (isDraftExpired(data)) {
+    await supabase
+      .from('bookings')
+      .update({ status: 'EXPIRED' })
+      .eq('id', bookingId)
+      .eq('status', 'DRAFT');
+    return NextResponse.json({ error: 'Booking session expired. Please choose another slot.' }, { status: 410 });
   }
 
   return NextResponse.json({

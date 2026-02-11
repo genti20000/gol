@@ -6,6 +6,7 @@ import { validateBookingDraftInput } from '@/lib/bookingValidation';
 import { getExtraMaxQuantity, validateBookingUpdateInput } from '@/lib/bookingUpdateValidation';
 import { computeBookingTotals } from '@/lib/bookingTotals';
 import { parseBookingId } from '@/lib/adminBookingValidation';
+import { isDraftExpired } from '@/lib/draftExpiry';
 
 type UpdateRequest = {
     bookingToken?: string;
@@ -106,6 +107,15 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
         if (!isBookingTokenValid(bookingToken, booking.booking_access_token)) {
             return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
+        }
+
+        if (isDraftExpired(booking)) {
+            await supabase
+                .from('bookings')
+                .update({ status: BookingStatus.EXPIRED })
+                .eq('id', bookingId)
+                .eq('status', BookingStatus.DRAFT);
+            return NextResponse.json({ error: 'Booking session expired. Please choose another slot.' }, { status: 410 });
         }
 
         if (booking.status !== BookingStatus.PENDING && booking.status !== BookingStatus.DRAFT) {

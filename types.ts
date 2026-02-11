@@ -6,6 +6,7 @@ export enum RateType {
 
 export enum BookingStatus {
   DRAFT = 'DRAFT',
+  EXPIRED = 'EXPIRED',
   PENDING = 'PENDING',
   CONFIRMED = 'CONFIRMED',
   FAILED = 'FAILED',
@@ -92,6 +93,7 @@ export interface Booking {
   start_at: string; // ISO
   end_at: string; // ISO
   status: BookingStatus;
+  expires_at?: string | null;
   payment_state?: PaymentState;
   guests: number;
   customer_name: string;

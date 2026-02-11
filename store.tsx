@@ -35,6 +35,7 @@ import { supabase, supabaseConfigured } from './lib/supabase';
 import { computeOfferDiscounts } from './lib/offerUtils';
 import { getServiceBaseTotal, parsePeopleRangeFromName } from './lib/servicePricing';
 import { computeEarlyBirdDiscount } from './lib/earlyBird';
+import { isDraftExpired } from './lib/draftExpiry';
 
 export type MutationResult = { ok: boolean; error?: string };
 
@@ -47,6 +48,7 @@ type BookingRow = {
   start_at: string;
   end_at: string;
   status: string;
+  expires_at: string | null;
   guests: number;
   customer_name: string | null;
   customer_surname: string | null;
@@ -92,6 +94,7 @@ const mapBookingRowToBooking = (b: BookingRow): Booking => ({
   start_at: b.start_at,
   end_at: b.end_at,
   status: b.status as BookingStatus,
+  expires_at: b.expires_at ?? null,
   guests: b.guests,
   customer_name: b.customer_name ?? '',
   customer_surname: b.customer_surname ?? '',
@@ -145,6 +148,13 @@ const mapBookingMutationError = (error: any): string => {
   }
 
   return message;
+};
+
+const isBlockingBooking = (booking: Booking): boolean => {
+  if (!booking) return false;
+  if (booking.status === BookingStatus.CANCELLED || booking.status === BookingStatus.FAILED || booking.status === BookingStatus.EXPIRED) return false;
+  if (isDraftExpired(booking)) return false;
+  return true;
 };
 
 const DEFAULT_CAL_SYNC: CalendarSyncConfig = {
@@ -278,7 +288,7 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
           ? supabase.from('bookings').select('*')
           : supabase
             .from('bookings')
-            .select('id,room_id,room_name,service_id,staff_id,start_at,end_at,status,guests');
+            .select('id,room_id,room_name,service_id,staff_id,start_at,end_at,status,expires_at,guests');
 
         const roomsQuery = supabase.from('rooms').select('*');
         const servicesQuery = supabase.from('services').select('*');
@@ -547,7 +557,7 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
       if (closeTs <= openTs) closeTs += 24 * 3600000;
       if (startTs < openTs || endTs > closeTs) return { ok: false, reason: 'Outside hours' };
     }
-    const conflicts = bookings.filter(b => b.id !== excludeBookingId && b.status !== BookingStatus.CANCELLED && b.room_id === roomId && (startTs < new Date(b.end_at).getTime() && endTs > new Date(b.start_at).getTime()));
+    const conflicts = bookings.filter(b => b.id !== excludeBookingId && isBlockingBooking(b) && b.room_id === roomId && (startTs < new Date(b.end_at).getTime() && endTs > new Date(b.start_at).getTime()));
     if (conflicts.length > 0) return { ok: false, reason: 'Room occupied' };
     const blockConflicts = blocks.filter(b => b.roomId === roomId && (startTs < new Date(b.end_at).getTime() && endTs > new Date(b.start_at).getTime()));
     if (blockConflicts.length > 0) return { ok: false, reason: 'Room blocked' };
@@ -911,7 +921,7 @@ export function StoreProvider({ children, mode = 'public' }: { children: React.R
   const buildWhatsAppUrl = useCallback((message: string) => `${WHATSAPP_URL}?text=${encodeURIComponent(message)}`, []);
 
   const getBusyIntervals = useCallback((date: string, roomId: string) => {
-    const dayB = bookings.filter(b => b.room_id === roomId && b.status !== BookingStatus.CANCELLED && b.start_at.startsWith(date));
+    const dayB = bookings.filter(b => b.room_id === roomId && isBlockingBooking(b) && b.start_at.startsWith(date));
     const dayBl = blocks.filter(b => b.roomId === roomId && b.start_at.startsWith(date));
     return [
       ...dayB.map(b => ({

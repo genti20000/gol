@@ -1,10 +1,17 @@
 import { NextResponse } from 'next/server';
 import { ServerAdminAuthError, requireServerAdminAuth } from '@/lib/serverAdminAuth';
 import { PAYMENT_STATES, shouldAutoExpirePendingBooking } from '@/lib/adminBookingOps';
+import { expireStaleDrafts } from '@/lib/draftExpiry';
 
 export async function POST(request: Request) {
   try {
     const { supabase, adminEmail } = await requireServerAdminAuth(request);
+    let expiredDraftIds: string[] = [];
+    try {
+      expiredDraftIds = await expireStaleDrafts(supabase);
+    } catch (draftError) {
+      console.warn('[ADMIN AUTO-EXPIRE] Failed to expire stale drafts.', draftError);
+    }
     const configuredHours = Number(process.env.PENDING_BOOKING_EXPIRY_HOURS ?? '24');
     const expiryHours = Number.isFinite(configuredHours) && configuredHours > 0 ? configuredHours : 24;
 
@@ -23,7 +30,7 @@ export async function POST(request: Request) {
     );
 
     if (expirable.length === 0) {
-      return NextResponse.json({ ok: true, cancelled: 0, expiryHours });
+      return NextResponse.json({ ok: true, cancelled: 0, expiredDrafts: expiredDraftIds.length, expiryHours });
     }
 
     const ids = expirable.map((booking: any) => booking.id);
@@ -48,7 +55,7 @@ export async function POST(request: Request) {
       }))
     );
 
-    return NextResponse.json({ ok: true, cancelled: ids.length, expiryHours });
+    return NextResponse.json({ ok: true, cancelled: ids.length, expiredDrafts: expiredDraftIds.length, expiryHours });
   } catch (error) {
     if (error instanceof ServerAdminAuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

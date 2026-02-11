@@ -10,7 +10,7 @@ const PAGE_SIZE = 25;
 type DateRangePreset = 'all' | 'today' | 'week' | 'custom';
 const CANCEL_UNDO_MS = 6000;
 
-const STATUS_OPTIONS: BookingStatus[] = [BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CANCELLED];
+const STATUS_OPTIONS: BookingStatus[] = [BookingStatus.DRAFT, BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CANCELLED, BookingStatus.EXPIRED];
 const PAYMENT_OPTIONS: PaymentState[] = [PaymentState.NONE, PaymentState.DEPOSIT_HELD, PaymentState.PAID, PaymentState.REFUNDED];
 
 const toStartOfDayIso = (date: string) => new Date(`${date}T00:00:00`).toISOString();
@@ -18,10 +18,27 @@ const toEndOfDayIso = (date: string) => new Date(`${date}T23:59:59`).toISOString
 
 const asMoney = (value: number) => `£${Number(value ?? 0).toFixed(2)}`;
 
+const isDraftExpired = (booking: Booking) => {
+  if (!booking || booking.status !== BookingStatus.DRAFT) return false;
+  if (!booking.expires_at) return false;
+  const expiresAt = new Date(booking.expires_at).getTime();
+  return Number.isFinite(expiresAt) && expiresAt < Date.now();
+};
+
+const getStatusLabel = (booking: Booking) => {
+  if (booking.status === BookingStatus.DRAFT) {
+    return isDraftExpired(booking) ? 'Expired (auto)' : 'In progress';
+  }
+  if (booking.status === BookingStatus.EXPIRED) return 'Expired (auto)';
+  return booking.status;
+};
+
 const getStatusBadgeClass = (status: BookingStatus) => {
   if (status === BookingStatus.CONFIRMED) return 'bg-green-500/10 text-green-500 border-green-500/20';
   if (status === BookingStatus.CANCELLED) return 'bg-red-500/10 text-red-500 border-red-500/20';
   if (status === BookingStatus.PENDING) return 'bg-amber-500/10 text-amber-500 border-amber-500/20';
+  if (status === BookingStatus.DRAFT) return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+  if (status === BookingStatus.EXPIRED) return 'bg-zinc-700/40 text-zinc-300 border-zinc-600';
   return 'bg-zinc-800 text-zinc-500 border-zinc-700';
 };
 
@@ -35,6 +52,7 @@ export default function AdminBookingsList({ rooms, allBookings, onViewBooking }:
   const [paymentFilter, setPaymentFilter] = useState('');
   const [missingOnly, setMissingOnly] = useState(false);
   const [highValueOnly, setHighValueOnly] = useState(false);
+  const [showExpired, setShowExpired] = useState(false);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [allScopedBookings, setAllScopedBookings] = useState<Booking[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -77,6 +95,7 @@ export default function AdminBookingsList({ rooms, allBookings, onViewBooking }:
     if (selectedRoom) q = q.eq('room_id', selectedRoom);
     if (statusFilter) q = q.eq('status', statusFilter);
     if (paymentFilter) q = q.eq('payment_state', paymentFilter);
+    if (!showExpired) q = q.neq('status', BookingStatus.EXPIRED);
     if (highValueOnly) q = q.gte('total_price', 500);
     const term = search.trim();
     if (term) {
@@ -95,6 +114,7 @@ export default function AdminBookingsList({ rooms, allBookings, onViewBooking }:
       if (selectedRoom && row.room_id !== selectedRoom) return false;
       if (statusFilter && row.status !== statusFilter) return false;
       if (paymentFilter && String(row.payment_state ?? '') !== paymentFilter) return false;
+      if (!showExpired && row.status === BookingStatus.EXPIRED) return false;
       if (highValueOnly && Number(row.total_price ?? 0) < 500) return false;
       if (missingOnly && !hasMissingCustomerDetails(row)) return false;
       if (term) {
@@ -110,6 +130,14 @@ export default function AdminBookingsList({ rooms, allBookings, onViewBooking }:
     setError(null);
     const offset = (page - 1) * PAGE_SIZE;
     try {
+      const { data: authData } = await supabase.auth.getSession();
+      const token = authData.session?.access_token;
+      if (token) {
+        await fetch('/api/admin/bookings/auto-expire', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` }
+        }).catch(() => null);
+      }
       let pageQuery = applyFilters(supabase.from('bookings').select('*', { count: 'exact' }).order('start_at').range(offset, offset + PAGE_SIZE - 1));
       const { data, error: pageError, count } = await pageQuery;
       if (pageError) throw pageError;
@@ -157,8 +185,8 @@ export default function AdminBookingsList({ rooms, allBookings, onViewBooking }:
     }
   };
 
-  useEffect(() => { setPage(1); }, [search, selectedRoom, rangePreset, startDate, endDate, statusFilter, paymentFilter, missingOnly, highValueOnly]);
-  useEffect(() => { loadData(); }, [page, queryWindow, selectedRoom, search, statusFilter, paymentFilter, missingOnly, highValueOnly, allBookings]);
+  useEffect(() => { setPage(1); }, [search, selectedRoom, rangePreset, startDate, endDate, statusFilter, paymentFilter, missingOnly, highValueOnly, showExpired]);
+  useEffect(() => { loadData(); }, [page, queryWindow, selectedRoom, search, statusFilter, paymentFilter, missingOnly, highValueOnly, showExpired, allBookings]);
 
   const metrics = useMemo(() => {
     const confirmedRevenue = allScopedBookings.filter(b => b.status === BookingStatus.CONFIRMED).reduce((acc, b) => acc + Number(b.total_price || 0), 0);
@@ -350,6 +378,7 @@ export default function AdminBookingsList({ rooms, allBookings, onViewBooking }:
       <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-sm"><option value="">All payment</option>{PAYMENT_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}</select>
       <label className="text-xs"><input type="checkbox" checked={missingOnly} onChange={(e) => setMissingOnly(e.target.checked)} /> Missing details</label>
       <label className="text-xs"><input type="checkbox" checked={highValueOnly} onChange={(e) => setHighValueOnly(e.target.checked)} /> High value (£500+)</label>
+      <label className="text-xs"><input type="checkbox" checked={showExpired} onChange={(e) => setShowExpired(e.target.checked)} /> Show expired</label>
       <button disabled={selectedIds.size === 0 || bulkBusy} onClick={() => runBulk('cancel')} className="px-3 py-2 text-xs rounded bg-red-900 disabled:opacity-50 disabled:cursor-not-allowed">Bulk Cancel</button>
       <button disabled={selectedIds.size === 0 || bulkBusy} onClick={() => runBulk('mark_paid')} className="px-3 py-2 text-xs rounded bg-green-900 disabled:opacity-50 disabled:cursor-not-allowed">Bulk Mark Paid</button>
       <button disabled={selectedIds.size === 0 || bulkBusy} onClick={() => runBulk('delete')} className="px-3 py-2 text-xs rounded bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed">Bulk Delete</button>
@@ -371,7 +400,7 @@ export default function AdminBookingsList({ rooms, allBookings, onViewBooking }:
               <td className="px-2">{b.customer_name || '—'}<div className="text-zinc-400">{b.customer_email || '—'}</div></td>
               <td className="px-2">{b.room_name}</td>
               <td className="px-2">{asMoney(Number(b.total_price || 0))}</td>
-              <td className="px-2"><span className={`inline-flex px-2 py-1 rounded border ${getStatusBadgeClass(b.status)}`}>{b.status}</span></td>
+              <td className="px-2"><span className={`inline-flex px-2 py-1 rounded border ${getStatusBadgeClass(b.status)}`}>{getStatusLabel(b)}</span></td>
               <td className="px-2">{b.payment_state || PaymentState.NONE}</td>
               <td className="px-2 space-x-1">
                 {missing && <span className="px-2 py-1 rounded border border-amber-500/30 text-amber-400">Missing customer details</span>}

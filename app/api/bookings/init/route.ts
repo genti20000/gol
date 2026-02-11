@@ -11,6 +11,7 @@ import { computeBookingTotals } from '@/lib/bookingTotals';
 import { computeOfferDiscounts } from '@/lib/offerUtils';
 import { computeAmountDueNow } from '@/lib/paymentLogic';
 import { computeEarlyBirdDiscount } from '@/lib/earlyBird';
+import { expireStaleDrafts, getDraftExpiryIso } from '@/lib/draftExpiry';
 import { BookingStatus } from '@/types';
 
 type InitRequest = {
@@ -60,6 +61,11 @@ export async function POST(request: Request) {
         const staffId = payload.staffId;
 
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        try {
+            await expireStaleDrafts(supabase);
+        } catch (expiryError) {
+            console.warn('Failed to auto-expire stale drafts during init.', expiryError);
+        }
 
         // --- Availability & Pricing Logic (Reuse from create-draft) ---
 
@@ -190,8 +196,7 @@ export async function POST(request: Request) {
         const { data: overlappingBookings } = await supabase
             .from('bookings')
             .select('room_id')
-            .neq('status', BookingStatus.CANCELLED)
-            .neq('status', BookingStatus.FAILED) // Also ignore failed ones? 
+            .not('status', 'in', `(${BookingStatus.CANCELLED},${BookingStatus.FAILED},${BookingStatus.EXPIRED})`)
             .lt('start_at', endDate.toISOString())
             .gt('end_at', startDate.toISOString());
 
@@ -210,7 +215,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'No rooms available for this time.' }, { status: 409 });
         }
 
-        const expiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString(); // 20 min TTL for PENDING
+        const expiresAt = getDraftExpiryIso();
 
         const bookingPayload = buildDraftBookingPayload({
             roomId: assignedRoom.id,

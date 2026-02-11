@@ -4,6 +4,7 @@ import { BookingStatus } from '@/types';
 import { validateBookingDraftInput } from '@/lib/bookingValidation';
 import { extractBookingToken, isBookingTokenValid } from '@/lib/bookingAccessToken';
 import { parseBookingId } from '@/lib/adminBookingValidation';
+import { isDraftExpired } from '@/lib/draftExpiry';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -40,6 +41,15 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
         if (!isBookingTokenValid(bookingToken, booking.booking_access_token)) {
             return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
+        }
+
+        if (isDraftExpired(booking)) {
+            await supabase
+                .from('bookings')
+                .update({ status: BookingStatus.EXPIRED })
+                .eq('id', bookingId)
+                .eq('status', BookingStatus.DRAFT);
+            return NextResponse.json({ error: 'Booking session expired. Please choose another slot.' }, { status: 410 });
         }
 
         if (booking.status !== BookingStatus.PENDING && booking.status !== BookingStatus.DRAFT) {
