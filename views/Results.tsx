@@ -1,17 +1,113 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { LOGO_URL, WHATSAPP_URL, getGuestLabel, WHATSAPP_PREFILL_ENABLED } from '@/constants';
 import { penceToPounds } from '@/lib/servicePricing';
 import Spinner from '@/components/Spinner';
 
+type InteractionPhase = 'commit' | 'paint' | 'booking_init';
+type InteractionMetric = {
+  id: string;
+  route: string;
+  slot: string;
+  phase: InteractionPhase;
+  durationMs: number;
+  mode: 'dev' | 'prod';
+  timestamp: string;
+};
+
+type SlotCardProps = {
+  time: string;
+  price: number;
+  earlyBirdApplied: boolean;
+  disabled: boolean;
+  selected: boolean;
+  isProcessing: boolean;
+  onSelect: (time: string) => void;
+};
+
+const SlotCard = React.memo(function SlotCard({
+  time,
+  price,
+  earlyBirdApplied,
+  disabled,
+  selected,
+  isProcessing,
+  onSelect
+}: SlotCardProps) {
+  const handleClick = useCallback(() => {
+    onSelect(time);
+  }, [onSelect, time]);
+
+  return (
+    <button
+      disabled={disabled}
+      onClick={handleClick}
+      className={`bg-transparent border-none cursor-pointer glass-panel p-5 md:p-6 rounded-xl md:rounded-2xl flex flex-col items-center justify-center gap-2 transition-all group min-h-[100px] md:min-h-[120px] text-zinc-50 disabled:opacity-60 disabled:cursor-not-allowed ${selected ? 'border-amber-500 ring-1 ring-amber-500/40' : 'hover:border-amber-500/50'}`}
+      aria-pressed={selected}
+      aria-label={`Book ${time}`}
+    >
+      <span className={`text-xl md:text-2xl font-bold font-mono transition-colors ${selected ? 'text-amber-500' : 'group-hover:text-amber-500'}`}>{time}</span>
+      <span className="text-[10px] md:text-[11px] font-bold uppercase tracking-widest text-amber-500">
+        £{price}
+      </span>
+      {earlyBirdApplied && (
+        <span className="text-[9px] font-bold uppercase tracking-widest text-green-500">
+          Early Bird £15 pp
+        </span>
+      )}
+      <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+        {isProcessing && selected ? 'Reserving...' : selected ? 'Selected' : 'Book Now'}
+      </span>
+    </button>
+  );
+});
+
+const PERF_LOG_LIMIT = 80;
+
+const getWindowWithPerf = () => {
+  if (typeof window === 'undefined') return null;
+  const perfWindow = window as Window & { __LKC_PERF_LOGS__?: InteractionMetric[]; __LKC_LONGTASK_OBSERVED__?: boolean };
+  if (!perfWindow.__LKC_PERF_LOGS__) {
+    perfWindow.__LKC_PERF_LOGS__ = [];
+  }
+  return perfWindow;
+};
+
+const savePerfMetric = (metric: InteractionMetric) => {
+  const perfWindow = getWindowWithPerf();
+  if (!perfWindow) return;
+  perfWindow.__LKC_PERF_LOGS__ = [...(perfWindow.__LKC_PERF_LOGS__ || []), metric].slice(-PERF_LOG_LIMIT);
+  console.info('[perf][slot-interaction]', metric);
+};
+
+const safeMeasure = (name: string, startMark: string, endMark: string) => {
+  if (typeof performance === 'undefined') return null;
+  try {
+    performance.measure(name, startMark, endMark);
+    const entries = performance.getEntriesByName(name);
+    const latest = entries[entries.length - 1];
+    return latest?.duration ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const markNow = (mark: string) => {
+  if (typeof performance === 'undefined') return;
+  try {
+    performance.mark(mark);
+  } catch {
+    // no-op
+  }
+};
+
 export default function Results() {
   const { route, navigate, back } = useRouterShim();
   const store = useStore();
 
-  // Robust parameter recovery with localStorage fallback
   const queryDate = useMemo(() => route.params.get('date') || (typeof window !== 'undefined' ? localStorage.getItem('lkc_search_date') : '') || '', [route.params]);
   const queryGuests = useMemo(() => parseInt(route.params.get('guests') || (typeof window !== 'undefined' ? localStorage.getItem('lkc_search_guests') : '') || '8'), [route.params]);
   const queryExtraHours = useMemo(() => parseInt(route.params.get('extraHours') || '0'), [route.params]);
@@ -20,24 +116,26 @@ export default function Results() {
   const queryStaffId = useMemo(() => route.params.get('staffId') || (typeof window !== 'undefined' ? localStorage.getItem('lkc_search_staffId') : '') || '', [route.params]);
 
   const totalDurationMinutes = (2 + queryExtraHours) * 60;
+  const [serverRefreshedTimes, setServerRefreshedTimes] = useState<string[] | null>(null);
 
   const validTimes = useMemo(() => {
     if (!queryDate) return [];
     return store.getValidStartTimes(queryDate, totalDurationMinutes, queryStaffId || undefined, queryServiceId || undefined);
   }, [queryDate, totalDurationMinutes, queryStaffId, queryServiceId, store]);
+  const displayTimes = serverRefreshedTimes ?? validTimes;
 
   const pricing = useMemo(() => store.calculatePricing(queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId), [queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId, store]);
   const selectedService = useMemo(() => store.services.find(s => s.id === queryServiceId), [store.services, queryServiceId]);
   const slotPricingByTime = useMemo(() => {
-    const entries = validTimes.map((time) => [
+    const entries = displayTimes.map((time) => [
       time,
       store.calculatePricing(queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId, time)
     ] as const);
     return Object.fromEntries(entries);
-  }, [validTimes, store, queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId]);
+  }, [displayTimes, store, queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId]);
   const summaryPricing = useMemo(
-    () => (validTimes[0] ? slotPricingByTime[validTimes[0]] : pricing),
-    [validTimes, slotPricingByTime, pricing]
+    () => (displayTimes[0] ? slotPricingByTime[displayTimes[0]] : pricing),
+    [displayTimes, slotPricingByTime, pricing]
   );
 
   const [waitlistForm, setWaitlistForm] = useState({
@@ -52,11 +150,131 @@ export default function Results() {
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingTime, setProcessingTime] = useState<string | null>(null);
+  const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  const [activeInteractionId, setActiveInteractionId] = useState<string | null>(null);
 
-  const handleBook = async (time: string) => {
-    if (isProcessing) return;
-    setIsProcessing(true);
-    setProcessingTime(time);
+  const pendingCommitMetricRef = useRef<{ id: string; slot: string } | null>(null);
+  const processingRef = useRef(false);
+
+  const logInteractionMetric = useCallback((phase: InteractionPhase, interactionId: string, slot: string, durationMs: number) => {
+    savePerfMetric({
+      id: interactionId,
+      route: '/book/results',
+      slot,
+      phase,
+      durationMs: Number(durationMs.toFixed(2)),
+      mode: process.env.NODE_ENV === 'production' ? 'prod' : 'dev',
+      timestamp: new Date().toISOString()
+    });
+  }, []);
+
+  useEffect(() => {
+    const perfWindow = getWindowWithPerf();
+    if (!perfWindow || perfWindow.__LKC_LONGTASK_OBSERVED__) return;
+
+    if (typeof PerformanceObserver === 'undefined') {
+      perfWindow.__LKC_LONGTASK_OBSERVED__ = true;
+      return;
+    }
+
+    try {
+      const observer = new PerformanceObserver((list) => {
+        list.getEntries().forEach((entry) => {
+          if (entry.duration > 50) {
+            console.warn('[perf][longtask]', {
+              route: '/book/results',
+              name: entry.name,
+              durationMs: Number(entry.duration.toFixed(2)),
+              startTimeMs: Number(entry.startTime.toFixed(2))
+            });
+          }
+        });
+      });
+      observer.observe({ entryTypes: ['longtask'] as any });
+      perfWindow.__LKC_LONGTASK_OBSERVED__ = true;
+      return () => observer.disconnect();
+    } catch {
+      perfWindow.__LKC_LONGTASK_OBSERVED__ = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    processingRef.current = isProcessing;
+  }, [isProcessing]);
+
+  useLayoutEffect(() => {
+    if (!pendingCommitMetricRef.current) return;
+
+    const { id, slot } = pendingCommitMetricRef.current;
+    const startMark = `slot-click-start-${id}`;
+    const commitMark = `slot-click-commit-${id}`;
+    const measureName = `slot-click-to-commit-${id}`;
+
+    markNow(commitMark);
+    const duration = safeMeasure(measureName, startMark, commitMark);
+    if (duration !== null) {
+      logInteractionMetric('commit', id, slot, duration);
+    }
+
+    pendingCommitMetricRef.current = null;
+  }, [selectedTime, logInteractionMetric]);
+
+  useEffect(() => {
+    if (!activeInteractionId || !selectedTime) return;
+
+    const interactionId = activeInteractionId;
+    const slot = selectedTime;
+    const rafId = requestAnimationFrame(() => {
+      const startMark = `slot-click-start-${interactionId}`;
+      const paintMark = `slot-click-paint-${interactionId}`;
+      const measureName = `slot-click-to-paint-${interactionId}`;
+      markNow(paintMark);
+      const duration = safeMeasure(measureName, startMark, paintMark);
+      if (duration !== null) {
+        logInteractionMetric('paint', interactionId, slot, duration);
+      }
+    });
+
+    return () => cancelAnimationFrame(rafId);
+  }, [activeInteractionId, selectedTime, logInteractionMetric]);
+
+  const refreshAvailabilityFromServer = async () => {
+    try {
+      const response = await fetch('/api/bookings/availability', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: queryDate,
+          guests: queryGuests,
+          extraHours: queryExtraHours,
+          serviceId: queryServiceId,
+          staffId: queryStaffId
+        })
+      });
+      if (!response.ok) return [];
+      const payload = await response.json().catch(() => ({}));
+      const refreshed = Array.isArray(payload?.validTimes) ? payload.validTimes : [];
+      setServerRefreshedTimes(refreshed);
+      return refreshed;
+    } catch {
+      return [];
+    }
+  };
+
+  const handleBook = useCallback(async (time: string) => {
+    if (processingRef.current) return;
+    processingRef.current = true;
+
+    const interactionId = `${time}-${Date.now()}`;
+    markNow(`slot-click-start-${interactionId}`);
+    pendingCommitMetricRef.current = { id: interactionId, slot: time };
+
+    setActiveInteractionId(interactionId);
+    setSelectedTime(time);
+    requestAnimationFrame(() => {
+      setIsProcessing(true);
+      setProcessingTime(time);
+    });
     setError(null);
 
     try {
@@ -74,29 +292,89 @@ export default function Results() {
         })
       });
 
+      markNow(`slot-booking-init-finish-${interactionId}`);
+      const bookingInitDuration = safeMeasure(
+        `slot-click-to-booking-init-${interactionId}`,
+        `slot-click-start-${interactionId}`,
+        `slot-booking-init-finish-${interactionId}`
+      );
+      if (bookingInitDuration !== null) {
+        logInteractionMetric('booking_init', interactionId, time, bookingInitDuration);
+      }
+
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        setError(payload.error || 'Failed to initialize booking.');
+        const serverMessage = payload.error || 'Failed to initialize booking.';
+        const isSlotConflict = response.status === 409 || /just booked|no rooms available|choose another time|overlap/i.test(serverMessage);
+        if (isSlotConflict) {
+          const refreshed = await refreshAvailabilityFromServer();
+          if (refreshed.length > 0) {
+            const nextBest = refreshed.slice(0, 3).join(', ');
+            setError(`That slot was just taken. Live availability refreshed. Next available: ${nextBest}.`);
+            setSelectedTime(refreshed[0] ?? null);
+          } else {
+            setError('That slot was just taken. Live availability refreshed with no remaining times for this selection.');
+            setSelectedTime(null);
+          }
+        } else {
+          setError(serverMessage);
+        }
         setIsProcessing(false);
+        setProcessingTime(null);
+        processingRef.current = false;
         return;
       }
 
       const { bookingId, bookingToken } = await response.json();
       if (bookingId && bookingToken) {
         setIsProcessing(false);
+        processingRef.current = false;
         navigate(`/checkout?bookingId=${bookingId}&token=${encodeURIComponent(bookingToken)}`);
       } else {
         setError('Unexpected server response. Please try again.');
         setIsProcessing(false);
         setProcessingTime(null);
+        processingRef.current = false;
       }
     } catch (err) {
       console.error('Booking init failed', err);
       setError('Unable to start booking. Please try again.');
       setIsProcessing(false);
       setProcessingTime(null);
+      processingRef.current = false;
     }
-  };
+  }, [navigate, queryDate, queryExtraHours, queryGuests, queryPromo, queryServiceId, queryStaffId, logInteractionMetric]);
+
+  useEffect(() => {
+    if (isProcessing) return;
+    setServerRefreshedTimes(null);
+  }, [isProcessing, queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId, queryStaffId]);
+
+  useEffect(() => {
+    if (!displayTimes.length) {
+      setSelectedTime(null);
+      return;
+    }
+    if (!selectedTime || !displayTimes.includes(selectedTime)) {
+      setSelectedTime(displayTimes[0]);
+    }
+  }, [displayTimes, selectedTime]);
+
+  const slotCards = useMemo(() => {
+    return displayTimes.map((time) => {
+      const timePricing = slotPricingByTime[time] ?? pricing;
+      return {
+        time,
+        totalPrice: timePricing.totalPrice,
+        earlyBirdApplied: Boolean(timePricing.earlyBirdApplied)
+      };
+    });
+  }, [displayTimes, pricing, slotPricingByTime]);
+
+  const selectedSlotPricing = useMemo(() => {
+    if (!selectedTime) return null;
+    return slotPricingByTime[selectedTime] ?? pricing;
+  }, [selectedTime, slotPricingByTime, pricing]);
 
   const handleJoinWaitlist = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -215,23 +493,42 @@ export default function Results() {
         </div>
       </div>
 
-      {validTimes.length > 0 ? (
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-          {validTimes.map(time => (
-            <button key={time} disabled={isProcessing} onClick={() => handleBook(time)} className="bg-transparent border-none cursor-pointer glass-panel hover:border-amber-500/50 p-5 md:p-6 rounded-xl md:rounded-2xl flex flex-col items-center justify-center gap-2 transition-all group min-h-[100px] md:min-h-[120px] text-zinc-50 disabled:opacity-60 disabled:cursor-not-allowed">
-              <span className="text-xl md:text-2xl font-bold font-mono group-hover:text-amber-500 transition-colors">{time}</span>
-              <span className="text-[10px] md:text-[11px] font-bold uppercase tracking-widest text-amber-500">
-                £{slotPricingByTime[time]?.totalPrice ?? pricing.totalPrice}
-              </span>
-              {slotPricingByTime[time]?.earlyBirdApplied && (
-                <span className="text-[9px] font-bold uppercase tracking-widest text-green-500">
-                  Early Bird £15 pp
-                </span>
+      {displayTimes.length > 0 && (
+        <div className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-950/50 px-5 py-4" aria-live="polite">
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Selected Slot</p>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Customer info panel</span>
+          </div>
+          <div className="mt-2 flex items-end justify-between gap-4">
+            <div>
+              <p className="text-2xl font-bold font-mono tracking-tight text-white">{selectedTime || displayTimes[0]}</p>
+              {selectedSlotPricing?.earlyBirdApplied ? (
+                <p className="text-[10px] font-bold uppercase tracking-widest text-green-500">Early Bird £15 pp applied to this slot</p>
+              ) : (
+                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Standard slot pricing</p>
               )}
-              <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-                {isProcessing && processingTime === time ? 'Selected' : 'Book Now'}
-              </span>
-            </button>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Total</p>
+              <p className="text-2xl font-bold tracking-tight text-amber-500">£{selectedSlotPricing?.totalPrice ?? pricing.totalPrice}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {displayTimes.length > 0 ? (
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+          {slotCards.map((slot) => (
+            <SlotCard
+              key={slot.time}
+              time={slot.time}
+              price={slot.totalPrice}
+              earlyBirdApplied={slot.earlyBirdApplied}
+              disabled={isProcessing}
+              selected={selectedTime === slot.time}
+              isProcessing={isProcessing}
+              onSelect={handleBook}
+            />
           ))}
         </div>
       ) : (
