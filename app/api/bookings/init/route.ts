@@ -212,7 +212,7 @@ export async function POST(request: Request) {
             if (status === BookingStatus.DRAFT) {
                 const expiresAtRaw = (b as any).expires_at;
                 const expiresAtMs = Date.parse(String(expiresAtRaw || ''));
-                if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+                if (Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) {
                     return;
                 }
             }
@@ -262,11 +262,14 @@ export async function POST(request: Request) {
 
         console.log('booking init payload keys', Object.keys(bookingPayload), 'booking_date', bookingPayload.booking_date);
 
-        const { data: insertedBooking, error: bookingError } = await supabase
-            .from('bookings')
-            .insert([bookingPayload])
-            .select('id,booking_access_token')
-            .maybeSingle();
+        const tryInsertDraft = async () =>
+            supabase
+                .from('bookings')
+                .insert([bookingPayload])
+                .select('id,booking_access_token')
+                .maybeSingle();
+
+        let { data: insertedBooking, error: bookingError } = await tryInsertDraft();
 
         if (bookingError || !insertedBooking) {
             const code = bookingError?.code;
@@ -287,6 +290,18 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: 'Unable to initialize booking draft. Please try another time slot.' }, { status: 409 });
             }
             if (isOverlapConstraint) {
+                try {
+                    await expireStaleDrafts(supabase);
+                    const retryResult = await tryInsertDraft();
+                    insertedBooking = retryResult.data;
+                    bookingError = retryResult.error;
+                } catch (retryExpiryError) {
+                    console.warn('Failed to expire stale drafts before retrying init insert.', retryExpiryError);
+                }
+
+                if (!bookingError && insertedBooking) {
+                    return NextResponse.json({ bookingId: insertedBooking.id, bookingToken: insertedBooking.booking_access_token });
+                }
                 return NextResponse.json({ error: 'That room was just booked. Please choose another time.' }, { status: 409 });
             }
             return NextResponse.json({ error: 'Unable to initialize booking.' }, { status: 500 });
