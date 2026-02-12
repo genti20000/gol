@@ -147,6 +147,7 @@ export default function Results() {
   });
   const [waitlistSent, setWaitlistSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [slotNotice, setSlotNotice] = useState<{ message: string; type: 'error' | 'info' } | null>(null);
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingTime, setProcessingTime] = useState<string | null>(null);
@@ -238,6 +239,12 @@ export default function Results() {
     return () => cancelAnimationFrame(rafId);
   }, [activeInteractionId, selectedTime, logInteractionMetric]);
 
+  useEffect(() => {
+    if (!slotNotice || isProcessing) return;
+    const timer = setTimeout(() => setSlotNotice(null), 3800);
+    return () => clearTimeout(timer);
+  }, [slotNotice, isProcessing]);
+
   const refreshAvailabilityFromServer = async () => {
     try {
       const response = await fetch('/api/bookings/availability', {
@@ -271,6 +278,7 @@ export default function Results() {
 
     setActiveInteractionId(interactionId);
     setSelectedTime(time);
+    setSlotNotice(null);
     requestAnimationFrame(() => {
       setIsProcessing(true);
       setProcessingTime(time);
@@ -310,14 +318,14 @@ export default function Results() {
           const refreshed = await refreshAvailabilityFromServer();
           if (refreshed.length > 0) {
             const nextBest = refreshed.slice(0, 3).join(', ');
-            setError(`That slot was just taken. Live availability refreshed. Next available: ${nextBest}.`);
+            setSlotNotice({ message: `That slot was just taken. Live availability refreshed. Next available: ${nextBest}.`, type: 'error' });
             setSelectedTime(refreshed[0] ?? null);
           } else {
-            setError('That slot was just taken. Live availability refreshed with no remaining times for this selection.');
+            setSlotNotice({ message: 'That slot was just taken. Live availability refreshed with no remaining times for this selection.', type: 'error' });
             setSelectedTime(null);
           }
         } else {
-          setError(serverMessage);
+          setSlotNotice({ message: serverMessage, type: 'error' });
         }
         setIsProcessing(false);
         setProcessingTime(null);
@@ -331,14 +339,14 @@ export default function Results() {
         processingRef.current = false;
         navigate(`/checkout?bookingId=${bookingId}&token=${encodeURIComponent(bookingToken)}`);
       } else {
-        setError('Unexpected server response. Please try again.');
+        setSlotNotice({ message: 'Unexpected server response. Please try again.', type: 'error' });
         setIsProcessing(false);
         setProcessingTime(null);
         processingRef.current = false;
       }
     } catch (err) {
       console.error('Booking init failed', err);
-      setError('Unable to start booking. Please try again.');
+      setSlotNotice({ message: 'Unable to start booking. Please try again.', type: 'error' });
       setIsProcessing(false);
       setProcessingTime(null);
       processingRef.current = false;
@@ -435,17 +443,30 @@ export default function Results() {
         </button>
       </div>
 
-      {error && !waitlistSent && (
-        <div className="mb-8 rounded-2xl border border-red-500/40 bg-red-500/10 px-6 py-4 text-center">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-red-200">{error}</p>
-        </div>
-      )}
-      {isProcessing && (
-        <div className="mb-8 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-6 py-4 text-center flex items-center justify-center gap-3">
-          <Spinner className="w-4 h-4" />
-          <p className="text-[10px] font-bold uppercase tracking-widest text-amber-200">
-            Reserving {processingTime || 'slot'}…
-          </p>
+      {(isProcessing || slotNotice) && (
+        <div className="fixed inset-0 z-[120] pointer-events-none flex items-center justify-center px-4">
+          <div
+            className={`w-full max-w-2xl rounded-2xl border px-6 py-5 shadow-2xl backdrop-blur-sm ${
+              isProcessing
+                ? 'border-amber-500/40 bg-amber-500/15'
+                : slotNotice?.type === 'error'
+                  ? 'border-red-500/40 bg-red-500/15'
+                  : 'border-zinc-700 bg-zinc-900/85'
+            }`}
+            role="status"
+            aria-live="polite"
+          >
+            <div className="flex items-center justify-center gap-3 text-center">
+              {isProcessing && <Spinner className="w-4 h-4" />}
+              <p
+                className={`text-[10px] font-bold uppercase tracking-widest ${
+                  isProcessing ? 'text-amber-100' : slotNotice?.type === 'error' ? 'text-red-100' : 'text-zinc-100'
+                }`}
+              >
+                {isProcessing ? `Reserving ${processingTime || 'slot'}...` : slotNotice?.message}
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
