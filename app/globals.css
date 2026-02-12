@@ -81,3 +81,20 @@ body {
     -ms-overflow-style: none;  /* IE and Edge */
     scrollbar-width: none;  /* Firefox */
 }
+
+.lkc-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.22);
+    border-top-color: #f59e0b;
+    border-radius: 9999px;
+    display: inline-block;
+    animation: lkc-spin 0.6s linear infinite;
+    will-change: transform;
+}
+
+@keyframes lkc-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}

@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
-import { ServerAdminAuthError, requireServerAdminAuth } from '@/lib/serverAdminAuth';
+import { requireAdmin } from '@/lib/requireAdmin';
 import { parseServicePatchPayload } from '@/lib/serviceValidation';
+import { writeAdminAuditLog } from '@/lib/adminAuditLog';
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
-    const { supabase } = await requireServerAdminAuth(request);
+    const admin = await requireAdmin(request);
+    if (admin instanceof NextResponse) return admin;
+    const { supabase, adminEmail } = admin;
     const payload = await request.json();
     const parsed = parseServicePatchPayload(payload);
     if (!parsed.ok) {
@@ -23,12 +26,19 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
+    await writeAdminAuditLog({
+      adminEmail,
+      action: 'SERVICE_UPDATE',
+      entityType: 'service',
+      entityId: String(data.id),
+      meta: {
+        name: data.name,
+        isActive: data.is_active
+      }
+    }, supabase);
+
     return NextResponse.json({ service: data });
   } catch (error) {
-    if (error instanceof ServerAdminAuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unexpected error' },
       { status: 500 }
@@ -38,7 +48,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
   try {
-    const { supabase } = await requireServerAdminAuth(request);
+    const admin = await requireAdmin(request);
+    if (admin instanceof NextResponse) return admin;
+    const { supabase, adminEmail } = admin;
 
     const { error } = await supabase
       .from('services')
@@ -49,12 +61,16 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
+    await writeAdminAuditLog({
+      adminEmail,
+      action: 'SERVICE_DEACTIVATE',
+      entityType: 'service',
+      entityId: params.id,
+      meta: {}
+    }, supabase);
+
     return NextResponse.json({ ok: true });
   } catch (error) {
-    if (error instanceof ServerAdminAuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unexpected error' },
       { status: 500 }

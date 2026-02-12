@@ -32,11 +32,11 @@ export default function AdminPushSetup({ adminEmail }: { adminEmail?: string | n
   const [message, setMessage] = useState<string | null>(null);
   const appId = useMemo(() => process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID || '', []);
 
+  if (!appId) {
+    return null;
+  }
+
   const enableNotifications = async () => {
-    if (!appId) {
-      setMessage('OneSignal is not configured.');
-      return;
-    }
     setBusy(true);
     setMessage(null);
 

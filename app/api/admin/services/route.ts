@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
-import { ServerAdminAuthError, requireServerAdminAuth } from '@/lib/serverAdminAuth';
+import { requireAdmin } from '@/lib/requireAdmin';
 import { parseServiceCreatePayload } from '@/lib/serviceValidation';
+import { writeAdminAuditLog } from '@/lib/adminAuditLog';
 
 export async function GET(request: Request) {
   try {
-    const { supabase } = await requireServerAdminAuth(request);
+    const admin = await requireAdmin(request);
+    if (admin instanceof NextResponse) return admin;
+    const { supabase } = admin;
 
     const { data, error } = await supabase
       .from('services')
@@ -17,10 +20,6 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ services: data ?? [] });
   } catch (error) {
-    if (error instanceof ServerAdminAuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unexpected error' },
       { status: 500 }
@@ -30,7 +29,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { supabase } = await requireServerAdminAuth(request);
+    const admin = await requireAdmin(request);
+    if (admin instanceof NextResponse) return admin;
+    const { supabase, adminEmail } = admin;
     const payload = await request.json();
     const parsed = parseServiceCreatePayload(payload);
     if (!parsed.ok) {
@@ -68,12 +69,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
+    await writeAdminAuditLog({
+      adminEmail,
+      action: 'SERVICE_CREATE',
+      entityType: 'service',
+      entityId: String(data.id),
+      meta: {
+        name: data.name,
+        minPeople: data.min_people,
+        maxPeople: data.max_people,
+        isActive: data.is_active
+      }
+    }, supabase);
+
     return NextResponse.json({ service: data }, { status: 201 });
   } catch (error) {
-    if (error instanceof ServerAdminAuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unexpected error' },
       { status: 500 }

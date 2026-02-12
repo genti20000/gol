@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouterShim } from '@/lib/routerShim';
 import { BookingStatus } from '@/types';
+import Spinner from '@/components/Spinner';
 
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLLS = 60;
@@ -75,7 +76,7 @@ export default function Processing() {
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="glass-panel p-8 md:p-10 rounded-[2rem] border-zinc-800 max-w-xl w-full text-center space-y-4">
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 mx-auto">
-          <i className="fa-solid fa-spinner fa-spin text-2xl text-amber-500"></i>
+          <Spinner className="w-8 h-8 border-amber-100/20 border-t-amber-500" />
         </div>
         <h1 className="text-3xl md:text-4xl font-bold uppercase tracking-tighter">Processing</h1>
         <p className="text-zinc-500 text-xs uppercase tracking-widest">{message}</p>

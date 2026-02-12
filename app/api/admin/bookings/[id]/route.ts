@@ -1,27 +1,9 @@
 import { NextResponse } from 'next/server';
-import { ServerAdminAuthError, requireServerAdminAuth } from '@/lib/serverAdminAuth';
+import { requireAdmin } from '@/lib/requireAdmin';
 import { deriveStatusFromPaymentState, PAYMENT_STATES, validateNotesInput } from '@/lib/adminBookingOps';
 import { parseAdminBookingAction, parseBookingId, parseCancelReason } from '@/lib/adminBookingValidation';
 import { sendAdminNewBookingPush } from '@/lib/adminPush';
-
-const upsertAuditLog = async (
-  supabase: any,
-  bookingId: string,
-  actorEmail: string,
-  action: string,
-  oldValues: Record<string, unknown>,
-  newValues: Record<string, unknown>,
-  metadata?: Record<string, unknown>
-) => {
-  await supabase.from('booking_audit_log').insert({
-    booking_id: bookingId,
-    actor_email: actorEmail,
-    action,
-    old_values: oldValues,
-    new_values: newValues,
-    metadata: metadata ?? null
-  });
-};
+import { writeAdminAuditLog } from '@/lib/adminAuditLog';
 
 export async function PATCH(
   request: Request,
@@ -46,7 +28,9 @@ export async function PATCH(
       return NextResponse.json({ error: actionResult.error }, { status: 400 });
     }
     const action = actionResult.value as 'update_notes' | 'mark_paid' | 'cancel' | 'send_payment_link';
-    const { supabase, adminEmail } = await requireServerAdminAuth(request);
+    const admin = await requireAdmin(request);
+    if (admin instanceof NextResponse) return admin;
+    const { supabase, adminEmail } = admin;
 
     const { data: booking, error: bookingError } = await supabase
       .from('bookings')
@@ -61,15 +45,18 @@ export async function PATCH(
 
     if (action === 'send_payment_link') {
       const paymentLink = `https://payments.example.com/booking/${bookingId}`;
-      await upsertAuditLog(
-        supabase,
-        bookingId,
+      await writeAdminAuditLog({
         adminEmail,
-        'send_payment_link',
-        { payment_state: booking.payment_state ?? PAYMENT_STATES.NONE },
-        { payment_state: booking.payment_state ?? PAYMENT_STATES.NONE },
-        { paymentLink, todo: 'Integrate Stripe/SumUp payment-link generation.' }
-      );
+        action: 'BOOKING_PAYMENT_LINK_SENT',
+        entityType: 'booking',
+        entityId: bookingId,
+        meta: {
+          bookingRef: booking.booking_ref ?? null,
+          customerName: booking.customer_name ?? null,
+          paymentState: booking.payment_state ?? PAYMENT_STATES.NONE,
+          paymentLink
+        }
+      }, supabase);
       return NextResponse.json({ ok: true, paymentLink, todo: 'Integrate Stripe/SumUp' });
     }
 
@@ -92,7 +79,18 @@ export async function PATCH(
         return NextResponse.json({ error: 'Failed to update booking.' }, { status: 500 });
       }
 
-      await upsertAuditLog(supabase, bookingId, adminEmail, 'update_notes', { notes: booking.notes ?? null }, { notes });
+      await writeAdminAuditLog({
+        adminEmail,
+        action: 'BOOKING_NOTES_UPDATE',
+        entityType: 'booking',
+        entityId: bookingId,
+        meta: {
+          bookingRef: booking.booking_ref ?? null,
+          customerName: booking.customer_name ?? null,
+          oldNotes: booking.notes ?? null,
+          newNotes: notes
+        }
+      }, supabase);
       return NextResponse.json({ ok: true, booking: updated });
     }
 
@@ -121,14 +119,21 @@ export async function PATCH(
         return NextResponse.json({ error: 'Failed to mark booking paid.' }, { status: 500 });
       }
 
-      await upsertAuditLog(
-        supabase,
-        bookingId,
+      await writeAdminAuditLog({
         adminEmail,
-        'mark_paid',
-        { status: booking.status, payment_state: booking.payment_state ?? PAYMENT_STATES.NONE },
-        { status: updated.status, payment_state: updated.payment_state }
-      );
+        action: 'BOOKING_MARK_PAID',
+        entityType: 'booking',
+        entityId: bookingId,
+        meta: {
+          bookingRef: booking.booking_ref ?? null,
+          customerName: booking.customer_name ?? null,
+          oldStatus: booking.status,
+          newStatus: updated.status,
+          oldPaymentState: booking.payment_state ?? PAYMENT_STATES.NONE,
+          newPaymentState: updated.payment_state,
+          totalPrice: updated.total_price ?? booking.total_price ?? null
+        }
+      }, supabase);
 
       if (booking.status !== 'CONFIRMED' && updated.status === 'CONFIRMED') {
         await sendAdminNewBookingPush({
@@ -157,23 +162,25 @@ export async function PATCH(
         return NextResponse.json({ error: 'Failed to cancel booking.' }, { status: 500 });
       }
 
-      await upsertAuditLog(
-        supabase,
-        bookingId,
+      await writeAdminAuditLog({
         adminEmail,
-        reason,
-        { status: booking.status, payment_state: booking.payment_state ?? PAYMENT_STATES.NONE },
-        { status: updated.status, payment_state: updated.payment_state }
-      );
+        action: 'BOOKING_CANCEL',
+        entityType: 'booking',
+        entityId: bookingId,
+        meta: {
+          bookingRef: booking.booking_ref ?? null,
+          customerName: booking.customer_name ?? null,
+          cancelReason: reason,
+          oldStatus: booking.status,
+          newStatus: updated.status,
+          paymentState: updated.payment_state ?? booking.payment_state ?? PAYMENT_STATES.NONE
+        }
+      }, supabase);
       return NextResponse.json({ ok: true, booking: updated });
     }
 
     return NextResponse.json({ error: 'Unsupported action.' }, { status: 400 });
   } catch (error) {
-    if (error instanceof ServerAdminAuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
     console.error('[ADMIN PATCH] Unexpected error', error);
     return NextResponse.json({ error: 'An unexpected error occurred.' }, { status: 500 });
   }

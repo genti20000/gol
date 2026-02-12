@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
-import { ServerAdminAuthError, requireServerAdminAuth } from '@/lib/serverAdminAuth';
+import { requireAdmin } from '@/lib/requireAdmin';
 import { parseBulkBookingPayload } from '@/lib/adminBookingValidation';
 import { sendAdminNewBookingPush } from '@/lib/adminPush';
+import { writeAdminAuditLog } from '@/lib/adminAuditLog';
 
 export async function POST(request: Request) {
   try {
-    const { supabase, adminEmail } = await requireServerAdminAuth(request);
+    const admin = await requireAdmin(request);
+    if (admin instanceof NextResponse) return admin;
+    const { supabase, adminEmail } = admin;
     const payload = await request.json().catch(() => null);
     const parsed = parseBulkBookingPayload(payload);
     if (!parsed.ok) {
@@ -24,12 +27,15 @@ export async function POST(request: Request) {
       const updatedIds = (updatedRows ?? []).map((row: any) => String(row.id));
       const missingIds = ids.filter((id) => !updatedIds.includes(id));
 
-      await supabase.from('booking_audit_log').insert(ids.map((bookingId) => ({
-        booking_id: bookingId,
-        actor_email: adminEmail,
-        action: 'bulk_cancel',
-        metadata: { idsCount: ids.length }
-      })));
+      await Promise.all(updatedIds.map((bookingId) =>
+        writeAdminAuditLog({
+          adminEmail,
+          action: 'BOOKING_BULK_CANCEL',
+          entityType: 'booking',
+          entityId: bookingId,
+          meta: { idsCount: ids.length }
+        }, supabase)
+      ));
 
       return NextResponse.json({
         ok: true,
@@ -51,12 +57,15 @@ export async function POST(request: Request) {
       const updatedIds = (updatedRows ?? []).map((row: any) => String(row.id));
       const missingIds = ids.filter((id) => !updatedIds.includes(id));
 
-      await supabase.from('booking_audit_log').insert(ids.map((bookingId) => ({
-        booking_id: bookingId,
-        actor_email: adminEmail,
-        action: 'bulk_mark_paid',
-        metadata: { idsCount: ids.length }
-      })));
+      await Promise.all(updatedIds.map((bookingId) =>
+        writeAdminAuditLog({
+          adminEmail,
+          action: 'BOOKING_BULK_MARK_PAID',
+          entityType: 'booking',
+          entityId: bookingId,
+          meta: { idsCount: ids.length }
+        }, supabase)
+      ));
 
       await Promise.all(
         (updatedRows ?? []).map((booking: any) =>
@@ -91,12 +100,15 @@ export async function POST(request: Request) {
       const missingIds = ids.filter((id) => !deletedIds.includes(id));
 
       if (deletedIds.length > 0) {
-        await supabase.from('booking_audit_log').insert(deletedIds.map((bookingId) => ({
-          booking_id: bookingId,
-          actor_email: adminEmail,
-          action: 'bulk_delete',
-          metadata: { idsCount: ids.length }
-        })));
+        await Promise.all(deletedIds.map((bookingId) =>
+          writeAdminAuditLog({
+            adminEmail,
+            action: 'BOOKING_BULK_DELETE',
+            entityType: 'booking',
+            entityId: bookingId,
+            meta: { idsCount: ids.length }
+          }, supabase)
+        ));
       }
 
       return NextResponse.json({
@@ -109,9 +121,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ error: 'Unsupported bulk action.' }, { status: 400 });
   } catch (error) {
-    if (error instanceof ServerAdminAuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
     console.error('[ADMIN BULK BOOKINGS] Unexpected error', error);
     return NextResponse.json({ error: 'Unexpected error.' }, { status: 500 });
   }

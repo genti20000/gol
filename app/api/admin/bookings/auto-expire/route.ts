@@ -1,17 +1,31 @@
 import { NextResponse } from 'next/server';
-import { ServerAdminAuthError, requireServerAdminAuth } from '@/lib/serverAdminAuth';
+import { requireAdmin } from '@/lib/requireAdmin';
 import { PAYMENT_STATES, shouldAutoExpirePendingBooking } from '@/lib/adminBookingOps';
 import { expireStaleDrafts } from '@/lib/draftExpiry';
+import { writeAdminAuditLog } from '@/lib/adminAuditLog';
 
 export async function POST(request: Request) {
   try {
-    const { supabase, adminEmail } = await requireServerAdminAuth(request);
+    const admin = await requireAdmin(request);
+    if (admin instanceof NextResponse) return admin;
+    const { supabase, adminEmail } = admin;
     let expiredDraftIds: string[] = [];
     try {
       expiredDraftIds = await expireStaleDrafts(supabase);
     } catch (draftError) {
       console.warn('[ADMIN AUTO-EXPIRE] Failed to expire stale drafts.', draftError);
     }
+    await Promise.all(
+      expiredDraftIds.map((bookingId) =>
+        writeAdminAuditLog({
+          adminEmail,
+          action: 'BOOKING_AUTO_EXPIRE_DRAFT',
+          entityType: 'booking',
+          entityId: bookingId,
+          meta: { trigger: 'auto-expire-route' }
+        }, supabase)
+      )
+    );
     const configuredHours = Number(process.env.PENDING_BOOKING_EXPIRY_HOURS ?? '24');
     const expiryHours = Number.isFinite(configuredHours) && configuredHours > 0 ? configuredHours : 24;
 
@@ -44,22 +58,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Failed to auto-cancel pending bookings.' }, { status: 500 });
     }
 
-    await supabase.from('booking_audit_log').insert(
-      expirable.map((booking: any) => ({
-        booking_id: booking.id,
-        actor_email: adminEmail,
-        action: 'auto_expired',
-        old_values: { status: booking.status, payment_state: booking.payment_state ?? PAYMENT_STATES.NONE },
-        new_values: { status: 'CANCELLED', payment_state: booking.payment_state ?? PAYMENT_STATES.NONE },
-        metadata: { expiryHours, createdAt: booking.created_at }
-      }))
+    await Promise.all(
+      expirable.map((booking: any) =>
+        writeAdminAuditLog({
+          adminEmail,
+          action: 'BOOKING_AUTO_EXPIRE_PENDING',
+          entityType: 'booking',
+          entityId: String(booking.id),
+          meta: {
+            oldStatus: booking.status,
+            newStatus: 'CANCELLED',
+            paymentState: booking.payment_state ?? PAYMENT_STATES.NONE,
+            expiryHours,
+            createdAt: booking.created_at
+          }
+        }, supabase)
+      )
     );
 
     return NextResponse.json({ ok: true, cancelled: ids.length, expiredDrafts: expiredDraftIds.length, expiryHours });
   } catch (error) {
-    if (error instanceof ServerAdminAuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
     console.error('[ADMIN AUTO-EXPIRE] Unexpected error', error);
     return NextResponse.json({ error: 'Unexpected error during auto-expire run.' }, { status: 500 });
   }

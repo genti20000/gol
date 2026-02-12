@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { ServerAdminAuthError, requireServerAdminAuth } from '@/lib/serverAdminAuth';
+import { requireAdmin } from '@/lib/requireAdmin';
 import { parseBookingId } from '@/lib/adminBookingValidation';
+import { writeAdminAuditLog } from '@/lib/adminAuditLog';
 
 type BookingForDeleteLog = {
   id: string;
@@ -24,7 +25,9 @@ export async function DELETE(
     }
     const bookingId = bookingIdResult.value as string;
 
-    const { supabase, adminEmail } = await requireServerAdminAuth(request);
+    const admin = await requireAdmin(request);
+    if (admin instanceof NextResponse) return admin;
+    const { supabase, adminEmail } = admin;
 
     // Fetch the booking to confirm it exists
     const { data: booking, error: bookingError } = await supabase
@@ -52,15 +55,19 @@ export async function DELETE(
       );
     }
 
-    // Log the action server-side
-    console.log(`[ADMIN DELETE] Admin ${adminEmail} deleted booking ${bookingId} (ref: ${booking.booking_ref}, customer: ${booking.customer_name}) at ${new Date().toISOString()}`);
+    await writeAdminAuditLog({
+      adminEmail,
+      action: 'BOOKING_DELETE',
+      entityType: 'booking',
+      entityId: bookingId,
+      meta: {
+        bookingRef: booking.booking_ref ?? null,
+        customerName: booking.customer_name ?? null
+      }
+    }, supabase);
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    if (error instanceof ServerAdminAuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
     console.error('[ADMIN DELETE] Unexpected error', error);
     return NextResponse.json(
       { error: 'An unexpected error occurred.' },

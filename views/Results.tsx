@@ -5,6 +5,7 @@ import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { LOGO_URL, WHATSAPP_URL, getGuestLabel, WHATSAPP_PREFILL_ENABLED } from '@/constants';
 import { penceToPounds } from '@/lib/servicePricing';
+import Spinner from '@/components/Spinner';
 
 export default function Results() {
   const { route, navigate, back } = useRouterShim();
@@ -50,10 +51,12 @@ export default function Results() {
   const [error, setError] = useState<string | null>(null);
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingTime, setProcessingTime] = useState<string | null>(null);
 
   const handleBook = async (time: string) => {
     if (isProcessing) return;
     setIsProcessing(true);
+    setProcessingTime(time);
     setError(null);
 
     try {
@@ -80,15 +83,18 @@ export default function Results() {
 
       const { bookingId, bookingToken } = await response.json();
       if (bookingId && bookingToken) {
+        setIsProcessing(false);
         navigate(`/checkout?bookingId=${bookingId}&token=${encodeURIComponent(bookingToken)}`);
       } else {
         setError('Unexpected server response. Please try again.');
         setIsProcessing(false);
+        setProcessingTime(null);
       }
     } catch (err) {
       console.error('Booking init failed', err);
       setError('Unable to start booking. Please try again.');
       setIsProcessing(false);
+      setProcessingTime(null);
     }
   };
 
@@ -156,6 +162,14 @@ export default function Results() {
           <p className="text-[10px] font-bold uppercase tracking-widest text-red-200">{error}</p>
         </div>
       )}
+      {isProcessing && (
+        <div className="mb-8 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-6 py-4 text-center flex items-center justify-center gap-3">
+          <Spinner className="w-4 h-4" />
+          <p className="text-[10px] font-bold uppercase tracking-widest text-amber-200">
+            Reserving {processingTime || 'slot'}…
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 md:gap-8 mb-10 md:mb-16">
         <div>
@@ -204,7 +218,7 @@ export default function Results() {
       {validTimes.length > 0 ? (
         <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
           {validTimes.map(time => (
-            <button key={time} onClick={() => handleBook(time)} className="bg-transparent border-none cursor-pointer glass-panel hover:border-amber-500/50 p-5 md:p-6 rounded-xl md:rounded-2xl flex flex-col items-center justify-center gap-2 transition-all group min-h-[100px] md:min-h-[120px] text-zinc-50">
+            <button key={time} disabled={isProcessing} onClick={() => handleBook(time)} className="bg-transparent border-none cursor-pointer glass-panel hover:border-amber-500/50 p-5 md:p-6 rounded-xl md:rounded-2xl flex flex-col items-center justify-center gap-2 transition-all group min-h-[100px] md:min-h-[120px] text-zinc-50 disabled:opacity-60 disabled:cursor-not-allowed">
               <span className="text-xl md:text-2xl font-bold font-mono group-hover:text-amber-500 transition-colors">{time}</span>
               <span className="text-[10px] md:text-[11px] font-bold uppercase tracking-widest text-amber-500">
                 £{slotPricingByTime[time]?.totalPrice ?? pricing.totalPrice}
@@ -215,7 +229,7 @@ export default function Results() {
                 </span>
               )}
               <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-                {isProcessing ? <i className="fa-solid fa-spinner fa-spin"></i> : 'Book Now'}
+                {isProcessing && processingTime === time ? 'Selected' : 'Book Now'}
               </span>
             </button>
           ))}
