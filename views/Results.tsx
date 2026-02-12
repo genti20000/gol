@@ -116,13 +116,14 @@ export default function Results() {
   const queryStaffId = useMemo(() => route.params.get('staffId') || (typeof window !== 'undefined' ? localStorage.getItem('lkc_search_staffId') : '') || '', [route.params]);
 
   const totalDurationMinutes = (2 + queryExtraHours) * 60;
-  const [serverRefreshedTimes, setServerRefreshedTimes] = useState<string[] | null>(null);
+  const [serverTimes, setServerTimes] = useState<string[] | null>(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
 
   const validTimes = useMemo(() => {
     if (!queryDate) return [];
     return store.getValidStartTimes(queryDate, totalDurationMinutes, queryStaffId || undefined, queryServiceId || undefined);
   }, [queryDate, totalDurationMinutes, queryStaffId, queryServiceId, store]);
-  const displayTimes = serverRefreshedTimes ?? validTimes;
+  const displayTimes = serverTimes ?? validTimes;
 
   const pricing = useMemo(() => store.calculatePricing(queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId), [queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId, store]);
   const selectedService = useMemo(() => store.services.find(s => s.id === queryServiceId), [store.services, queryServiceId]);
@@ -245,8 +246,9 @@ export default function Results() {
     return () => clearTimeout(timer);
   }, [slotNotice, isProcessing]);
 
-  const refreshAvailabilityFromServer = async () => {
+  const refreshAvailabilityFromServer = async (persist = true) => {
     try {
+      if (persist) setAvailabilityLoading(true);
       const response = await fetch('/api/bookings/availability', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -261,12 +263,27 @@ export default function Results() {
       if (!response.ok) return [];
       const payload = await response.json().catch(() => ({}));
       const refreshed = Array.isArray(payload?.validTimes) ? payload.validTimes : [];
-      setServerRefreshedTimes(refreshed);
+      if (persist) setServerTimes(refreshed);
       return refreshed;
     } catch {
       return [];
+    } finally {
+      if (persist) setAvailabilityLoading(false);
     }
   };
+
+  useEffect(() => {
+    let isMounted = true;
+    setServerTimes(null);
+    setAvailabilityLoading(true);
+    refreshAvailabilityFromServer(true).then((times) => {
+      if (!isMounted) return;
+      setServerTimes(times);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [queryDate, queryGuests, queryExtraHours, queryServiceId, queryStaffId]);
 
   const handleBook = useCallback(async (time: string) => {
     if (processingRef.current) return;
@@ -286,6 +303,23 @@ export default function Results() {
     setError(null);
 
     try {
+      const preflightTimes = await refreshAvailabilityFromServer(false);
+      if (!preflightTimes.includes(time)) {
+        setServerTimes(preflightTimes);
+        const nextBest = preflightTimes.slice(0, 3).join(', ');
+        setSlotNotice({
+          message: preflightTimes.length
+            ? `That slot is no longer available. Next available: ${nextBest}.`
+            : 'That slot is no longer available and no other times are currently open for this selection.',
+          type: 'error'
+        });
+        setSelectedTime(preflightTimes[0] ?? null);
+        setIsProcessing(false);
+        setProcessingTime(null);
+        processingRef.current = false;
+        return;
+      }
+
       const response = await fetch('/api/bookings/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -315,7 +349,7 @@ export default function Results() {
         const serverMessage = payload.error || 'Failed to initialize booking.';
         const isSlotConflict = response.status === 409 || /just booked|no rooms available|choose another time|overlap/i.test(serverMessage);
         if (isSlotConflict) {
-          const refreshed = await refreshAvailabilityFromServer();
+          const refreshed = await refreshAvailabilityFromServer(true);
           if (refreshed.length > 0) {
             const nextBest = refreshed.slice(0, 3).join(', ');
             setSlotNotice({ message: `That slot was just taken. Live availability refreshed. Next available: ${nextBest}.`, type: 'error' });
@@ -354,11 +388,6 @@ export default function Results() {
   }, [navigate, queryDate, queryExtraHours, queryGuests, queryPromo, queryServiceId, queryStaffId, logInteractionMetric]);
 
   useEffect(() => {
-    if (isProcessing) return;
-    setServerRefreshedTimes(null);
-  }, [isProcessing, queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId, queryStaffId]);
-
-  useEffect(() => {
     if (!displayTimes.length) {
       setSelectedTime(null);
       return;
@@ -383,6 +412,7 @@ export default function Results() {
     if (!selectedTime) return null;
     return slotPricingByTime[selectedTime] ?? pricing;
   }, [selectedTime, slotPricingByTime, pricing]);
+  const showLoadingAvailability = availabilityLoading && serverTimes === null;
 
   const handleJoinWaitlist = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -537,7 +567,14 @@ export default function Results() {
         </div>
       )}
 
-      {displayTimes.length > 0 ? (
+      {showLoadingAvailability ? (
+        <div className="text-center py-16 md:py-24 glass-panel rounded-[1.5rem] md:rounded-[2.5rem] border border-zinc-800 px-6">
+          <div className="inline-flex items-center gap-3 text-zinc-400">
+            <Spinner className="w-4 h-4" />
+            <span className="text-[10px] font-bold uppercase tracking-widest">Refreshing live availability...</span>
+          </div>
+        </div>
+      ) : displayTimes.length > 0 ? (
         <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
           {slotCards.map((slot) => (
             <SlotCard

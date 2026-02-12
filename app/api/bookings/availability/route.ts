@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 
 import { BASE_DURATION_HOURS, SLOT_MINUTES } from '@/constants';
 import { isBlockingBookingForAvailability, overlapsRange } from '@/lib/availabilityRules';
+import { expireStaleDrafts } from '@/lib/draftExpiry';
 
 type AvailabilityRequest = {
   date?: string;
@@ -63,6 +64,11 @@ export async function POST(request: Request) {
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    try {
+      await expireStaleDrafts(supabase);
+    } catch (expiryError) {
+      console.warn('[AVAILABILITY] Failed to auto-expire stale drafts.', expiryError);
+    }
 
     const { data: service, error: serviceError } = await supabase
       .from('services')

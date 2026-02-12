@@ -20,9 +20,9 @@ test('DRAFT only blocks when expires_at is in the future', () => {
   );
 });
 
-test('DRAFT without parseable expires_at does not block', () => {
-  assert.equal(isBlockingBookingForAvailability({ status: 'DRAFT', expires_at: null }, Date.now()), false);
-  assert.equal(isBlockingBookingForAvailability({ status: 'DRAFT', expires_at: 'not-a-date' }, Date.now()), false);
+test('DRAFT without parseable expires_at is treated as blocking for safety', () => {
+  assert.equal(isBlockingBookingForAvailability({ status: 'DRAFT', expires_at: null }, Date.now()), true);
+  assert.equal(isBlockingBookingForAvailability({ status: 'DRAFT', expires_at: 'not-a-date' }, Date.now()), true);
 });
 
 test('CANCELLED and EXPIRED never block', () => {
