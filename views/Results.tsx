@@ -115,15 +115,11 @@ export default function Results() {
   const queryServiceId = useMemo(() => route.params.get('serviceId') || (typeof window !== 'undefined' ? localStorage.getItem('lkc_search_serviceId') : '') || '', [route.params]);
   const queryStaffId = useMemo(() => route.params.get('staffId') || (typeof window !== 'undefined' ? localStorage.getItem('lkc_search_staffId') : '') || '', [route.params]);
 
-  const totalDurationMinutes = (2 + queryExtraHours) * 60;
   const [serverTimes, setServerTimes] = useState<string[] | null>(null);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
 
-  const validTimes = useMemo(() => {
-    if (!queryDate) return [];
-    return store.getValidStartTimes(queryDate, totalDurationMinutes, queryStaffId || undefined, queryServiceId || undefined);
-  }, [queryDate, totalDurationMinutes, queryStaffId, queryServiceId, store]);
-  const displayTimes = serverTimes ?? validTimes;
+  const displayTimes = serverTimes ?? [];
 
   const pricing = useMemo(() => store.calculatePricing(queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId), [queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId, store]);
   const selectedService = useMemo(() => store.services.find(s => s.id === queryServiceId), [store.services, queryServiceId]);
@@ -249,6 +245,7 @@ export default function Results() {
   const refreshAvailabilityFromServer = async (persist = true) => {
     try {
       if (persist) setAvailabilityLoading(true);
+      if (persist) setAvailabilityError(null);
       const response = await fetch('/api/bookings/availability', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -260,12 +257,22 @@ export default function Results() {
           staffId: queryStaffId
         })
       });
-      if (!response.ok) return [];
+      if (!response.ok) {
+        if (persist) {
+          setServerTimes([]);
+          setAvailabilityError('Live availability is temporarily unavailable. Please refresh and try again.');
+        }
+        return [];
+      }
       const payload = await response.json().catch(() => ({}));
       const refreshed = Array.isArray(payload?.validTimes) ? payload.validTimes : [];
       if (persist) setServerTimes(refreshed);
       return refreshed;
     } catch {
+      if (persist) {
+        setServerTimes([]);
+        setAvailabilityError('Live availability is temporarily unavailable. Please refresh and try again.');
+      }
       return [];
     } finally {
       if (persist) setAvailabilityLoading(false);
@@ -276,6 +283,7 @@ export default function Results() {
     let isMounted = true;
     setServerTimes(null);
     setAvailabilityLoading(true);
+    setAvailabilityError(null);
     refreshAvailabilityFromServer(true).then((times) => {
       if (!isMounted) return;
       setServerTimes(times);
@@ -472,6 +480,12 @@ export default function Results() {
           <i className="fa-solid fa-arrow-left"></i> Back to Search
         </button>
       </div>
+
+      {availabilityError && (
+        <div className="mb-6 rounded-2xl border border-red-500/40 bg-red-500/10 px-5 py-4 text-center">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-red-200">{availabilityError}</p>
+        </div>
+      )}
 
       {(isProcessing || slotNotice) && (
         <div className="fixed inset-0 z-[120] pointer-events-none flex items-center justify-center px-4">

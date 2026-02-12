@@ -283,7 +283,7 @@ export async function POST(request: Request) {
     (overlappingBookings ?? []).forEach((booking: any) => {
       if (booking.status === BookingStatus.DRAFT) {
         const expiresAtMs = Date.parse(String(booking.expires_at || ''));
-        if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+        if (Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) {
           return;
         }
       }
@@ -373,13 +373,47 @@ export async function POST(request: Request) {
 
     console.log('booking insert payload keys', Object.keys(bookingPayload), 'booking_date', bookingPayload.booking_date);
 
-    const { data: insertedBooking, error: bookingError } = await supabase
-      .from('bookings')
-      .insert([bookingPayload])
-      .select('id')
-      .maybeSingle();
+    const tryInsertDraft = async () =>
+      supabase
+        .from('bookings')
+        .insert([bookingPayload])
+        .select('id')
+        .maybeSingle();
+
+    let { data: insertedBooking, error: bookingError } = await tryInsertDraft();
 
     if (bookingError || !insertedBooking) {
+      const code = bookingError?.code;
+      const message = String(bookingError?.message ?? '').toLowerCase();
+      const isOverlapConstraint =
+        code === '23P01' || message.includes('bookings_no_overlap_per_room');
+
+      if (isOverlapConstraint) {
+        try {
+          await expireStaleDrafts(supabase);
+          const retry = await tryInsertDraft();
+          insertedBooking = retry.data;
+          bookingError = retry.error;
+        } catch (retryError) {
+          console.warn('Failed retry path after stale draft expiry (create-draft).', retryError);
+        }
+      }
+
+      if (!bookingError && insertedBooking) {
+        const { data: booking, error: fetchError } = await supabase
+          .from('bookings')
+          .select('*')
+          .eq('id', insertedBooking.id)
+          .maybeSingle();
+
+        if (fetchError || !booking) {
+          console.error('Failed to fetch booking draft after retry insert.', { error: fetchError, payload: bookingPayload });
+          return NextResponse.json({ error: 'Unable to load booking draft.' }, { status: 500 });
+        }
+
+        return NextResponse.json({ bookingId: booking.id, bookingToken: booking.booking_access_token, booking });
+      }
+
       console.error('Failed to create booking draft.', {
         error: { message: bookingError?.message, hint: bookingError?.hint, code: bookingError?.code },
         payloadKeys: Object.keys(bookingPayload),
