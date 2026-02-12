@@ -313,7 +313,7 @@ export default function Results() {
             : 'That slot is no longer available and no other times are currently open for this selection.',
           type: 'error'
         });
-        setSelectedTime(preflightTimes[0] ?? null);
+        setSelectedTime(null);
         setIsProcessing(false);
         setProcessingTime(null);
         processingRef.current = false;
@@ -353,7 +353,7 @@ export default function Results() {
           if (refreshed.length > 0) {
             const nextBest = refreshed.slice(0, 3).join(', ');
             setSlotNotice({ message: `That slot was just taken. Live availability refreshed. Next available: ${nextBest}.`, type: 'error' });
-            setSelectedTime(refreshed[0] ?? null);
+            setSelectedTime(null);
           } else {
             setSlotNotice({ message: 'That slot was just taken. Live availability refreshed with no remaining times for this selection.', type: 'error' });
             setSelectedTime(null);
@@ -392,8 +392,8 @@ export default function Results() {
       setSelectedTime(null);
       return;
     }
-    if (!selectedTime || !displayTimes.includes(selectedTime)) {
-      setSelectedTime(displayTimes[0]);
+    if (selectedTime && !displayTimes.includes(selectedTime)) {
+      setSelectedTime(null);
     }
   }, [displayTimes, selectedTime]);
 
@@ -552,7 +552,7 @@ export default function Results() {
           </div>
           <div className="mt-2 flex items-end justify-between gap-4">
             <div>
-              <p className="text-2xl font-bold font-mono tracking-tight text-white">{selectedTime || displayTimes[0]}</p>
+              <p className="text-2xl font-bold font-mono tracking-tight text-white">{selectedTime || 'No slot selected'}</p>
               {selectedSlotPricing?.earlyBirdApplied ? (
                 <p className="text-[10px] font-bold uppercase tracking-widest text-green-500">Early Bird £15 pp applied to this slot</p>
               ) : (
