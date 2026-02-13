@@ -26,11 +26,20 @@ const forbidden = () =>
 const misconfigured = () =>
   NextResponse.json({ ok: false, error: 'Server misconfigured' }, { status: 500 });
 
-const parseAllowlist = () =>
-  String(process.env.ADMIN_EMAIL_ALLOWLIST || '')
+const parseAllowlist = () => {
+  const sources = [
+    process.env.ADMIN_EMAIL_ALLOWLIST,
+    process.env.ADMIN_EMAILS,
+    process.env.NEXT_PUBLIC_ADMIN_EMAILS
+  ];
+  const all = sources
+    .map((value) => String(value || ''))
+    .join(',')
     .split(',')
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean);
+  return Array.from(new Set(all));
+};
 
 const getBearerToken = (request: Request): string | null => {
   const authHeader = request.headers.get('authorization') || '';
@@ -55,7 +64,16 @@ export async function requireAdmin(
 
   const email = String(data.user.email || '').trim().toLowerCase();
   const allowlist = parseAllowlist();
+  if (process.env.NODE_ENV !== 'production') {
+    console.info('[ADMIN AUTH]', {
+      email: email || null,
+      allowlistCount: allowlist.length
+    });
+  }
   if (!email || allowlist.length === 0 || !allowlist.includes(email)) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[ADMIN AUTH] Forbidden', { email: email || null });
+    }
     return forbidden();
   }
 

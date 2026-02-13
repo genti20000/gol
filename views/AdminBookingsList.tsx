@@ -111,6 +111,7 @@ export default function AdminBookingsList({
   const [loading, setLoading] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [notes, setNotes] = useState('');
   const [pendingCancel, setPendingCancel] = useState<{ ids: string[]; label: string } | null>(null);
@@ -197,6 +198,7 @@ export default function AdminBookingsList({
   const loadData = async () => {
     setLoading(true);
     setError(null);
+    setAccessDenied(false);
     try {
       const payload = await fetchWithAdminAuth(`/api/admin/bookings/list?${buildListParams(false).toString()}`);
       const rows = Array.isArray(payload?.rows) ? (payload.rows as Booking[]) : [];
@@ -209,9 +211,11 @@ export default function AdminBookingsList({
       setBookings(sorted);
       setTotalCount(Number(payload?.total || 0));
     } catch (err: any) {
+      const message = err?.message || 'Failed loading bookings.';
       setBookings([]);
       setTotalCount(0);
-      setError(err?.message || 'Failed loading bookings.');
+      setError(message);
+      setAccessDenied(String(message).toLowerCase().includes('forbidden'));
     } finally {
       setLoading(false);
     }
@@ -469,6 +473,18 @@ export default function AdminBookingsList({
         <button onClick={exportCsv} className="px-3 py-2 text-xs rounded bg-zinc-800">Export CSV (filtered)</button>
       </div>
 
+      {accessDenied ? (
+        <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-6 py-8 text-center space-y-4">
+          <p className="text-xs font-bold uppercase tracking-widest text-red-200">You don&apos;t have access to view bookings.</p>
+          <button
+            type="button"
+            onClick={loadData}
+            className="px-4 py-2 rounded-xl border border-red-400/40 text-red-100 text-xs font-bold uppercase tracking-widest"
+          >
+            Try again
+          </button>
+        </div>
+      ) : (
       <div className="border border-zinc-900 rounded-2xl overflow-hidden bg-zinc-950">
         <table className="min-w-full text-left text-[10px] uppercase tracking-widest">
           <thead>
@@ -479,7 +495,6 @@ export default function AdminBookingsList({
           </thead>
           <tbody>
             {loading && <tr><td colSpan={9} className="px-4 py-6">Loading…</td></tr>}
-            {!!error && <tr><td colSpan={9} className="px-4 py-6 text-red-400">{error}</td></tr>}
             {!loading && !error && bookings.map((b) => {
               const missing = hasMissingCustomerDetails(b);
               const expired = isExpiredBooking(b);
@@ -513,6 +528,12 @@ export default function AdminBookingsList({
           </tbody>
         </table>
       </div>
+      )}
+      {!!error && !accessDenied && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-200">
+          {error}
+        </div>
+      )}
 
       <div className="flex justify-between text-xs">
         <span>Showing {pageStart}–{pageEnd} of {totalCount}</span>
