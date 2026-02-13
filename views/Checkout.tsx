@@ -149,9 +149,6 @@ export default function Checkout() {
     setIsProcessing(true);
 
     try {
-      if (!bookingId || !bookingToken) {
-        throw new Error('Booking session expired. Please choose your slot again.');
-      }
       if (!checkoutSummary.date || !checkoutSummary.time) {
         throw new Error('Booking date and time are required.');
       }
@@ -162,11 +159,52 @@ export default function Checkout() {
       if (!Number.isFinite(startTimestamp)) {
         throw new Error('Invalid booking date/time');
       }
-      const updateResponse = await fetch(`/api/bookings/${bookingId}/update`, {
+      let activeBookingId = bookingId;
+      let activeBookingToken = bookingToken;
+
+      if (!activeBookingId || !activeBookingToken) {
+        const finalizeResponse = await fetch('/api/bookings/finalize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            date: checkoutSummary.date,
+            time: checkoutSummary.time,
+            guests: checkoutSummary.guests,
+            extraHours: checkoutSummary.extraHours,
+            promo: effectivePromo || '',
+            serviceId: effectiveServiceId || '',
+            staffId: queryStaffId || '',
+            firstName: formData.name,
+            surname: formData.surname,
+            email: formData.email,
+            phone: formData.phone || null,
+            notes: formData.notes || null,
+            specialRequests: formData.notes || null,
+            extras: extrasSelection
+          })
+        });
+
+        if (!finalizeResponse.ok) {
+          const payload = await finalizeResponse.json().catch(() => null);
+          throw new Error(payload?.error || 'Unable to finalize booking.');
+        }
+
+        const finalizePayload = await finalizeResponse.json().catch(() => null);
+        activeBookingId = finalizePayload?.bookingId || '';
+        activeBookingToken = finalizePayload?.bookingToken || '';
+        if (!activeBookingId || !activeBookingToken) {
+          throw new Error('Unable to finalize booking.');
+        }
+
+        navigate(`/confirmation?id=${activeBookingId}&token=${encodeURIComponent(activeBookingToken)}`);
+        return;
+      }
+
+      const updateResponse = await fetch(`/api/bookings/${activeBookingId}/update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          token: bookingToken,
+          token: activeBookingToken,
           firstName: formData.name,
           surname: formData.surname,
           email: formData.email,
@@ -182,7 +220,7 @@ export default function Checkout() {
         throw new Error(payload?.error || 'Unable to save booking details.');
       }
 
-      const confirmResponse = await fetch(`/api/bookings/${bookingId}/confirm?token=${encodeURIComponent(bookingToken)}`, {
+      const confirmResponse = await fetch(`/api/bookings/${activeBookingId}/confirm?token=${encodeURIComponent(activeBookingToken)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -192,7 +230,7 @@ export default function Checkout() {
         throw new Error(payload?.error || 'Unable to confirm booking.');
       }
 
-      navigate(`/confirmation?id=${bookingId}&token=${encodeURIComponent(bookingToken)}`);
+      navigate(`/confirmation?id=${activeBookingId}&token=${encodeURIComponent(activeBookingToken)}`);
     } catch (error) {
       console.error('BOOKING_CONFIRM_ERROR', {
         error,
