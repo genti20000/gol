@@ -18,7 +18,7 @@ test('pickClosestAlternatives falls back safely for invalid selected time', () =
 test('finalize route includes structured slot conflict payload', () => {
   const fs = require('fs');
   const source = fs.readFileSync('app/api/bookings/finalize/route.ts', 'utf8');
-  assert.match(source, /error:\s*'SLOT_TAKEN'/);
+  assert.match(source, /code:\s*'SLOT_TAKEN'/);
   assert.match(source, /alternatives/);
 });
 

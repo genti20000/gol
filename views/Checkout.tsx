@@ -17,6 +17,7 @@ export default function Checkout() {
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [slotConflict, setSlotConflict] = useState(false);
   const [formData, setFormData] = useState({ name: '', surname: '', email: '', phone: '', notes: '' });
   const [extrasSelection, setExtrasSelection] = useState<Record<string, number>>({});
   const [currentStep, setCurrentStep] = useState<'extras' | 'details'>('details');
@@ -33,6 +34,12 @@ export default function Checkout() {
   const promo = route.params.get('promo') || '';
   const queryServiceId = route.params.get('serviceId') || undefined;
   const queryStaffId = route.params.get('staffId') || undefined;
+  const querySessionId = route.params.get('sessionId') || '';
+  const sessionId = useMemo(() => {
+    if (querySessionId) return querySessionId;
+    if (typeof window === 'undefined') return '';
+    return localStorage.getItem('lkc_session_id') || '';
+  }, [querySessionId]);
 
   const checkoutSummary = useMemo(() => getCheckoutSummaryFields({
     booking: draftBooking,
@@ -146,6 +153,7 @@ export default function Checkout() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPaymentError(null);
+    setSlotConflict(false);
     setIsProcessing(true);
 
     try {
@@ -158,6 +166,9 @@ export default function Checkout() {
       const startTimestamp = Date.parse(`${checkoutSummary.date}T${checkoutSummary.time}:00`);
       if (!Number.isFinite(startTimestamp)) {
         throw new Error('Invalid booking date/time');
+      }
+      if (!sessionId) {
+        throw new Error('Your booking session expired. Please choose your time again.');
       }
       let activeBookingId = bookingId;
       let activeBookingToken = bookingToken;
@@ -180,13 +191,14 @@ export default function Checkout() {
             phone: formData.phone || null,
             notes: formData.notes || null,
             specialRequests: formData.notes || null,
-            extras: extrasSelection
+            extras: extrasSelection,
+            sessionId
           })
         });
 
         if (!finalizeResponse.ok) {
           const payload = await finalizeResponse.json().catch(() => null);
-          if (finalizeResponse.status === 409 && payload?.error === 'SLOT_TAKEN') {
+          if (finalizeResponse.status === 409 && payload?.code === 'SLOT_TAKEN') {
             const alternatives = Array.isArray(payload?.alternatives) ? payload.alternatives : [];
             if (typeof window !== 'undefined') {
               window.sessionStorage.setItem(
@@ -194,19 +206,12 @@ export default function Checkout() {
                 JSON.stringify({
                   failedTime: checkoutSummary.time,
                   alternatives,
-                  message: payload?.message || 'That time was just taken. Please choose another slot.'
+                  message: payload?.message || 'That time is no longer available.'
                 })
               );
             }
-            const resultsParams = new URLSearchParams({
-              serviceId: effectiveServiceId || '',
-              date: checkoutSummary.date,
-              guests: String(checkoutSummary.guests),
-              extraHours: String(checkoutSummary.extraHours),
-              promo: effectivePromo || '',
-              staffId: queryStaffId || ''
-            });
-            navigate(`/book/results?${resultsParams.toString()}`);
+            setSlotConflict(true);
+            setPaymentError('That time just sold out. Your 5-minute hold expired or another group secured it.');
             return;
           }
           throw new Error(payload?.error || 'Unable to finalize booking.');
@@ -376,6 +381,25 @@ export default function Checkout() {
                 {paymentError}
               </div>
             )}
+            {slotConflict && (
+              <button
+                type="button"
+                onClick={() => {
+                  const resultsParams = new URLSearchParams({
+                    serviceId: effectiveServiceId || '',
+                    date: checkoutSummary.date,
+                    guests: String(checkoutSummary.guests),
+                    extraHours: String(checkoutSummary.extraHours),
+                    promo: effectivePromo || '',
+                    staffId: queryStaffId || ''
+                  });
+                  navigate(`/book/results?${resultsParams.toString()}`);
+                }}
+                className="w-full rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-amber-200"
+              >
+                Choose another time
+              </button>
+            )}
 
             <div className="flex gap-4">
               {enabledExtras.length > 0 && (
@@ -388,7 +412,7 @@ export default function Checkout() {
               )}
               <button
                 onClick={handleSubmit}
-                disabled={isProcessing || !formData.name || !formData.surname || !formData.email}
+                disabled={isProcessing || slotConflict || !formData.name || !formData.surname || !formData.email}
                 className={`${enabledExtras.length > 0 ? 'flex-[2]' : 'w-full'} gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-50 text-[10px] min-h-[44px] cursor-pointer`}
               >
                 {isProcessing ? <span className="inline-flex items-center gap-2"><Spinner className="w-4 h-4 border-black/30 border-t-black" /> Processing</span> : `Confirm Booking £${previewTotals.grandTotal}`}

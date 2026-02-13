@@ -27,6 +27,7 @@ type FinalizeRequest = {
   notes?: string | null;
   specialRequests?: string | null;
   extras?: Record<string, number>;
+  sessionId?: string | null;
 };
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -58,9 +59,13 @@ export async function POST(request: Request) {
     const promo = payload.promo?.trim() ?? '';
     const serviceId = payload.serviceId?.trim();
     const staffId = payload.staffId?.trim() || null;
+    const sessionId = payload.sessionId?.trim() || '';
 
     if (!serviceId) {
       return NextResponse.json({ error: 'Service is required.' }, { status: 400 });
+    }
+    if (!sessionId) {
+      return NextResponse.json({ error: 'Session is required.' }, { status: 400 });
     }
 
     const extraOption = EXTRAS.find((extra) => extra.hours === extraHours);
@@ -237,7 +242,8 @@ export async function POST(request: Request) {
       p_deposit_amount: depositAmount,
       p_deposit_paid: depositAmount <= 0,
       p_extras_total: Number(extrasTotal.toFixed(2)),
-      p_extras_snapshot: extrasSnapshot
+      p_extras_snapshot: extrasSnapshot,
+      p_session_id: sessionId
     });
 
     const row = Array.isArray(atomicResult) ? atomicResult[0] : atomicResult;
@@ -255,8 +261,8 @@ export async function POST(request: Request) {
       const alternatives = pickClosestAlternatives(latestAvailability, time, 3);
       return NextResponse.json(
         {
-          error: 'SLOT_TAKEN',
-          message: 'That time was just taken. Please choose another slot.',
+          code: 'SLOT_TAKEN',
+          message: 'That time is no longer available.',
           alternatives
         },
         { status: 409 }

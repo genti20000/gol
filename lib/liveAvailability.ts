@@ -94,12 +94,23 @@ export const getLiveAvailability = async (supabase: any, input: AvailabilityInpu
     .lt('start_at', dayEnd.toISOString())
     .gt('end_at', dayStart.toISOString());
 
+  const nowIso = new Date().toISOString();
+  const { data: activeHolds } = await supabase
+    .from('slot_holds')
+    .select('service_id,date,start_time,expires_at')
+    .eq('service_id', serviceId)
+    .eq('date', date)
+    .gt('expires_at', nowIso);
+
   const minDays = Math.max(0, Number(settings?.min_days_before_booking ?? 0));
   const minHours = Math.max(0, Number(settings?.min_hours_before_booking ?? 0));
   const minStartTs = Date.now() + (minDays * 24 + minHours) * 3600000;
   const nowMs = Date.now();
 
   const blockingBookings = (bookings ?? []).filter((booking: any) => isBlockingBookingForAvailability(booking, nowMs));
+  const activeHoldTimes = new Set(
+    (activeHolds ?? []).map((hold: any) => String(hold.start_time || '').slice(0, 5)).filter(Boolean)
+  );
   const validTimes: string[] = [];
 
   for (let minute = startMin; minute <= endMin - totalDurationMinutes; minute += SLOT_MINUTES) {
@@ -130,7 +141,10 @@ export const getLiveAvailability = async (supabase: any, input: AvailabilityInpu
 
     if (hasRoom) {
       const slotDate = new Date(slotStartTs);
-      validTimes.push(`${slotDate.getHours().toString().padStart(2, '0')}:${slotDate.getMinutes().toString().padStart(2, '0')}`);
+      const slotTime = `${slotDate.getHours().toString().padStart(2, '0')}:${slotDate.getMinutes().toString().padStart(2, '0')}`;
+      if (!activeHoldTimes.has(slotTime)) {
+        validTimes.push(slotTime);
+      }
     }
   }
 
