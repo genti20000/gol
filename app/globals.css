@@ -65,6 +65,64 @@ body {
     }
 }
 
+.hero-sparkle {
+    position: absolute;
+    color: #f5a300;
+    font-size: 0.9rem;
+    line-height: 1;
+    pointer-events: none;
+    text-shadow: 0 0 10px rgba(245, 163, 0, 0.45);
+    animation: hero-sparkle 2.8s ease-in-out infinite;
+    will-change: transform, opacity;
+}
+
+.hero-sparkle-tl {
+    top: -4px;
+    left: 4px;
+    animation-delay: 0s;
+}
+
+.hero-sparkle-tr {
+    top: -6px;
+    right: 2px;
+    animation-delay: 0.45s;
+}
+
+.hero-sparkle-bl {
+    bottom: 2px;
+    left: -2px;
+    animation-delay: 0.9s;
+}
+
+.hero-sparkle-br {
+    bottom: -4px;
+    right: -4px;
+    animation-delay: 1.35s;
+}
+
+@keyframes hero-sparkle {
+    0% {
+        opacity: 0.25;
+        transform: translate3d(0, 0, 0) scale(0.8);
+    }
+    25% {
+        opacity: 0.85;
+        transform: translate3d(0, -3px, 0) scale(1);
+    }
+    50% {
+        opacity: 0.45;
+        transform: translate3d(1px, -1px, 0) scale(0.86);
+    }
+    75% {
+        opacity: 0.95;
+        transform: translate3d(-1px, -4px, 0) scale(1.04);
+    }
+    100% {
+        opacity: 0.25;
+        transform: translate3d(0, 0, 0) scale(0.8);
+    }
+}
+
 .admin-text-primary { color: var(--text); }
 .admin-text-secondary { color: var(--text2); }
 .admin-text-muted { color: var(--text3); }

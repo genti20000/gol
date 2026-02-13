@@ -137,10 +137,17 @@ export default function Home() {
     <div className="relative min-h-screen flex flex-col items-center justify-center bg-black py-10">
       <div className="relative z-10 w-full px-4 md:max-w-4xl md:mx-auto text-center space-y-8 md:space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-700">
         <div className="space-y-4">
-          <h1 className="flex flex-col text-center font-bold tracking-tighter uppercase leading-[0.8]">
-            <span className="text-3xl sm:text-4xl md:text-6xl text-white">Ultimate</span>
-            <span className="text-6xl sm:text-7xl md:text-9xl text-amber-500">Karaoke</span>
-          </h1>
+          <div className="relative inline-flex justify-center">
+            {/* Subtle sparkle loop uses opacity/transform-only keyframes for smooth, layout-stable animation. */}
+            <span className="hero-sparkle hero-sparkle-tl" aria-hidden="true">★</span>
+            <span className="hero-sparkle hero-sparkle-tr" aria-hidden="true">★</span>
+            <span className="hero-sparkle hero-sparkle-bl" aria-hidden="true">★</span>
+            <span className="hero-sparkle hero-sparkle-br" aria-hidden="true">★</span>
+            <h1 className="flex flex-col text-center font-bold tracking-tighter uppercase leading-[0.9] px-8">
+              <span className="text-3xl sm:text-4xl lg:text-5xl text-white">Ultimate</span>
+              <span className="text-4xl sm:text-5xl lg:text-6xl text-amber-500">Karaoke</span>
+            </h1>
+          </div>
           <p className="text-[10px] md:text-sm text-zinc-400 font-medium max-w-2xl mx-auto uppercase tracking-[0.4em]">
             London's Premium Private Suites
           </p>
