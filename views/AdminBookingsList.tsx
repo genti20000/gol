@@ -314,6 +314,11 @@ export default function AdminBookingsList({
         alert('No eligible live bookings selected for bulk cancel.');
         return;
       }
+      const expiredCount = cancelEligible.filter((b) => isExpiredBooking(b)).length;
+      if (includeExpiredInBulk && expiredCount > 0) {
+        const includeConfirmed = confirm(`You are about to cancel ${expiredCount} expired booking(s). Continue?`);
+        if (!includeConfirmed) return;
+      }
       const confirmed = confirm(`Cancel ${cancelEligible.length} booking(s)? This updates status and can affect customer communication.`);
       if (!confirmed) return;
       clearPendingCancel();
@@ -352,6 +357,32 @@ export default function AdminBookingsList({
     const subject = encodeURIComponent('Please confirm your booking details');
     const body = encodeURIComponent(`Hi ${booking.customer_name || ''}, please reply with your missing booking details.`);
     window.open(`mailto:${email}?subject=${subject}&body=${body}`, '_blank');
+  };
+
+  const deleteSingleBooking = async (booking: Booking) => {
+    const confirmed = confirm(`Delete booking "${booking.booking_ref || booking.customer_name || booking.id}"? This cannot be undone.`);
+    if (!confirmed) return;
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) {
+      alert('Admin session expired. Please sign in again.');
+      return;
+    }
+    const response = await fetch(`/api/admin/bookings/${booking.id}/delete`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.ok === false) {
+      alert(payload?.error || 'Failed to delete booking.');
+      return;
+    }
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(booking.id);
+      return next;
+    });
+    await loadData();
   };
 
   const toggleSelect = (id: string) => {
@@ -509,17 +540,24 @@ export default function AdminBookingsList({
                   <td className="px-2"><span className={`inline-flex px-2 py-1 rounded border ${statusBadgeClass(b)}`}>{statusLabel(b)}</span></td>
                   <td className="px-2">{b.payment_state || PaymentState.NONE}</td>
                   <td className="px-2 space-x-1">
+                    {expired && <span className="px-2 py-1 rounded border border-red-500/40 text-red-300">Expired - Inactive</span>}
                     {missing && <span className="px-2 py-1 rounded border border-amber-500/30 text-amber-400">Missing customer details</span>}
                     {(Number(b.extras_total || 0) > 0) && <span className="px-2 py-1 rounded border border-cyan-500/30 text-cyan-300">Extras +{asMoney(Number(b.extras_total || 0))}</span>}
                   </td>
                   <td className="px-2 py-2">
                     <div className="flex flex-wrap gap-2">
                       <button onClick={() => onViewBooking(b)} className="text-amber-400">View</button>
-                      <button onClick={() => { setEditingBooking(b); setNotes(b.notes || ''); }} className="text-blue-400">Notes</button>
-                      <button disabled={!canLiveAction} onClick={() => patchBooking(b.id, 'send_payment_link')} className="text-purple-400 disabled:opacity-40 disabled:cursor-not-allowed">Send payment link</button>
-                      <button disabled={!canLiveAction} onClick={() => patchBooking(b.id, 'mark_paid')} className="text-green-400 disabled:opacity-40 disabled:cursor-not-allowed">Mark paid</button>
-                      <button disabled={expired} onClick={() => queueSingleCancel(b)} className="text-red-400 disabled:opacity-40 disabled:cursor-not-allowed">Cancel booking</button>
-                      <button onClick={() => requestDetails(b)} className="text-cyan-400">Request details</button>
+                      {expired ? (
+                        <button onClick={() => deleteSingleBooking(b)} className="text-red-300">Delete</button>
+                      ) : (
+                        <>
+                          <button onClick={() => { setEditingBooking(b); setNotes(b.notes || ''); }} className="text-blue-400">Notes</button>
+                          <button disabled={!canLiveAction} onClick={() => patchBooking(b.id, 'send_payment_link')} className="text-purple-400 disabled:opacity-40 disabled:cursor-not-allowed">Send payment link</button>
+                          <button disabled={!canLiveAction} onClick={() => patchBooking(b.id, 'mark_paid')} className="text-green-400 disabled:opacity-40 disabled:cursor-not-allowed">Mark paid</button>
+                          <button disabled={expired} onClick={() => queueSingleCancel(b)} className="text-red-400 disabled:opacity-40 disabled:cursor-not-allowed">Cancel booking</button>
+                          <button onClick={() => requestDetails(b)} className="text-cyan-400">Request details</button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
