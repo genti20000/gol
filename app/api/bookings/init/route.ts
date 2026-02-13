@@ -13,6 +13,7 @@ import { computeAmountDueNow } from '@/lib/paymentLogic';
 import { computeEarlyBirdDiscount } from '@/lib/earlyBird';
 import { expireStaleDrafts, getDraftExpiryIso } from '@/lib/draftExpiry';
 import { BookingStatus } from '@/types';
+import { requireAdmin } from '@/lib/requireAdmin';
 
 type InitRequest = {
     date?: string;
@@ -29,12 +30,8 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export async function POST(request: Request) {
     try {
-        if (!supabaseUrl || !supabaseServiceKey) {
-            return NextResponse.json(
-                { error: 'Supabase credentials are not configured.' },
-                { status: 500 }
-            );
-        }
+        const admin = await requireAdmin(request);
+        if (admin instanceof NextResponse) return admin;
 
         const payload = (await request.json().catch(() => null)) as InitRequest | null;
         if (!payload) {
@@ -60,7 +57,7 @@ export async function POST(request: Request) {
         }
         const staffId = payload.staffId;
 
-        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        const supabase = admin.supabase;
         try {
             await expireStaleDrafts(supabase);
         } catch (expiryError) {
