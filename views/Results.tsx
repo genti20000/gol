@@ -157,6 +157,7 @@ export default function Results() {
   const [waitlistSent, setWaitlistSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [slotNotice, setSlotNotice] = useState<{ message: string; type: 'error' | 'info' } | null>(null);
+  const [customerInfo, setCustomerInfo] = useState({ firstName: '', surname: '', email: '', phone: '' });
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingTime, setProcessingTime] = useState<string | null>(null);
@@ -211,6 +212,28 @@ export default function Results() {
   useEffect(() => {
     processingRef.current = isProcessing;
   }, [isProcessing]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = window.localStorage.getItem('lkc_customer_info');
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      setCustomerInfo({
+        firstName: String(parsed?.firstName || ''),
+        surname: String(parsed?.surname || ''),
+        email: String(parsed?.email || ''),
+        phone: String(parsed?.phone || '')
+      });
+    } catch {
+      // ignore invalid saved data
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('lkc_customer_info', JSON.stringify(customerInfo));
+  }, [customerInfo]);
 
   useLayoutEffect(() => {
     if (!pendingCommitMetricRef.current) return;
@@ -341,16 +364,24 @@ export default function Results() {
     };
   }, [queryDate, queryGuests, queryExtraHours, queryServiceId, queryStaffId, refreshAvailabilityFromServer]);
 
-  const handleBook = useCallback(async (time: string) => {
-    if (processingRef.current) return;
-    processingRef.current = true;
-
+  const handleSelectSlot = useCallback((time: string) => {
     const interactionId = `${time}-${Date.now()}`;
     markNow(`slot-click-start-${interactionId}`);
     pendingCommitMetricRef.current = { id: interactionId, slot: time };
-
     setActiveInteractionId(interactionId);
     setSelectedTime(time);
+    setSlotNotice(null);
+  }, []);
+
+  const reserveSelectedSlotAndContinue = useCallback(async () => {
+    const time = selectedTime;
+    if (!time) {
+      setSlotNotice({ message: 'Pick a time to continue.', type: 'error' });
+      return;
+    }
+    if (processingRef.current) return;
+    processingRef.current = true;
+
     setSlotNotice(null);
     requestAnimationFrame(() => {
       setIsProcessing(true);
@@ -359,15 +390,6 @@ export default function Results() {
     setError(null);
 
     try {
-      markNow(`slot-booking-init-finish-${interactionId}`);
-      const clickDuration = safeMeasure(
-        `slot-click-to-booking-init-${interactionId}`,
-        `slot-click-start-${interactionId}`,
-        `slot-booking-init-finish-${interactionId}`
-      );
-      if (clickDuration !== null) {
-        logInteractionMetric('booking_init', interactionId, time, clickDuration);
-      }
       const latestTimes = await refreshAvailabilityFromServer(false);
       if (!latestTimes.includes(time)) {
         setServerTimes(latestTimes);
@@ -433,7 +455,11 @@ export default function Results() {
         promo: queryPromo,
         serviceId: queryServiceId,
         staffId: queryStaffId,
-        sessionId
+        sessionId,
+        firstName: customerInfo.firstName,
+        surname: customerInfo.surname,
+        email: customerInfo.email,
+        phone: customerInfo.phone
       });
 
       setIsProcessing(false);
@@ -447,7 +473,7 @@ export default function Results() {
       setProcessingTime(null);
       processingRef.current = false;
     }
-  }, [navigate, queryDate, queryExtraHours, queryGuests, queryPromo, queryServiceId, queryStaffId, logInteractionMetric, refreshAvailabilityFromServer]);
+  }, [selectedTime, refreshAvailabilityFromServer, queryServiceId, queryDate, queryExtraHours, queryGuests, queryPromo, queryStaffId, customerInfo, navigate]);
 
   useEffect(() => {
     if (!displayTimes.length) {
@@ -633,6 +659,49 @@ export default function Results() {
             <p className="text-2xl font-bold tracking-tight text-amber-500">£{selectedSlotPricing?.totalPrice ?? pricing.totalPrice}</p>
           </div>
         </div>
+        <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+          We reserve your selected time for 5 minutes once you continue.
+        </p>
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <input
+            type="text"
+            placeholder="First name"
+            value={customerInfo.firstName}
+            onChange={(e) => setCustomerInfo((prev) => ({ ...prev, firstName: e.target.value }))}
+            className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-[12px] text-white outline-none focus:ring-1 ring-amber-500"
+          />
+          <input
+            type="text"
+            placeholder="Surname"
+            value={customerInfo.surname}
+            onChange={(e) => setCustomerInfo((prev) => ({ ...prev, surname: e.target.value }))}
+            className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-[12px] text-white outline-none focus:ring-1 ring-amber-500"
+          />
+          <input
+            type="email"
+            placeholder="Email"
+            value={customerInfo.email}
+            onChange={(e) => setCustomerInfo((prev) => ({ ...prev, email: e.target.value }))}
+            className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-[12px] text-white outline-none focus:ring-1 ring-amber-500"
+          />
+          <input
+            type="tel"
+            placeholder="Phone (optional)"
+            value={customerInfo.phone}
+            onChange={(e) => setCustomerInfo((prev) => ({ ...prev, phone: e.target.value }))}
+            className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-[12px] text-white outline-none focus:ring-1 ring-amber-500"
+          />
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            onClick={reserveSelectedSlotAndContinue}
+            disabled={isProcessing || !selectedTime}
+            className="gold-gradient px-5 py-3 rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] text-black disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Continue to checkout
+          </button>
+        </div>
       </div>
 
       {showLoadingAvailability ? (
@@ -653,7 +722,7 @@ export default function Results() {
               disabled={isProcessing}
               selected={selectedTime === slot.time}
               isProcessing={isProcessing}
-              onSelect={handleBook}
+              onSelect={handleSelectSlot}
             />
           ))}
         </div>

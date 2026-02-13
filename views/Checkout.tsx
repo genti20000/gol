@@ -18,7 +18,13 @@ export default function Checkout() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [slotConflict, setSlotConflict] = useState(false);
-  const [formData, setFormData] = useState({ name: '', surname: '', email: '', phone: '', notes: '' });
+  const [formData, setFormData] = useState(() => ({
+    name: route.params.get('firstName') || '',
+    surname: route.params.get('surname') || '',
+    email: route.params.get('email') || '',
+    phone: route.params.get('phone') || '',
+    notes: ''
+  }));
   const [extrasSelection, setExtrasSelection] = useState<Record<string, number>>({});
   const [currentStep, setCurrentStep] = useState<'extras' | 'details'>('details');
   const [draftBooking, setDraftBooking] = useState<any | null>(null);
