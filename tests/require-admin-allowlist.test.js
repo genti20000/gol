@@ -7,6 +7,7 @@ test('requireAdmin allowlist accepts all supported env variable names', () => {
   assert.match(source, /ADMIN_EMAIL_ALLOWLIST/);
   assert.match(source, /ADMIN_EMAILS/);
   assert.match(source, /NEXT_PUBLIC_ADMIN_EMAILS/);
+  assert.match(source, /admin_users/);
 });
 
 console.log('require-admin-allowlist.test.js passed');

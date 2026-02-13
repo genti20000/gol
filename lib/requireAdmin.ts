@@ -41,6 +41,24 @@ const parseAllowlist = () => {
   return Array.from(new Set(all));
 };
 
+const isAdminByDatabase = async (supabase: SupabaseServiceClient, email: string) => {
+  const { data, error } = await supabase
+    .from('admin_users')
+    .select('email,enabled')
+    .eq('email', email)
+    .eq('enabled', true)
+    .maybeSingle();
+
+  if (error) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[ADMIN AUTH] admin_users lookup failed', { email, message: error.message });
+    }
+    return false;
+  }
+
+  return Boolean(data);
+};
+
 const getBearerToken = (request: Request): string | null => {
   const authHeader = request.headers.get('authorization') || '';
   if (!authHeader.startsWith('Bearer ')) return null;
@@ -64,13 +82,21 @@ export async function requireAdmin(
 
   const email = String(data.user.email || '').trim().toLowerCase();
   const allowlist = parseAllowlist();
+  const role = String(data.user.app_metadata?.role || '').toLowerCase();
+  const allowedByEnv = email && allowlist.length > 0 && allowlist.includes(email);
+  const allowedByRole = role === 'admin';
+  const allowedByDb = email ? await isAdminByDatabase(supabase, email) : false;
+
   if (process.env.NODE_ENV !== 'production') {
     console.info('[ADMIN AUTH]', {
       email: email || null,
-      allowlistCount: allowlist.length
+      allowlistCount: allowlist.length,
+      allowedByEnv,
+      allowedByRole,
+      allowedByDb
     });
   }
-  if (!email || allowlist.length === 0 || !allowlist.includes(email)) {
+  if (!email || !(allowedByEnv || allowedByRole || allowedByDb)) {
     if (process.env.NODE_ENV !== 'production') {
       console.warn('[ADMIN AUTH] Forbidden', { email: email || null });
     }
