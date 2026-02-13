@@ -44,6 +44,9 @@ export async function PATCH(
     }
 
     if (action === 'send_payment_link') {
+      if (booking.status === 'EXPIRED' || booking.status === 'CANCELLED') {
+        return NextResponse.json({ error: 'Payment link is only available for live bookings.' }, { status: 400 });
+      }
       const paymentLink = `https://payments.example.com/booking/${bookingId}`;
       await writeAdminAuditLog({
         adminEmail,
@@ -95,6 +98,9 @@ export async function PATCH(
     }
 
     if (action === 'mark_paid') {
+      if (booking.status === 'EXPIRED' || booking.status === 'CANCELLED') {
+        return NextResponse.json({ error: 'Expired/cancelled bookings cannot be marked paid.' }, { status: 400 });
+      }
       if (!String(booking.customer_name ?? '').trim() || !String(booking.customer_email ?? '').trim()) {
         return NextResponse.json({ error: 'Missing customer details.' }, { status: 400 });
       }
@@ -149,6 +155,9 @@ export async function PATCH(
     }
 
     if (action === 'cancel') {
+      if (booking.status === 'EXPIRED') {
+        return NextResponse.json({ error: 'Expired bookings cannot be cancelled again.' }, { status: 400 });
+      }
       const reason = parseCancelReason(payload?.reason);
       const { data: updated, error: updateError } = await supabase
         .from('bookings')

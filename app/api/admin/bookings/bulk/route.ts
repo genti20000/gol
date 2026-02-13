@@ -14,14 +14,22 @@ export async function POST(request: Request) {
     if (!parsed.ok) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
-    const { action, ids } = parsed.value as { action: 'cancel' | 'mark_paid' | 'delete'; ids: string[] };
+    const { action, ids, includeExpired } = parsed.value as { action: 'cancel' | 'mark_paid' | 'delete'; ids: string[]; includeExpired?: boolean };
 
     if (action === 'cancel') {
-      const { data: updatedRows, error } = await supabase
+      let updateQuery = supabase
         .from('bookings')
         .update({ status: 'CANCELLED' })
         .in('id', ids)
-        .select('id');
+        .in('status', ['CONFIRMED', 'PENDING']);
+      if (includeExpired) {
+        updateQuery = supabase
+          .from('bookings')
+          .update({ status: 'CANCELLED' })
+          .in('id', ids)
+          .in('status', ['CONFIRMED', 'PENDING', 'EXPIRED']);
+      }
+      const { data: updatedRows, error } = await updateQuery.select('id');
       if (error) return NextResponse.json({ error: 'Bulk cancel failed.' }, { status: 500 });
 
       const updatedIds = (updatedRows ?? []).map((row: any) => String(row.id));
@@ -50,6 +58,7 @@ export async function POST(request: Request) {
         .from('bookings')
         .update({ payment_state: 'PAID', status: 'CONFIRMED', deposit_paid: true, confirmed_at: new Date().toISOString() })
         .in('id', ids)
+        .in('status', ['CONFIRMED', 'PENDING'])
         .select('id,booking_ref,room_name,start_at,customer_name');
 
       if (error) return NextResponse.json({ error: 'Bulk mark paid failed.' }, { status: 500 });

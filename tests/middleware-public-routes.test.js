@@ -8,6 +8,7 @@ const createDraftSource = fs.readFileSync('app/api/bookings/create-draft/route.t
 const availabilitySource = fs.readFileSync('app/api/bookings/availability/route.ts', 'utf8');
 const finalizeSource = fs.readFileSync('app/api/bookings/finalize/route.ts', 'utf8');
 const holdSlotSource = fs.readFileSync('app/api/hold-slot/route.ts', 'utf8');
+const adminListSource = fs.readFileSync('app/api/admin/bookings/list/route.ts', 'utf8');
 
 test('middleware matcher is API-only and does not protect /book routes', () => {
   assert.match(middlewareSource, /matcher:\s*\['\/api\/:path\*'\]/);
@@ -23,6 +24,7 @@ test('public booking endpoints are not admin-gated', () => {
 test('legacy draft endpoints are admin-gated', () => {
   assert.match(initSource, /requireAdmin\(/);
   assert.match(createDraftSource, /requireAdmin\(/);
+  assert.match(adminListSource, /requireAdmin\(/);
 });
 
 console.log('middleware-public-routes.test.js passed');
