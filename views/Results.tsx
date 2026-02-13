@@ -59,7 +59,7 @@ const SlotCard = React.memo(function SlotCard({
         </span>
       )}
       <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-        {isProcessing && selected ? 'Reserving...' : selected ? 'Selected' : 'Book Now'}
+        {isProcessing && selected ? 'Checking...' : selected ? 'Selected' : 'Book Now'}
       </span>
     </button>
   );
@@ -114,6 +114,15 @@ export default function Results() {
   const queryPromo = useMemo(() => route.params.get('promo') || '', [route.params]);
   const queryServiceId = useMemo(() => route.params.get('serviceId') || (typeof window !== 'undefined' ? localStorage.getItem('lkc_search_serviceId') : '') || '', [route.params]);
   const queryStaffId = useMemo(() => route.params.get('staffId') || (typeof window !== 'undefined' ? localStorage.getItem('lkc_search_staffId') : '') || '', [route.params]);
+  const queryConflict = useMemo(() => route.params.get('conflict') || '', [route.params]);
+  const queryAlternatives = useMemo(
+    () =>
+      (route.params.get('alternatives') || '')
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean),
+    [route.params]
+  );
 
   const [serverTimes, setServerTimes] = useState<string[] | null>(null);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
@@ -242,6 +251,21 @@ export default function Results() {
     return () => clearTimeout(timer);
   }, [slotNotice, isProcessing]);
 
+  useEffect(() => {
+    if (queryConflict !== '1') return;
+    if (queryAlternatives.length > 0) {
+      setSlotNotice({
+        message: `That slot was just booked. Closest alternatives: ${queryAlternatives.slice(0, 3).join(', ')}.`,
+        type: 'error'
+      });
+    } else {
+      setSlotNotice({
+        message: 'That slot was just booked. Live availability has been refreshed.',
+        type: 'error'
+      });
+    }
+  }, [queryConflict, queryAlternatives]);
+
   const refreshAvailabilityFromServer = async (persist = true) => {
     try {
       if (persist) setAvailabilityLoading(true);
@@ -311,12 +335,19 @@ export default function Results() {
     setError(null);
 
     try {
-      const preflightTimes = await refreshAvailabilityFromServer(false);
-      if (!preflightTimes.includes(time)) {
-        setServerTimes(preflightTimes);
-        const nextBest = preflightTimes.slice(0, 3).join(', ');
+      markNow(`slot-booking-init-finish-${interactionId}`);
+      const clickDuration = safeMeasure(
+        `slot-click-to-booking-init-${interactionId}`,
+        `slot-click-start-${interactionId}`,
+        `slot-booking-init-finish-${interactionId}`
+      );
+      if (clickDuration !== null) {
+        logInteractionMetric('booking_init', interactionId, time, clickDuration);
+      }
+      if (!displayTimes.includes(time)) {
+        const nextBest = displayTimes.slice(0, 3).join(', ');
         setSlotNotice({
-          message: preflightTimes.length
+          message: displayTimes.length
             ? `That slot is no longer available. Next available: ${nextBest}.`
             : 'That slot is no longer available and no other times are currently open for this selection.',
           type: 'error'
@@ -328,72 +359,28 @@ export default function Results() {
         return;
       }
 
-      const response = await fetch('/api/bookings/init', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date: queryDate,
-          time,
-          guests: queryGuests,
-          extraHours: queryExtraHours,
-          serviceId: queryServiceId,
-          staffId: queryStaffId,
-          promo: queryPromo
-        })
+      const checkoutParams = new URLSearchParams({
+        date: queryDate,
+        time,
+        guests: String(queryGuests),
+        extraHours: String(queryExtraHours),
+        promo: queryPromo,
+        serviceId: queryServiceId,
+        staffId: queryStaffId
       });
 
-      markNow(`slot-booking-init-finish-${interactionId}`);
-      const bookingInitDuration = safeMeasure(
-        `slot-click-to-booking-init-${interactionId}`,
-        `slot-click-start-${interactionId}`,
-        `slot-booking-init-finish-${interactionId}`
-      );
-      if (bookingInitDuration !== null) {
-        logInteractionMetric('booking_init', interactionId, time, bookingInitDuration);
-      }
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        const serverMessage = payload.error || 'Failed to initialize booking.';
-        const isSlotConflict = response.status === 409 || /just booked|no rooms available|choose another time|overlap/i.test(serverMessage);
-        if (isSlotConflict) {
-          const refreshed = await refreshAvailabilityFromServer(true);
-          if (refreshed.length > 0) {
-            const nextBest = refreshed.slice(0, 3).join(', ');
-            setSlotNotice({ message: `That slot was just taken. Live availability refreshed. Next available: ${nextBest}.`, type: 'error' });
-            setSelectedTime(null);
-          } else {
-            setSlotNotice({ message: 'That slot was just taken. Live availability refreshed with no remaining times for this selection.', type: 'error' });
-            setSelectedTime(null);
-          }
-        } else {
-          setSlotNotice({ message: serverMessage, type: 'error' });
-        }
-        setIsProcessing(false);
-        setProcessingTime(null);
-        processingRef.current = false;
-        return;
-      }
-
-      const { bookingId, bookingToken } = await response.json();
-      if (bookingId && bookingToken) {
-        setIsProcessing(false);
-        processingRef.current = false;
-        navigate(`/checkout?bookingId=${bookingId}&token=${encodeURIComponent(bookingToken)}`);
-      } else {
-        setSlotNotice({ message: 'Unexpected server response. Please try again.', type: 'error' });
-        setIsProcessing(false);
-        setProcessingTime(null);
-        processingRef.current = false;
-      }
+      setIsProcessing(false);
+      setProcessingTime(null);
+      processingRef.current = false;
+      navigate(`/checkout?${checkoutParams.toString()}`);
     } catch (err) {
-      console.error('Booking init failed', err);
+      console.error('Slot preflight failed', err);
       setSlotNotice({ message: 'Unable to start booking. Please try again.', type: 'error' });
       setIsProcessing(false);
       setProcessingTime(null);
       processingRef.current = false;
     }
-  }, [navigate, queryDate, queryExtraHours, queryGuests, queryPromo, queryServiceId, queryStaffId, logInteractionMetric]);
+  }, [navigate, queryDate, queryExtraHours, queryGuests, queryPromo, queryServiceId, queryStaffId, logInteractionMetric, displayTimes]);
 
   useEffect(() => {
     if (!displayTimes.length) {
@@ -507,7 +494,7 @@ export default function Results() {
                   isProcessing ? 'text-amber-100' : slotNotice?.type === 'error' ? 'text-red-100' : 'text-zinc-100'
                 }`}
               >
-                {isProcessing ? `Reserving ${processingTime || 'slot'}...` : slotNotice?.message}
+                {isProcessing ? `Checking ${processingTime || 'slot'}...` : slotNotice?.message}
               </p>
             </div>
           </div>
@@ -558,28 +545,28 @@ export default function Results() {
         </div>
       </div>
 
-      {displayTimes.length > 0 && (
-        <div className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-950/50 px-5 py-4" aria-live="polite">
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Selected Slot</p>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Customer info panel</span>
+      <div className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-950/50 px-5 py-4" aria-live="polite">
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Selected Slot</p>
+          <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Customer info panel</span>
+        </div>
+        <div className="mt-2 flex items-end justify-between gap-4">
+          <div>
+            <p className="text-2xl font-bold font-mono tracking-tight text-white">{selectedTime || 'Select a slot to continue'}</p>
+            {selectedSlotPricing?.earlyBirdApplied ? (
+              <p className="text-[10px] font-bold uppercase tracking-widest text-green-500">Early Bird £15 pp applied to this slot</p>
+            ) : (
+              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                {selectedTime ? 'Standard slot pricing' : 'Pick a time to continue to checkout'}
+              </p>
+            )}
           </div>
-          <div className="mt-2 flex items-end justify-between gap-4">
-            <div>
-              <p className="text-2xl font-bold font-mono tracking-tight text-white">{selectedTime || 'No slot selected'}</p>
-              {selectedSlotPricing?.earlyBirdApplied ? (
-                <p className="text-[10px] font-bold uppercase tracking-widest text-green-500">Early Bird £15 pp applied to this slot</p>
-              ) : (
-                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Standard slot pricing</p>
-              )}
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Total</p>
-              <p className="text-2xl font-bold tracking-tight text-amber-500">£{selectedSlotPricing?.totalPrice ?? pricing.totalPrice}</p>
-            </div>
+          <div className="text-right">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Total</p>
+            <p className="text-2xl font-bold tracking-tight text-amber-500">£{selectedSlotPricing?.totalPrice ?? pricing.totalPrice}</p>
           </div>
         </div>
-      )}
+      </div>
 
       {showLoadingAvailability ? (
         <div className="text-center py-16 md:py-24 glass-panel rounded-[1.5rem] md:rounded-[2.5rem] border border-zinc-800 px-6">

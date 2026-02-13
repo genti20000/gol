@@ -186,6 +186,21 @@ export default function Checkout() {
 
         if (!finalizeResponse.ok) {
           const payload = await finalizeResponse.json().catch(() => null);
+          if (finalizeResponse.status === 409 && payload?.code === 'SLOT_CONFLICT') {
+            const alternatives = Array.isArray(payload?.alternatives) ? payload.alternatives : [];
+            const resultsParams = new URLSearchParams({
+              serviceId: effectiveServiceId || '',
+              date: checkoutSummary.date,
+              guests: String(checkoutSummary.guests),
+              extraHours: String(checkoutSummary.extraHours),
+              promo: effectivePromo || '',
+              staffId: queryStaffId || '',
+              conflict: '1',
+              alternatives: alternatives.join(',')
+            });
+            navigate(`/book/results?${resultsParams.toString()}`);
+            return;
+          }
           throw new Error(payload?.error || 'Unable to finalize booking.');
         }
 

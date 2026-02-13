@@ -11,6 +11,7 @@ import { expireStaleDrafts } from '@/lib/draftExpiry';
 import { BookingStatus, BookingExtraSelection } from '@/types';
 import { getExtraMaxQuantity } from '@/lib/bookingUpdateValidation';
 import { isBlockingBookingForAvailability, overlapsRange } from '@/lib/availabilityRules';
+import { getLiveAvailability, pickClosestAlternatives } from '@/lib/liveAvailability';
 
 type FinalizeRequest = {
   date?: string;
@@ -327,7 +328,21 @@ export async function POST(request: Request) {
 
       if (bookingError || !insertedBooking) {
         if (isOverlapConstraint) {
-          return NextResponse.json({ error: 'That room was just booked. Please choose another time.' }, { status: 409 });
+          const latestAvailability = await getLiveAvailability(supabase, {
+            date,
+            guests,
+            extraHours,
+            serviceId
+          }).catch(() => []);
+          const alternatives = pickClosestAlternatives(latestAvailability, time, 3);
+          return NextResponse.json(
+            {
+              code: 'SLOT_CONFLICT',
+              error: 'That room was just booked. Please choose another time.',
+              alternatives
+            },
+            { status: 409 }
+          );
         }
         return NextResponse.json({ error: 'Unable to finalize booking.' }, { status: 500 });
       }
