@@ -156,7 +156,3 @@ EXCEPTION
     RETURN QUERY SELECT NULL::text, NULL::text, NULL::text, NULL::text, true;
 END;
 $$;
-
-CREATE UNIQUE INDEX IF NOT EXISTS bookings_room_exact_slot_unique
-ON bookings (room_id, start_at, end_at)
-WHERE status IN ('CONFIRMED', 'PENDING');
