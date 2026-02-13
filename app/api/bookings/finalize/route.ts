@@ -8,9 +8,8 @@ import { computeOfferDiscounts } from '@/lib/offerUtils';
 import { computeAmountDueNow } from '@/lib/paymentLogic';
 import { computeEarlyBirdDiscount } from '@/lib/earlyBird';
 import { expireStaleDrafts } from '@/lib/draftExpiry';
-import { BookingStatus, BookingExtraSelection } from '@/types';
+import { BookingExtraSelection } from '@/types';
 import { getExtraMaxQuantity } from '@/lib/bookingUpdateValidation';
-import { isBlockingBookingForAvailability, overlapsRange } from '@/lib/availabilityRules';
 import { getLiveAvailability, pickClosestAlternatives } from '@/lib/liveAvailability';
 
 type FinalizeRequest = {
@@ -213,142 +212,58 @@ export async function POST(request: Request) {
       depositAmount: settings?.deposit_amount ?? 0
     });
 
-    const { data: rooms, error: roomsError } = await supabase
-      .from('rooms')
-      .select('id,name,is_active')
-      .eq('is_active', true)
-      .order('name');
-
-    if (roomsError || !rooms) {
-      return NextResponse.json({ error: 'Unable to allocate a room.' }, { status: 500 });
-    }
-
-    const roomIds = rooms.map((room: any) => room.id);
-    const { data: overlappingBookings } = await supabase
-      .from('bookings')
-      .select('room_id,start_at,end_at,status,expires_at')
-      .in('room_id', roomIds)
-      .lt('start_at', endDate.toISOString())
-      .gt('end_at', startDate.toISOString());
-
-    const { data: roomBlocks } = await supabase
-      .from('room_blocks')
-      .select('room_id,start_at,end_at')
-      .in('room_id', roomIds)
-      .lt('start_at', endDate.toISOString())
-      .gt('end_at', startDate.toISOString());
-
-    const nowMs = Date.now();
-    const blockingBookings = (overlappingBookings ?? []).filter((booking: any) => isBlockingBookingForAvailability(booking, nowMs));
-
-    const assignedRoom = rooms.find((room: any) => {
-      const bookingConflict = blockingBookings.some((booking: any) => {
-        if (booking.room_id !== room.id) return false;
-        const bookingStart = Date.parse(String(booking.start_at || ''));
-        const bookingEnd = Date.parse(String(booking.end_at || ''));
-        if (!Number.isFinite(bookingStart) || !Number.isFinite(bookingEnd)) return false;
-        return overlapsRange(startDate.getTime(), endDate.getTime(), bookingStart, bookingEnd);
-      });
-      if (bookingConflict) return false;
-
-      const blockConflict = (roomBlocks ?? []).some((block: any) => {
-        if (block.room_id !== room.id) return false;
-        const blockStart = Date.parse(String(block.start_at || ''));
-        const blockEnd = Date.parse(String(block.end_at || ''));
-        if (!Number.isFinite(blockStart) || !Number.isFinite(blockEnd)) return false;
-        return overlapsRange(startDate.getTime(), endDate.getTime(), blockStart, blockEnd);
-      });
-
-      return !blockConflict;
+    const { data: atomicResult, error: finalizeError } = await supabase.rpc('finalize_public_booking_atomic', {
+      p_service_id: serviceId,
+      p_staff_id: staffId,
+      p_booking_date: date,
+      p_start_time: time,
+      p_duration_hours: totalDurationHours,
+      p_start_at: startDate.toISOString(),
+      p_end_at: endDate.toISOString(),
+      p_guests: guests,
+      p_customer_name: `${firstName} ${surname}`.trim(),
+      p_customer_surname: surname,
+      p_customer_email: email,
+      p_customer_phone: toNullableString(payload.phone),
+      p_notes: toNullableString(payload.notes),
+      p_special_requests: toNullableString(payload.specialRequests) ?? toNullableString(payload.notes),
+      p_base_total: baseTotal,
+      p_extras_hours: extraHours,
+      p_extras_price: extrasPrice,
+      p_discount_amount: Number((discountAmount + offerPercentDiscount + offerFixed).toFixed(2)),
+      p_promo_code: promoCodeToStore,
+      p_promo_discount_amount: promoDiscountAmount,
+      p_total_price: grandTotal,
+      p_deposit_amount: depositAmount,
+      p_deposit_paid: depositAmount <= 0,
+      p_extras_total: Number(extrasTotal.toFixed(2)),
+      p_extras_snapshot: extrasSnapshot
     });
 
-    if (!assignedRoom) {
-      return NextResponse.json({ error: 'No rooms available for this time.' }, { status: 409 });
+    const row = Array.isArray(atomicResult) ? atomicResult[0] : atomicResult;
+    const isConflict = Boolean(row?.conflict);
+    const insertedBookingId = row?.booking_id ? String(row.booking_id) : '';
+    const insertedBookingToken = row?.booking_token ? String(row.booking_token) : '';
+
+    if (finalizeError || isConflict || !insertedBookingId || !insertedBookingToken) {
+      const latestAvailability = await getLiveAvailability(supabase, {
+        date,
+        guests,
+        extraHours,
+        serviceId
+      }).catch(() => []);
+      const alternatives = pickClosestAlternatives(latestAvailability, time, 3);
+      return NextResponse.json(
+        {
+          error: 'SLOT_TAKEN',
+          message: 'That time was just taken. Please choose another slot.',
+          alternatives
+        },
+        { status: 409 }
+      );
     }
 
-    const insertPayload = {
-      room_id: assignedRoom.id,
-      room_name: assignedRoom.name,
-      service_id: serviceId,
-      staff_id: staffId,
-      booking_date: date,
-      start_time: time,
-      duration_hours: totalDurationHours,
-      start_at: startDate.toISOString(),
-      end_at: endDate.toISOString(),
-      status: BookingStatus.CONFIRMED,
-      confirmed_at: new Date().toISOString(),
-      expires_at: null,
-      guests,
-      customer_name: `${firstName} ${surname}`.trim(),
-      customer_surname: surname,
-      customer_email: email,
-      customer_phone: toNullableString(payload.phone),
-      notes: toNullableString(payload.notes),
-      special_requests: toNullableString(payload.specialRequests) ?? toNullableString(payload.notes),
-      base_total: baseTotal,
-      extras_hours: extraHours,
-      extras_price: extrasPrice,
-      discount_amount: Number((discountAmount + offerPercentDiscount + offerFixed).toFixed(2)),
-      promo_code: promoCodeToStore,
-      promo_discount_amount: promoDiscountAmount,
-      total_price: grandTotal,
-      source: 'public',
-      payment_state: 'NONE',
-      deposit_amount: depositAmount,
-      deposit_paid: depositAmount <= 0,
-      extras_total: Number(extrasTotal.toFixed(2)),
-      extras_snapshot: extrasSnapshot
-    };
-
-    const tryInsert = async () =>
-      supabase
-        .from('bookings')
-        .insert([insertPayload])
-        .select('id,booking_access_token')
-        .maybeSingle();
-
-    let { data: insertedBooking, error: bookingError } = await tryInsert();
-
-    if (bookingError || !insertedBooking) {
-      const code = bookingError?.code;
-      const lowerMessage = String(bookingError?.message ?? '').toLowerCase();
-      const isOverlapConstraint = code === '23P01' || lowerMessage.includes('bookings_no_overlap_per_room');
-
-      if (isOverlapConstraint) {
-        try {
-          await expireStaleDrafts(supabase);
-          const retry = await tryInsert();
-          insertedBooking = retry.data;
-          bookingError = retry.error;
-        } catch (retryError) {
-          console.warn('Finalize retry after stale draft expiry failed.', retryError);
-        }
-      }
-
-      if (bookingError || !insertedBooking) {
-        if (isOverlapConstraint) {
-          const latestAvailability = await getLiveAvailability(supabase, {
-            date,
-            guests,
-            extraHours,
-            serviceId
-          }).catch(() => []);
-          const alternatives = pickClosestAlternatives(latestAvailability, time, 3);
-          return NextResponse.json(
-            {
-              code: 'SLOT_CONFLICT',
-              error: 'That room was just booked. Please choose another time.',
-              alternatives
-            },
-            { status: 409 }
-          );
-        }
-        return NextResponse.json({ error: 'Unable to finalize booking.' }, { status: 500 });
-      }
-    }
-
-    return NextResponse.json({ bookingId: insertedBooking.id, bookingToken: insertedBooking.booking_access_token });
+    return NextResponse.json({ bookingId: insertedBookingId, bookingToken: insertedBookingToken });
   } catch (error) {
     console.error('Unexpected error finalizing booking.', error);
     return NextResponse.json({ error: 'Unable to finalize booking.' }, { status: 500 });

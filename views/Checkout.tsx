@@ -186,17 +186,25 @@ export default function Checkout() {
 
         if (!finalizeResponse.ok) {
           const payload = await finalizeResponse.json().catch(() => null);
-          if (finalizeResponse.status === 409 && payload?.code === 'SLOT_CONFLICT') {
+          if (finalizeResponse.status === 409 && payload?.error === 'SLOT_TAKEN') {
             const alternatives = Array.isArray(payload?.alternatives) ? payload.alternatives : [];
+            if (typeof window !== 'undefined') {
+              window.sessionStorage.setItem(
+                'lkc_slot_conflict',
+                JSON.stringify({
+                  failedTime: checkoutSummary.time,
+                  alternatives,
+                  message: payload?.message || 'That time was just taken. Please choose another slot.'
+                })
+              );
+            }
             const resultsParams = new URLSearchParams({
               serviceId: effectiveServiceId || '',
               date: checkoutSummary.date,
               guests: String(checkoutSummary.guests),
               extraHours: String(checkoutSummary.extraHours),
               promo: effectivePromo || '',
-              staffId: queryStaffId || '',
-              conflict: '1',
-              alternatives: alternatives.join(',')
+              staffId: queryStaffId || ''
             });
             navigate(`/book/results?${resultsParams.toString()}`);
             return;

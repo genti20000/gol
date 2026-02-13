@@ -114,15 +114,6 @@ export default function Results() {
   const queryPromo = useMemo(() => route.params.get('promo') || '', [route.params]);
   const queryServiceId = useMemo(() => route.params.get('serviceId') || (typeof window !== 'undefined' ? localStorage.getItem('lkc_search_serviceId') : '') || '', [route.params]);
   const queryStaffId = useMemo(() => route.params.get('staffId') || (typeof window !== 'undefined' ? localStorage.getItem('lkc_search_staffId') : '') || '', [route.params]);
-  const queryConflict = useMemo(() => route.params.get('conflict') || '', [route.params]);
-  const queryAlternatives = useMemo(
-    () =>
-      (route.params.get('alternatives') || '')
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean),
-    [route.params]
-  );
 
   const [serverTimes, setServerTimes] = useState<string[] | null>(null);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
@@ -252,27 +243,48 @@ export default function Results() {
   }, [slotNotice, isProcessing]);
 
   useEffect(() => {
-    if (queryConflict !== '1') return;
-    if (queryAlternatives.length > 0) {
+    if (typeof window === 'undefined') return;
+    const raw = window.sessionStorage.getItem('lkc_slot_conflict');
+    if (!raw) return;
+    window.sessionStorage.removeItem('lkc_slot_conflict');
+    let conflictPayload: { failedTime?: string; alternatives?: string[]; message?: string } | null = null;
+    try {
+      conflictPayload = JSON.parse(raw);
+    } catch {
+      conflictPayload = null;
+    }
+    if (!conflictPayload) return;
+
+    const alternatives = Array.isArray(conflictPayload.alternatives)
+      ? conflictPayload.alternatives.filter(Boolean).slice(0, 3)
+      : [];
+    if (alternatives.length > 0) {
       setSlotNotice({
-        message: `That slot was just booked. Closest alternatives: ${queryAlternatives.slice(0, 3).join(', ')}.`,
+        message: `That slot was just booked. Closest alternatives: ${alternatives.join(', ')}.`,
         type: 'error'
       });
     } else {
       setSlotNotice({
-        message: 'That slot was just booked. Live availability has been refreshed.',
+        message: conflictPayload.message || 'That slot was just booked. Live availability has been refreshed.',
         type: 'error'
       });
     }
-  }, [queryConflict, queryAlternatives]);
 
-  const refreshAvailabilityFromServer = async (persist = true) => {
+    if (conflictPayload.failedTime) {
+      setServerTimes((prev) => (prev ?? []).filter((slot) => slot !== conflictPayload?.failedTime));
+      setSelectedTime((prev) => (prev === conflictPayload?.failedTime ? null : prev));
+    }
+    refreshAvailabilityFromServer(true);
+  }, []);
+
+  const refreshAvailabilityFromServer = useCallback(async (persist = true) => {
     try {
       if (persist) setAvailabilityLoading(true);
       if (persist) setAvailabilityError(null);
       const response = await fetch('/api/bookings/availability', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
         body: JSON.stringify({
           date: queryDate,
           guests: queryGuests,
@@ -301,7 +313,7 @@ export default function Results() {
     } finally {
       if (persist) setAvailabilityLoading(false);
     }
-  };
+  }, [queryDate, queryGuests, queryExtraHours, queryServiceId, queryStaffId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -315,7 +327,7 @@ export default function Results() {
     return () => {
       isMounted = false;
     };
-  }, [queryDate, queryGuests, queryExtraHours, queryServiceId, queryStaffId]);
+  }, [queryDate, queryGuests, queryExtraHours, queryServiceId, queryStaffId, refreshAvailabilityFromServer]);
 
   const handleBook = useCallback(async (time: string) => {
     if (processingRef.current) return;
@@ -344,10 +356,12 @@ export default function Results() {
       if (clickDuration !== null) {
         logInteractionMetric('booking_init', interactionId, time, clickDuration);
       }
-      if (!displayTimes.includes(time)) {
-        const nextBest = displayTimes.slice(0, 3).join(', ');
+      const latestTimes = await refreshAvailabilityFromServer(false);
+      if (!latestTimes.includes(time)) {
+        setServerTimes(latestTimes);
+        const nextBest = latestTimes.slice(0, 3).join(', ');
         setSlotNotice({
-          message: displayTimes.length
+          message: latestTimes.length
             ? `That slot is no longer available. Next available: ${nextBest}.`
             : 'That slot is no longer available and no other times are currently open for this selection.',
           type: 'error'
@@ -380,7 +394,7 @@ export default function Results() {
       setProcessingTime(null);
       processingRef.current = false;
     }
-  }, [navigate, queryDate, queryExtraHours, queryGuests, queryPromo, queryServiceId, queryStaffId, logInteractionMetric, displayTimes]);
+  }, [navigate, queryDate, queryExtraHours, queryGuests, queryPromo, queryServiceId, queryStaffId, logInteractionMetric, refreshAvailabilityFromServer]);
 
   useEffect(() => {
     if (!displayTimes.length) {

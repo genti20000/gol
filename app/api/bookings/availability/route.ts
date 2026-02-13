@@ -14,6 +14,9 @@ type AvailabilityRequest = {
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 const toNumber = (value: number | string | undefined, fallback = 0) => {
   const parsed = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -46,7 +49,14 @@ export async function POST(request: Request) {
       serviceId
     });
 
-    return NextResponse.json({ validTimes });
+    return NextResponse.json(
+      { validTimes },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0'
+        }
+      }
+    );
   } catch (error) {
     console.error('[AVAILABILITY] Unexpected error', error);
     return NextResponse.json({ error: 'Unable to refresh availability.' }, { status: 500 });
