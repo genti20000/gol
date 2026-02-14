@@ -376,14 +376,18 @@ export default function Results() {
       if (requestId !== holdRequestIdRef.current) return;
 
       if (!holdResponse.ok) {
+        const holdError = (await holdResponse.json().catch(() => null)) as { detail?: string; code?: string } | null;
+        const conflictMessage = holdError?.detail || 'That time was just taken. Please choose another slot.';
+        const genericMessage = holdError?.detail || 'Unable to reserve that time. Please try another slot.';
+
         if (holdResponse.status === 409) {
-          setSlotNotice({ message: 'That time was just taken. Please choose another slot.', type: 'error' });
+          setSlotNotice({ message: conflictMessage, type: 'error' });
           setSelectedTime((prev) => (prev === time ? null : prev));
           setHeldSlotTime(null);
           const refreshedAfterConflict = await refreshAvailabilityFromServer(true);
           setServerTimes(refreshedAfterConflict);
         } else {
-          setSlotNotice({ message: 'Unable to reserve that time. Please try another slot.', type: 'error' });
+          setSlotNotice({ message: genericMessage, type: 'error' });
           setSelectedTime((prev) => (prev === time ? null : prev));
           setHeldSlotTime(null);
         }
@@ -458,6 +462,7 @@ export default function Results() {
     if (!selectedTime) return null;
     return slotPricingByTime[selectedTime] ?? pricing;
   }, [selectedTime, slotPricingByTime, pricing]);
+  const canContinue = Boolean(selectedTime && heldSlotTime === selectedTime && !isProcessing);
   const showLoadingAvailability = availabilityLoading && serverTimes === null;
 
   const handleJoinWaitlist = async (e: React.FormEvent) => {
@@ -671,13 +676,14 @@ export default function Results() {
             <button
               type="button"
               onClick={reserveSelectedSlotAndContinue}
-              disabled={!selectedTime || heldSlotTime !== selectedTime || isProcessing}
-              className="w-full gold-gradient px-5 py-3 rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] text-black disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!canContinue}
+              aria-disabled={!canContinue}
+              className={`w-full gold-gradient px-5 py-3 rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] text-black transition-opacity ${canContinue ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed pointer-events-none'}`}
             >
               Continue to checkout
             </button>
             <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-              We reserve your selected time for 5 minutes once you continue.
+              We reserve your selected time for 5 minutes after you select it.
             </p>
             {selectedSlotPricing?.earlyBirdApplied && (
               <p className="text-[10px] font-bold uppercase tracking-widest text-amber-300">
