@@ -41,11 +41,28 @@ export default function Checkout() {
   const queryServiceId = route.params.get('serviceId') || undefined;
   const queryStaffId = route.params.get('staffId') || undefined;
   const querySessionId = route.params.get('sessionId') || '';
+  const queryHoldExpiresAt = route.params.get('holdExpiresAt') || '';
   const sessionId = useMemo(() => {
     if (querySessionId) return querySessionId;
     if (typeof window === 'undefined') return '';
     return localStorage.getItem('lkc_session_id') || '';
   }, [querySessionId]);
+  const holdExpiryMs = useMemo(() => {
+    if (!queryHoldExpiresAt) return null;
+    const parsed = Date.parse(queryHoldExpiresAt);
+    return Number.isFinite(parsed) ? parsed : null;
+  }, [queryHoldExpiresAt]);
+  const [holdNowMs, setHoldNowMs] = useState(Date.now());
+  const holdRemainingMs = holdExpiryMs !== null ? holdExpiryMs - holdNowMs : null;
+  const holdExpired = holdRemainingMs !== null && holdRemainingMs <= 0;
+  const holdRemainingLabel = useMemo(() => {
+    if (holdRemainingMs === null) return null;
+    const clamped = Math.max(0, holdRemainingMs);
+    const totalSeconds = Math.floor(clamped / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }, [holdRemainingMs]);
 
   const checkoutSummary = useMemo(() => getCheckoutSummaryFields({
     booking: draftBooking,
@@ -95,6 +112,20 @@ export default function Checkout() {
     if (!Number.isFinite(timestamp)) return null;
     return new Date(timestamp);
   }, [checkoutSummary.date, checkoutSummary.time]);
+
+  useEffect(() => {
+    if (holdExpiryMs === null) return;
+    const timer = window.setInterval(() => {
+      setHoldNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [holdExpiryMs]);
+
+  useEffect(() => {
+    if (!holdExpired) return;
+    setSlotConflict(true);
+    setPaymentError((prev) => prev || 'Your 5-minute hold expired. Please choose another time.');
+  }, [holdExpired]);
 
   // Show extras step first when available, otherwise go straight to details
   useEffect(() => {
@@ -175,6 +206,9 @@ export default function Checkout() {
       }
       if (!sessionId) {
         throw new Error('Your booking session expired. Please choose your time again.');
+      }
+      if (holdExpired) {
+        throw new Error('Your 5-minute hold expired. Please choose another time.');
       }
       let activeBookingId = bookingId;
       let activeBookingToken = bookingToken;
@@ -387,6 +421,11 @@ export default function Checkout() {
                 {paymentError}
               </div>
             )}
+            {holdRemainingLabel && (
+              <div className={`rounded-2xl border px-4 py-3 text-[10px] font-bold uppercase tracking-widest ${holdExpired ? 'border-red-500/40 bg-red-500/10 text-red-200' : holdRemainingMs !== null && holdRemainingMs < 60_000 ? 'border-amber-500/40 bg-amber-500/10 text-amber-200' : 'border-zinc-700 bg-zinc-900/60 text-zinc-200'}`}>
+                {holdExpired ? 'Your hold has expired.' : `Time held: ${holdRemainingLabel}`}
+              </div>
+            )}
             {slotConflict && (
               <button
                 type="button"
@@ -418,7 +457,7 @@ export default function Checkout() {
               )}
               <button
                 onClick={handleSubmit}
-                disabled={isProcessing || slotConflict || !formData.name || !formData.surname || !formData.email}
+                disabled={isProcessing || slotConflict || holdExpired || !formData.name || !formData.surname || !formData.email}
                 className={`${enabledExtras.length > 0 ? 'flex-[2]' : 'w-full'} gold-gradient py-4 md:py-5 rounded-xl md:rounded-2xl font-bold uppercase tracking-[0.2em] text-black shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-50 text-[10px] min-h-[44px] cursor-pointer`}
               >
                 {isProcessing ? <span className="inline-flex items-center gap-2"><Spinner className="w-4 h-4 border-black/30 border-t-black" /> Processing</span> : `Confirm Booking £${previewTotals.grandTotal}`}

@@ -160,6 +160,7 @@ export default function Results() {
   const [processingTime, setProcessingTime] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [heldSlotTime, setHeldSlotTime] = useState<string | null>(null);
+  const [holdExpiresAt, setHoldExpiresAt] = useState<string | null>(null);
   const [activeInteractionId, setActiveInteractionId] = useState<string | null>(null);
 
   const pendingCommitMetricRef = useRef<{ id: string; slot: string } | null>(null);
@@ -348,6 +349,7 @@ export default function Results() {
     setActiveInteractionId(interactionId);
     setSelectedTime(time);
     setHeldSlotTime(null);
+    setHoldExpiresAt(null);
     setSlotNotice(null);
 
     const requestId = ++holdRequestIdRef.current;
@@ -384,22 +386,27 @@ export default function Results() {
           setSlotNotice({ message: conflictMessage, type: 'error' });
           setSelectedTime((prev) => (prev === time ? null : prev));
           setHeldSlotTime(null);
+          setHoldExpiresAt(null);
           const refreshedAfterConflict = await refreshAvailabilityFromServer(true);
           setServerTimes(refreshedAfterConflict);
         } else {
           setSlotNotice({ message: genericMessage, type: 'error' });
           setSelectedTime((prev) => (prev === time ? null : prev));
           setHeldSlotTime(null);
+          setHoldExpiresAt(null);
         }
         return;
       }
 
+      const holdPayload = (await holdResponse.json().catch(() => null)) as { expires_at?: string } | null;
       setHeldSlotTime(time);
+      setHoldExpiresAt(holdPayload?.expires_at || new Date(Date.now() + 5 * 60_000).toISOString());
       setSlotNotice({ message: `${time} reserved for 5 minutes. Continue to checkout when ready.`, type: 'info' });
     } catch {
       if (requestId === holdRequestIdRef.current) {
         setSelectedTime((prev) => (prev === time ? null : prev));
         setHeldSlotTime(null);
+        setHoldExpiresAt(null);
         setSlotNotice({ message: 'Unable to reserve that time. Please try another slot.', type: 'error' });
       }
     } finally {
@@ -432,18 +439,23 @@ export default function Results() {
       staffId: queryStaffId,
       sessionId
     });
+    if (holdExpiresAt) {
+      checkoutParams.set('holdExpiresAt', holdExpiresAt);
+    }
     navigate(`/checkout?${checkoutParams.toString()}`);
-  }, [selectedTime, heldSlotTime, queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId, queryStaffId, navigate]);
+  }, [selectedTime, heldSlotTime, queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId, queryStaffId, holdExpiresAt, navigate]);
 
   useEffect(() => {
     if (!displayTimes.length) {
       setSelectedTime(null);
       setHeldSlotTime(null);
+      setHoldExpiresAt(null);
       return;
     }
     if (selectedTime && !displayTimes.includes(selectedTime)) {
       setSelectedTime(null);
       setHeldSlotTime(null);
+      setHoldExpiresAt(null);
     }
   }, [displayTimes, selectedTime]);
 
