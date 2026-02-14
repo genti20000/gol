@@ -81,17 +81,12 @@ export async function POST(request: Request) {
     if (rpcError || !row) {
       const rpcCode = String((rpcError as any)?.code || '');
       const rpcDetail = String((rpcError as any)?.message || '');
-      const missingFunction = rpcCode === '42883' || rpcDetail.toLowerCase().includes('create_slot_hold_atomic');
 
       if (DEV) {
         console.warn('[HOLD_SLOT] RPC failed', { rpcCode, rpcDetail });
       }
 
-      if (!missingFunction) {
-        return jsonError(500, 'HOLD_RPC_FAILED', 'Unable to reserve slot right now.');
-      }
-
-      // Fallback path if function migration has not been applied yet.
+      // Fallback path if function migration has not been applied yet or RPC errors unexpectedly.
       await supabase.from('slot_holds').delete().lte('expires_at', new Date().toISOString());
 
       const { data: bookedRow, error: bookedError } = await supabase
