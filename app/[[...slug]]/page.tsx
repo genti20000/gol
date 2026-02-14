@@ -10,6 +10,7 @@ import Processing from '@/views/Processing';
 import Cancelled from '@/views/Cancelled';
 import Admin from '@/views/Admin';
 import ManageBooking from '@/views/ManageBooking';
+import AdminCalendarDemo from '@/views/AdminCalendarDemo';
 import { LOGO_URL } from '@/constants';
 import { RouterContext, RouteState } from '@/lib/routerShim';
 import { StoreProvider } from '@/store';
@@ -94,6 +95,7 @@ export default function Page() {
     if (p === '/booking/confirmed') return <Confirmation />;
     if (p === '/booking/cancelled') return <Cancelled />;
     if (p === '/booking/failed') return <Cancelled />;
+    if (p === '/admin/calendar') return <AdminCalendarDemo />;
     if (p === '/admin' || p.startsWith('/admin')) return <Admin />;
     if (p.startsWith('/m/')) return <ManageBooking />;
     return <Home />;
