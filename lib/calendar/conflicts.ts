@@ -1,48 +1,26 @@
-import { GRID_INTERVAL_MINUTES, GRID_END_HOUR, GRID_START_HOUR, type RoomId } from '@/lib/calendar/time';
+import type { Room } from "@/lib/calendar/time";
 
-export type CalendarBooking = {
+export type Booking = {
   id: string;
-  roomId: RoomId;
-  startAt: string;
-  endAt: string;
-  title: string;
-  guests?: number;
-  status?: string;
+  room: Room;
+  startMin: number;
+  endMin: number;
+  customerName: string;
+  guests: number;
+  status: "CONFIRMED" | "PENDING";
+  addOnsTotal?: number;
+  grandTotal?: number;
 };
 
-export type CandidateMove = {
-  bookingId: string;
-  roomId: RoomId;
-  startAt: string;
-  endAt: string;
-};
+export function overlaps(a: { startMin: number; endMin: number }, b: { startMin: number; endMin: number }) {
+  return a.startMin < b.endMin && b.startMin < a.endMin;
+}
 
-const parseMs = (iso: string) => Date.parse(String(iso || ''));
-
-export const rangesOverlap = (aStart: number, aEnd: number, bStart: number, bEnd: number) =>
-  aStart < bEnd && aEnd > bStart;
-
-export const hasRoomConflict = (
-  bookings: CalendarBooking[],
-  candidate: CandidateMove
-) => {
-  const candidateStart = parseMs(candidate.startAt);
-  const candidateEnd = parseMs(candidate.endAt);
-  if (!Number.isFinite(candidateStart) || !Number.isFinite(candidateEnd)) return true;
-
-  return bookings.some((booking) => {
-    if (booking.id === candidate.bookingId) return false;
-    if (booking.roomId !== candidate.roomId) return false;
-    const bookingStart = parseMs(booking.startAt);
-    const bookingEnd = parseMs(booking.endAt);
-    if (!Number.isFinite(bookingStart) || !Number.isFinite(bookingEnd)) return false;
-    return rangesOverlap(candidateStart, candidateEnd, bookingStart, bookingEnd);
-  });
-};
-
-export const snapOffset = (rawOffset: number) => {
-  const snapped = Math.round(rawOffset / GRID_INTERVAL_MINUTES) * GRID_INTERVAL_MINUTES;
-  const maxOffset = (GRID_END_HOUR - GRID_START_HOUR) * 60;
-  return Math.max(0, Math.min(snapped, maxOffset));
-};
-
+export function hasConflict(
+  bookings: Booking[],
+  candidate: { id?: string; room: Room; startMin: number; endMin: number }
+) {
+  return bookings
+    .filter((booking) => booking.room === candidate.room && booking.id !== candidate.id)
+    .some((booking) => overlaps(booking, candidate));
+}

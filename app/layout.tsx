@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Script from "next/script";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -29,7 +30,7 @@ export default function RootLayout({
       </head>
       <body className="antialiased min-h-screen bg-[#0B0D10] text-[rgba(255,255,255,0.92)]">
         {children}
-
+        <Toaster richColors position="top-right" />
       </body>
     </html>
   );

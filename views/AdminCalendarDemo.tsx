@@ -1,46 +1,46 @@
 "use client";
 
-import React, { useMemo } from 'react';
-import AdminBookingCalendar from '@/components/AdminBookingCalendar';
-import type { CalendarBooking } from '@/lib/calendar/conflicts';
-import { dateAndOffsetToIso } from '@/lib/calendar/time';
+import React, { useMemo } from "react";
 
-const buildBooking = (
+import { AdminBookingCalendar } from "@/components/AdminBookingCalendar";
+import type { Booking } from "@/lib/calendar/conflicts";
+
+function mk(
   id: string,
-  roomId: 'terrace' | 'vox' | 'attic',
-  startOffset: number,
-  durationMinutes: number,
-  title: string,
+  room: Booking["room"],
+  startMin: number,
+  endMin: number,
+  customerName: string,
   guests: number,
-  date: string
-): CalendarBooking => ({
-  id,
-  roomId,
-  startAt: dateAndOffsetToIso(date, startOffset),
-  endAt: dateAndOffsetToIso(date, startOffset + durationMinutes),
-  title,
-  guests,
-  status: 'CONFIRMED'
-});
+  status: Booking["status"] = "CONFIRMED"
+): Booking {
+  return {
+    id,
+    room,
+    startMin,
+    endMin,
+    customerName,
+    guests,
+    status,
+    addOnsTotal: 0,
+    grandTotal: 0,
+  };
+}
 
 export default function AdminCalendarDemo() {
-  const date = new Date().toISOString().slice(0, 10);
-
-  const initialBookings = useMemo<CalendarBooking[]>(() => [
-    buildBooking('demo-1', 'terrace', 0, 120, 'Genti / Birthday', 14, date),
-    buildBooking('demo-2', 'vox', 30, 120, 'Team Social', 10, date),
-    buildBooking('demo-3', 'attic', 120, 90, 'Corporate Night', 18, date),
-    buildBooking('demo-4', 'terrace', 180, 120, 'Hen Party', 20, date)
-  ], [date]);
+  const initialBookings = useMemo<Booking[]>(
+    () => [
+      mk("b1", "TERRACE", 17 * 60, 19 * 60, "Genti K", 14, "CONFIRMED"),
+      mk("b2", "VOX", 18 * 60, 20 * 60, "Amelia R", 10, "PENDING"),
+      mk("b3", "ATTIC", 19 * 60 + 30, 21 * 60 + 30, "Noah P", 16, "CONFIRMED"),
+      mk("b4", "TERRACE", 21 * 60, 22 * 60 + 30, "Sophia M", 8, "CONFIRMED"),
+    ],
+    []
+  );
 
   return (
-    <div className="w-full px-4 py-8 md:max-w-7xl md:mx-auto space-y-6">
-      <div className="glass-panel rounded-2xl p-4 border border-zinc-800">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
-          Demo route: /admin/calendar. Drag a card or long-press the Drag handle on mobile.
-        </p>
-      </div>
-      <AdminBookingCalendar date={date} initialBookings={initialBookings} />
+    <div className="w-full px-4 py-8 md:py-12 md:max-w-7xl md:mx-auto">
+      <AdminBookingCalendar initialBookings={initialBookings} />
     </div>
   );
 }
