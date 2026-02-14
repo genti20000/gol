@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { useRouterShim } from '@/lib/routerShim';
 import { useStore } from '@/store';
 import { LOGO_URL, WHATSAPP_URL, getGuestLabel, WHATSAPP_PREFILL_ENABLED } from '@/constants';
-import { penceToPounds } from '@/lib/servicePricing';
 import Spinner from '@/components/Spinner';
 
 type InteractionPhase = 'commit' | 'paint' | 'booking_init';
@@ -45,7 +44,7 @@ const SlotCard = React.memo(function SlotCard({
     <button
       disabled={disabled}
       onClick={handleClick}
-      className={`bg-transparent border-none cursor-pointer glass-panel p-5 md:p-6 rounded-xl md:rounded-2xl flex flex-col items-center justify-center gap-2 transition-all group min-h-[100px] md:min-h-[120px] text-zinc-50 disabled:opacity-60 disabled:cursor-not-allowed ${selected ? 'border-amber-500 ring-1 ring-amber-500/40' : 'hover:border-amber-500/50'}`}
+      className={`bg-transparent border-none cursor-pointer glass-panel p-5 md:p-6 rounded-xl md:rounded-2xl flex flex-col items-center justify-center gap-2 transition-all duration-150 group min-h-[100px] md:min-h-[120px] text-zinc-50 disabled:opacity-45 disabled:cursor-not-allowed ${selected ? 'border-amber-500 ring-1 ring-amber-500/40 bg-zinc-900 scale-105' : 'hover:border-amber-500/50'}`}
       aria-pressed={selected}
       aria-label={`Book ${time}`}
     >
@@ -54,7 +53,7 @@ const SlotCard = React.memo(function SlotCard({
         £{price}
       </span>
       {earlyBirdApplied && (
-        <span className="text-[9px] font-bold uppercase tracking-widest text-green-500">
+        <span className="text-[9px] font-bold uppercase tracking-widest text-amber-300 border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 rounded-full">
           Early Bird £15 pp
         </span>
       )}
@@ -134,7 +133,6 @@ export default function Results() {
   const displayTimes = serverTimes ?? [];
 
   const pricing = useMemo(() => store.calculatePricing(queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId), [queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId, store]);
-  const selectedService = useMemo(() => store.services.find(s => s.id === queryServiceId), [store.services, queryServiceId]);
   const slotPricingByTime = useMemo(() => {
     const entries = displayTimes.map((time) => [
       time,
@@ -157,15 +155,16 @@ export default function Results() {
   const [waitlistSent, setWaitlistSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [slotNotice, setSlotNotice] = useState<{ message: string; type: 'error' | 'info' } | null>(null);
-  const [customerInfo, setCustomerInfo] = useState({ firstName: '', surname: '', email: '', phone: '' });
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingTime, setProcessingTime] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  const [heldSlotTime, setHeldSlotTime] = useState<string | null>(null);
   const [activeInteractionId, setActiveInteractionId] = useState<string | null>(null);
 
   const pendingCommitMetricRef = useRef<{ id: string; slot: string } | null>(null);
   const processingRef = useRef(false);
+  const holdRequestIdRef = useRef(0);
 
   const logInteractionMetric = useCallback((phase: InteractionPhase, interactionId: string, slot: string, durationMs: number) => {
     savePerfMetric({
@@ -212,28 +211,6 @@ export default function Results() {
   useEffect(() => {
     processingRef.current = isProcessing;
   }, [isProcessing]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const saved = window.localStorage.getItem('lkc_customer_info');
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved);
-      setCustomerInfo({
-        firstName: String(parsed?.firstName || ''),
-        surname: String(parsed?.surname || ''),
-        email: String(parsed?.email || ''),
-        phone: String(parsed?.phone || '')
-      });
-    } catch {
-      // ignore invalid saved data
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem('lkc_customer_info', JSON.stringify(customerInfo));
-  }, [customerInfo]);
 
   useLayoutEffect(() => {
     if (!pendingCommitMetricRef.current) return;
@@ -364,57 +341,24 @@ export default function Results() {
     };
   }, [queryDate, queryGuests, queryExtraHours, queryServiceId, queryStaffId, refreshAvailabilityFromServer]);
 
-  const handleSelectSlot = useCallback((time: string) => {
+  const handleSelectSlot = useCallback(async (time: string) => {
     const interactionId = `${time}-${Date.now()}`;
     markNow(`slot-click-start-${interactionId}`);
     pendingCommitMetricRef.current = { id: interactionId, slot: time };
     setActiveInteractionId(interactionId);
     setSelectedTime(time);
+    setHeldSlotTime(null);
     setSlotNotice(null);
-  }, []);
 
-  const reserveSelectedSlotAndContinue = useCallback(async () => {
-    const time = selectedTime;
-    if (!time) {
-      setSlotNotice({ message: 'Pick a time to continue.', type: 'error' });
-      return;
-    }
-    if (processingRef.current) return;
+    const requestId = ++holdRequestIdRef.current;
+    setIsProcessing(true);
+    setProcessingTime(time);
     processingRef.current = true;
 
-    setSlotNotice(null);
-    requestAnimationFrame(() => {
-      setIsProcessing(true);
-      setProcessingTime(time);
-    });
-    setError(null);
-
     try {
-      const latestTimes = await refreshAvailabilityFromServer(false);
-      if (!latestTimes.includes(time)) {
-        setServerTimes(latestTimes);
-        const nextBest = latestTimes.slice(0, 3).join(', ');
-        setSlotNotice({
-          message: latestTimes.length
-            ? `That slot is no longer available. Next available: ${nextBest}.`
-            : 'That slot is no longer available and no other times are currently open for this selection.',
-          type: 'error'
-        });
-        setSelectedTime(null);
-        setIsProcessing(false);
-        setProcessingTime(null);
-        processingRef.current = false;
-        return;
-      }
-
       const sessionId = getOrCreateSessionId();
       if (!sessionId) {
-        setSlotNotice({ message: 'Unable to start booking. Please refresh and try again.', type: 'error' });
-        setSelectedTime(null);
-        setIsProcessing(false);
-        setProcessingTime(null);
-        processingRef.current = false;
-        return;
+        throw new Error('Unable to start booking. Please refresh and try again.');
       }
 
       const holdResponse = await fetch('/api/hold-slot', {
@@ -429,59 +373,73 @@ export default function Results() {
         })
       });
 
+      if (requestId !== holdRequestIdRef.current) return;
+
       if (!holdResponse.ok) {
         if (holdResponse.status === 409) {
-          setSlotNotice({
-            message: 'That time was just taken. Please choose another slot.',
-            type: 'error'
-          });
-          setSelectedTime(null);
+          setSlotNotice({ message: 'That time was just taken. Please choose another slot.', type: 'error' });
+          setSelectedTime((prev) => (prev === time ? null : prev));
+          setHeldSlotTime(null);
           const refreshedAfterConflict = await refreshAvailabilityFromServer(true);
           setServerTimes(refreshedAfterConflict);
         } else {
           setSlotNotice({ message: 'Unable to reserve that time. Please try another slot.', type: 'error' });
+          setSelectedTime((prev) => (prev === time ? null : prev));
+          setHeldSlotTime(null);
         }
-        setIsProcessing(false);
-        setProcessingTime(null);
-        processingRef.current = false;
         return;
       }
 
-      const checkoutParams = new URLSearchParams({
-        date: queryDate,
-        time,
-        guests: String(queryGuests),
-        extraHours: String(queryExtraHours),
-        promo: queryPromo,
-        serviceId: queryServiceId,
-        staffId: queryStaffId,
-        sessionId,
-        firstName: customerInfo.firstName,
-        surname: customerInfo.surname,
-        email: customerInfo.email,
-        phone: customerInfo.phone
-      });
-
-      setIsProcessing(false);
-      setProcessingTime(null);
-      processingRef.current = false;
-      navigate(`/checkout?${checkoutParams.toString()}`);
-    } catch (err) {
-      console.error('Slot preflight failed', err);
-      setSlotNotice({ message: 'Unable to start booking. Please try again.', type: 'error' });
-      setIsProcessing(false);
-      setProcessingTime(null);
-      processingRef.current = false;
+      setHeldSlotTime(time);
+      setSlotNotice({ message: `${time} reserved for 5 minutes. Continue to checkout when ready.`, type: 'info' });
+    } catch {
+      if (requestId === holdRequestIdRef.current) {
+        setSelectedTime((prev) => (prev === time ? null : prev));
+        setHeldSlotTime(null);
+        setSlotNotice({ message: 'Unable to reserve that time. Please try another slot.', type: 'error' });
+      }
+    } finally {
+      if (requestId === holdRequestIdRef.current) {
+        setIsProcessing(false);
+        setProcessingTime(null);
+        processingRef.current = false;
+      }
     }
-  }, [selectedTime, refreshAvailabilityFromServer, queryServiceId, queryDate, queryExtraHours, queryGuests, queryPromo, queryStaffId, customerInfo, navigate]);
+  }, [queryServiceId, queryDate, refreshAvailabilityFromServer]);
+
+  const reserveSelectedSlotAndContinue = useCallback(async () => {
+    const time = selectedTime;
+    if (!time) {
+      setSlotNotice({ message: 'Pick a time to continue.', type: 'error' });
+      return;
+    }
+    if (heldSlotTime !== time) {
+      setSlotNotice({ message: 'Please wait while we reserve your selected time.', type: 'error' });
+      return;
+    }
+    const sessionId = getOrCreateSessionId();
+    const checkoutParams = new URLSearchParams({
+      date: queryDate,
+      time,
+      guests: String(queryGuests),
+      extraHours: String(queryExtraHours),
+      promo: queryPromo,
+      serviceId: queryServiceId,
+      staffId: queryStaffId,
+      sessionId
+    });
+    navigate(`/checkout?${checkoutParams.toString()}`);
+  }, [selectedTime, heldSlotTime, queryDate, queryGuests, queryExtraHours, queryPromo, queryServiceId, queryStaffId, navigate]);
 
   useEffect(() => {
     if (!displayTimes.length) {
       setSelectedTime(null);
+      setHeldSlotTime(null);
       return;
     }
     if (selectedTime && !displayTimes.includes(selectedTime)) {
       setSelectedTime(null);
+      setHeldSlotTime(null);
     }
   }, [displayTimes, selectedTime]);
 
@@ -554,7 +512,7 @@ export default function Results() {
   }
 
   return (
-    <div className="w-full px-4 py-8 md:py-12 md:max-w-4xl md:mx-auto animate-in fade-in duration-700">
+    <div className="w-full px-4 py-8 md:py-12 md:max-w-6xl md:mx-auto animate-in fade-in duration-700">
       <div className="mb-6">
         <button onClick={back} className="bg-transparent border-none cursor-pointer text-zinc-500 hover:text-white transition-colors flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest">
           <i className="fa-solid fa-arrow-left"></i> Back to Search
@@ -594,181 +552,141 @@ export default function Results() {
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 md:gap-8 mb-10 md:mb-16">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6 md:gap-8 items-start">
         <div>
-          <h2 className="text-3xl md:text-4xl font-bold uppercase tracking-tighter mb-2">Available <span className="text-amber-500">Times</span></h2>
-          <div className="text-zinc-500 font-bold uppercase tracking-widest text-[10px] space-y-1">
-            <p>
-              <span className="text-white">{getGuestLabel(queryGuests)}</span> •{' '}
-              {(() => {
-                if (!queryDate) return 'Select a valid date';
-                const parsed = Date.parse(`${queryDate}T00:00:00`);
-                if (!Number.isFinite(parsed)) return 'Select a valid date';
-                return new Date(parsed).toLocaleDateString('en-GB', { dateStyle: 'full' });
-              })()}
+          <div className="mb-6 md:mb-8">
+            <h2 className="text-3xl md:text-4xl font-bold uppercase tracking-tighter mb-2">Available <span className="text-amber-500">Times</span></h2>
+            <div className="text-zinc-500 font-bold uppercase tracking-widest text-[10px] space-y-1">
+              <p>
+                <span className="text-white">{getGuestLabel(queryGuests)}</span> •{' '}
+                {(() => {
+                  if (!queryDate) return 'Select a valid date';
+                  const parsed = Date.parse(`${queryDate}T00:00:00`);
+                  if (!Number.isFinite(parsed)) return 'Select a valid date';
+                  return new Date(parsed).toLocaleDateString('en-GB', { dateStyle: 'full' });
+                })()}
+              </p>
+              <p className="text-amber-500">{2 + queryExtraHours} Hour Experience</p>
+            </div>
+          </div>
+
+          {showLoadingAvailability ? (
+            <div className="text-center py-16 md:py-24 glass-panel rounded-[1.5rem] md:rounded-[2.5rem] border border-zinc-800 px-6">
+              <div className="inline-flex items-center gap-3 text-zinc-400">
+                <Spinner className="w-4 h-4" />
+                <span className="text-[10px] font-bold uppercase tracking-widest">Refreshing live availability...</span>
+              </div>
+            </div>
+          ) : displayTimes.length > 0 ? (
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+              {slotCards.map((slot) => (
+                <SlotCard
+                  key={slot.time}
+                  time={slot.time}
+                  price={slot.totalPrice}
+                  earlyBirdApplied={slot.earlyBirdApplied}
+                  disabled={isProcessing && processingTime === slot.time}
+                  selected={selectedTime === slot.time}
+                  isProcessing={isProcessing}
+                  onSelect={handleSelectSlot}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-12">
+              <div className="text-center py-16 md:py-24 glass-panel rounded-[1.5rem] md:rounded-[2.5rem] border-dashed border-zinc-800 border-2 px-6">
+                <i className="fa-solid fa-calendar-xmark text-3xl md:text-4xl text-zinc-700 mb-6"></i>
+                <h3 className="text-lg md:text-xl font-bold uppercase tracking-tight text-zinc-500">Fully Booked Online</h3>
+                <p className="text-zinc-600 text-[10px] md:text-xs mt-2 uppercase tracking-widest">No availability for your selection. Join the waitlist and we’ll contact you if space opens up.</p>
+              </div>
+
+              <div className="glass-panel p-8 md:p-10 rounded-[2rem] border-zinc-800 shadow-2xl space-y-8">
+                <div className="space-y-2">
+                  <h3 className="text-xl font-bold uppercase tracking-tight text-white">Join Waitlist</h3>
+                  <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">We'll alert you if this slot becomes available.</p>
+                </div>
+
+                <form onSubmit={handleJoinWaitlist} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Name</label>
+                    <input type="text" required value={waitlistForm.name} onChange={e => setWaitlistForm({ ...waitlistForm, name: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white outline-none focus:ring-1 ring-amber-500" />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Phone</label>
+                    <input type="tel" required value={waitlistForm.phone} onChange={e => setWaitlistForm({ ...waitlistForm, phone: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white outline-none focus:ring-1 ring-amber-500" />
+                  </div>
+                  <div className="md:col-span-2">
+                    {waitlistSent ? (
+                      <div className="bg-green-500/10 border border-green-500/20 text-green-500 p-4 rounded-xl text-[10px] font-bold uppercase tracking-widest text-center">
+                        Successfully Joined Waitlist
+                      </div>
+                    ) : (
+                      <div className="flex flex-col sm:flex-row gap-4">
+                        <button type="submit" className="flex-1 bg-zinc-900 border border-zinc-800 text-white py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest active:scale-95 transition-all">Submit Request</button>
+                        <button type="button" onClick={handleWhatsAppWaitlist} className="flex-1 bg-green-500 text-white py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-3 shadow-xl shadow-green-500/10">
+                          <i className="fa-brands fa-whatsapp text-lg"></i>
+                          WhatsApp Concierge
+                        </button>
+                      </div>
+                    )}
+                    {error && <p className="text-red-500 text-[9px] font-bold uppercase tracking-widest mt-4 text-center">{error}</p>}
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <aside className="lg:sticky lg:top-[100px]">
+          <div className="glass-panel rounded-[1.5rem] border border-zinc-800/90 shadow-2xl px-5 py-6 space-y-4">
+            <h3 className="text-[11px] font-bold uppercase tracking-[0.24em] text-zinc-400">Booking Summary</h3>
+            <div className="space-y-2">
+              <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                <span>Selected time</span>
+                <span className="text-white font-mono">{selectedTime || 'No time selected'}</span>
+              </div>
+              <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                <span>Guests</span>
+                <span className="text-white">{queryGuests}</span>
+              </div>
+              <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                <span>Session length</span>
+                <span className="text-white">{2 + queryExtraHours}h</span>
+              </div>
+            </div>
+            <div className="border-t border-zinc-800 pt-4 space-y-2">
+              <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                <span>Subtotal</span>
+                <span className="font-mono text-zinc-200">£{summaryPricing.baseTotal + summaryPricing.extrasPrice}</span>
+              </div>
+              <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-green-500">
+                <span>Discount</span>
+                <span className="font-mono">-£{summaryPricing.ticketSessionDiscountAmount || 0}</span>
+              </div>
+              <div className="flex justify-between items-end border-t border-zinc-800 pt-3 mt-2">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-300">Grand Total</span>
+                <span className="text-3xl font-bold text-white tracking-tight">£{selectedSlotPricing?.totalPrice ?? pricing.totalPrice}</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={reserveSelectedSlotAndContinue}
+              disabled={!selectedTime || heldSlotTime !== selectedTime || isProcessing}
+              className="w-full gold-gradient px-5 py-3 rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] text-black disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Continue to checkout
+            </button>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+              We reserve your selected time for 5 minutes once you continue.
             </p>
-            <p className="text-amber-500">{2 + queryExtraHours} Hour Experience</p>
-          </div>
-        </div>
-
-        <div className="glass-panel p-5 md:p-6 rounded-[1.5rem] md:rounded-[2rem] border-amber-500/20 w-full md:min-w-[280px] md:w-auto">
-          <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">
-            <span>Subtotal</span>
-            <span className="font-mono">£{summaryPricing.baseTotal + summaryPricing.extrasPrice}</span>
-          </div>
-          {(summaryPricing.ticketSessionDiscountAmount || 0) > 0 && (
-            <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-green-500 mb-2">
-              <span>Ticket Discount ({summaryPricing.ticketSessionDiscountPercent || 0}%)</span>
-              <span className="font-mono">-£{summaryPricing.ticketSessionDiscountAmount}</span>
-            </div>
-          )}
-          {store.settings.deposit_enabled && (
-            <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-amber-500 mb-2 pt-2 border-t border-zinc-800/50">
-              <span>Deposit Due Now</span>
-              <span className="font-mono">£{store.settings.deposit_amount}</span>
-            </div>
-          )}
-          <div className="flex justify-between items-end border-t border-zinc-800 pt-4 mt-2">
-            <span className="text-[10px] font-bold uppercase tracking-widest">Grand Total</span>
-            <div className="flex flex-col items-end">
-              {selectedService && <span className="text-[10px] text-zinc-500 uppercase font-bold">From £{penceToPounds(selectedService.pricePerPersonPence).toFixed(2)} pp</span>}
-              <span className="text-3xl font-bold text-white tracking-tighter">£{summaryPricing.totalPrice}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-950/50 px-5 py-4" aria-live="polite">
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Selected Slot</p>
-          <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Customer info panel</span>
-        </div>
-        <div className="mt-2 flex items-end justify-between gap-4">
-          <div>
-            <p className="text-2xl font-bold font-mono tracking-tight text-white">{selectedTime || 'Select a slot to continue'}</p>
-            {selectedSlotPricing?.earlyBirdApplied ? (
-              <p className="text-[10px] font-bold uppercase tracking-widest text-green-500">Early Bird £15 pp applied to this slot</p>
-            ) : (
-              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-                {selectedTime ? 'Standard slot pricing' : 'Pick a time to continue to checkout'}
+            {selectedSlotPricing?.earlyBirdApplied && (
+              <p className="text-[10px] font-bold uppercase tracking-widest text-amber-300">
+                Early Bird £15 pp applied
               </p>
             )}
           </div>
-          <div className="text-right">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Total</p>
-            <p className="text-2xl font-bold tracking-tight text-amber-500">£{selectedSlotPricing?.totalPrice ?? pricing.totalPrice}</p>
-          </div>
-        </div>
-        <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-          We reserve your selected time for 5 minutes once you continue.
-        </p>
-        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <input
-            type="text"
-            placeholder="First name"
-            value={customerInfo.firstName}
-            onChange={(e) => setCustomerInfo((prev) => ({ ...prev, firstName: e.target.value }))}
-            className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-[12px] text-white outline-none focus:ring-1 ring-amber-500"
-          />
-          <input
-            type="text"
-            placeholder="Surname"
-            value={customerInfo.surname}
-            onChange={(e) => setCustomerInfo((prev) => ({ ...prev, surname: e.target.value }))}
-            className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-[12px] text-white outline-none focus:ring-1 ring-amber-500"
-          />
-          <input
-            type="email"
-            placeholder="Email"
-            value={customerInfo.email}
-            onChange={(e) => setCustomerInfo((prev) => ({ ...prev, email: e.target.value }))}
-            className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-[12px] text-white outline-none focus:ring-1 ring-amber-500"
-          />
-          <input
-            type="tel"
-            placeholder="Phone (optional)"
-            value={customerInfo.phone}
-            onChange={(e) => setCustomerInfo((prev) => ({ ...prev, phone: e.target.value }))}
-            className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-[12px] text-white outline-none focus:ring-1 ring-amber-500"
-          />
-        </div>
-        <div className="mt-4 flex justify-end">
-          <button
-            type="button"
-            onClick={reserveSelectedSlotAndContinue}
-            disabled={isProcessing || !selectedTime}
-            className="gold-gradient px-5 py-3 rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] text-black disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Continue to checkout
-          </button>
-        </div>
+        </aside>
       </div>
-
-      {showLoadingAvailability ? (
-        <div className="text-center py-16 md:py-24 glass-panel rounded-[1.5rem] md:rounded-[2.5rem] border border-zinc-800 px-6">
-          <div className="inline-flex items-center gap-3 text-zinc-400">
-            <Spinner className="w-4 h-4" />
-            <span className="text-[10px] font-bold uppercase tracking-widest">Refreshing live availability...</span>
-          </div>
-        </div>
-      ) : displayTimes.length > 0 ? (
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-          {slotCards.map((slot) => (
-            <SlotCard
-              key={slot.time}
-              time={slot.time}
-              price={slot.totalPrice}
-              earlyBirdApplied={slot.earlyBirdApplied}
-              disabled={isProcessing}
-              selected={selectedTime === slot.time}
-              isProcessing={isProcessing}
-              onSelect={handleSelectSlot}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="space-y-12">
-          <div className="text-center py-16 md:py-24 glass-panel rounded-[1.5rem] md:rounded-[2.5rem] border-dashed border-zinc-800 border-2 px-6">
-            <i className="fa-solid fa-calendar-xmark text-3xl md:text-4xl text-zinc-700 mb-6"></i>
-            <h3 className="text-lg md:text-xl font-bold uppercase tracking-tight text-zinc-500">Fully Booked Online</h3>
-            <p className="text-zinc-600 text-[10px] md:text-xs mt-2 uppercase tracking-widest">No availability for your selection. Join the waitlist and we’ll contact you if space opens up.</p>
-          </div>
-
-          <div className="glass-panel p-8 md:p-10 rounded-[2rem] border-zinc-800 shadow-2xl space-y-8">
-            <div className="space-y-2">
-              <h3 className="text-xl font-bold uppercase tracking-tight text-white">Join Waitlist</h3>
-              <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">We'll alert you if this slot becomes available.</p>
-            </div>
-
-            <form onSubmit={handleJoinWaitlist} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Name</label>
-                <input type="text" required value={waitlistForm.name} onChange={e => setWaitlistForm({ ...waitlistForm, name: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white outline-none focus:ring-1 ring-amber-500" />
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Phone</label>
-                <input type="tel" required value={waitlistForm.phone} onChange={e => setWaitlistForm({ ...waitlistForm, phone: e.target.value })} className="bg-zinc-900 border-zinc-800 border rounded-xl px-5 py-4 text-white outline-none focus:ring-1 ring-amber-500" />
-              </div>
-              <div className="md:col-span-2">
-                {waitlistSent ? (
-                  <div className="bg-green-500/10 border border-green-500/20 text-green-500 p-4 rounded-xl text-[10px] font-bold uppercase tracking-widest text-center">
-                    Successfully Joined Waitlist
-                  </div>
-                ) : (
-                  <div className="flex flex-col sm:flex-row gap-4">
-                    <button type="submit" className="flex-1 bg-zinc-900 border border-zinc-800 text-white py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest active:scale-95 transition-all">Submit Request</button>
-                    <button type="button" onClick={handleWhatsAppWaitlist} className="flex-1 bg-green-500 text-white py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-3 shadow-xl shadow-green-500/10">
-                      <i className="fa-brands fa-whatsapp text-lg"></i>
-                      WhatsApp Concierge
-                    </button>
-                  </div>
-                )}
-                {error && <p className="text-red-500 text-[9px] font-bold uppercase tracking-widest mt-4 text-center">{error}</p>}
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
