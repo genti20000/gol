@@ -32,7 +32,7 @@ export async function GET(
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
   const { data, error } = await supabase
     .from('bookings')
-    .select('id,status,booking_ref,customer_email,deposit_amount,confirmed_at,booking_date,start_time,service_id,guests,duration_hours,promo_code,base_total,extras_price,discount_amount,promo_discount_amount,total_price,extras_total,extras_snapshot,room_id,room_name,staff_id,extras_hours,expires_at,booking_access_token')
+    .select('id,status,payment_state,amount_paid,deposit_paid,booking_ref,customer_email,deposit_amount,confirmed_at,booking_date,start_time,service_id,guests,duration_hours,promo_code,base_total,extras_price,discount_amount,promo_discount_amount,total_price,extras_total,extras_snapshot,room_id,room_name,staff_id,extras_hours,expires_at,booking_access_token')
     .eq('id', bookingId)
     .maybeSingle();
 
@@ -59,9 +59,13 @@ export async function GET(
   return NextResponse.json({
     id: data.id,
     status: data.status,
+    payment_state: data.payment_state,
     booking: {
       id: data.id,
       status: data.status,
+      payment_state: data.payment_state,
+      amount_paid: data.amount_paid,
+      deposit_paid: data.deposit_paid,
       booking_ref: data.booking_ref,
       customer_email: data.customer_email,
       deposit_amount: data.deposit_amount,

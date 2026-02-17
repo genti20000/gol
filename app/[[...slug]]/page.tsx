@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Home from '@/views/Home';
 import Results from '@/views/Results';
 import Checkout from '@/views/Checkout';
+import Payment from '@/views/Payment';
 import Confirmation from '@/views/Confirmation';
 import Processing from '@/views/Processing';
 import Cancelled from '@/views/Cancelled';
@@ -90,6 +91,7 @@ export default function Page() {
     if (p === '/') return <Home />;
     if (p === '/book/results') return <Results />;
     if (p === '/checkout') return <Checkout />;
+    if (p === '/booking/payment') return <Payment />;
     if (p === '/confirmation') return <Confirmation />;
     if (p === '/booking/processing') return <Processing />;
     if (p === '/booking/confirmed') return <Confirmation />;

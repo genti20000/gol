@@ -269,6 +269,24 @@ export async function POST(request: Request) {
       );
     }
 
+    if (depositAmount > 0) {
+      const { error: paymentStatusError } = await supabase
+        .from('bookings')
+        .update({
+          status: 'PENDING',
+          confirmed_at: null,
+          payment_state: 'NONE',
+          deposit_paid: false
+        })
+        .eq('id', insertedBookingId)
+        .eq('status', 'CONFIRMED');
+
+      if (paymentStatusError) {
+        console.error('Failed to mark booking as pending payment.', paymentStatusError);
+        return NextResponse.json({ error: 'Unable to prepare booking payment status.' }, { status: 500 });
+      }
+    }
+
     return NextResponse.json({ bookingId: insertedBookingId, bookingToken: insertedBookingToken });
   } catch (error) {
     console.error('Unexpected error finalizing booking.', error);
